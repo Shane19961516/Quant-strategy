@@ -12,7 +12,8 @@ from itertools import dropwhile
 import warnings
 warnings.filterwarnings('ignore') 
 
-wdir = os.path.dirname(__file__)
+# wdir = os.path.dirname(__file__)
+wdir = os.path.dirname("/Users/xiexiaolong/Documents/GitHub/Brinson-Attribution/")
 
 def get_ind_data(weight, ind_type='zx'):
     industry_dat = pd.read_csv(os.path.join(wdir, 'quote_data', f'industry_{ind_type}.csv'),
@@ -217,14 +218,13 @@ def get_cdate(date):
     return cdate
 
 def get_index_ret(code, freq='6M'):
-	"""
-		将日收益率转换为设定频率的收益率。
-		例如，freq默认为6个月时，将日收益率转换为半年度收益，且默认计算时间范围为
-		1-6月及7-12月，计算起始日期选择基金或者指数成立后的首个完整的半年度的首个
-		月份第1个交易日（1月或者7月）
-	"""
-    ret = pd.read_csv(os.path.join(wdir, 'quote_data', f'{code}.csv'), parse_dates=True,
-                           engine='python', encoding='gbk', index_col=[0])
+	# """
+	# 	将日收益率转换为设定频率的收益率。
+	# 	例如，freq默认为6个月时，将日收益率转换为半年度收益，且默认计算时间范围为
+	# 	1-6月及7-12月，计算起始日期选择基金或者指数成立后的首个完整的半年度的首个
+	# 	月份第1个交易日（1月或者7月）
+	# """
+    ret = pd.read_csv(os.path.join(wdir, 'quote_data', f'{code}.csv'), parse_dates=True, engine='python', encoding='gbk', index_col=[0])
     ret = ret.dropna(how='any', axis=0)['pct_change']
     if freq.endswith('M') and freq != 'M':
         num_months = int(freq[:-1])
@@ -302,6 +302,7 @@ def clean_fund_holding(save_ori=True):
         dat['报告期'] = dat['报告期'].map(lambda d: str(d)[:10])
         del dat['序号']
         dat = dat.set_index(['品种代码', '报告期'])
+
         dat = dat.to_panel()
         dat = dat.swapaxes(0, 2)
         dat.to_excel(os.path.join(fund_dir, f.split('持股')[0]+'.xlsx'),
@@ -354,9 +355,9 @@ def brinson_attribution():
                              bond_benchmark, freq, version, verbose)
 			    
     if not os.path.exists(os.path.join(wdir, 'brinson_result')):
-	os.mkdir(os.path.join(wdir, 'brinson_result'))
-    res.to_csv(os.path.join(wdir, 'brinson_result', f'{fund_code}.csv'), 
-               encoding='gbk')
+        os.mkdir(os.path.join(wdir, 'brinson_result'))
+        res.to_csv(os.path.join(wdir, 'brinson_result', f'{fund_code}.csv'), 
+                encoding='gbk')
     print(f'Finish for {fund_code}.')
     
 if __name__ == '__main__':
