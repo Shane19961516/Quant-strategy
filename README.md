@@ -174,3 +174,8 @@ python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
 - 当前立场（偏积极/中性/偏谨慎）
 - 基于实时价格的上行/下行空间
 - 建议跟踪触发条件（倍数、竞争、资本结构）
+
+报告结构升级为“审委会版三页”：
+- 第1页：Executive Summary（结论、核心KPI、情景估值）
+- 第2页：估值假设矩阵（倍数、可比中位数、毛利、市占率、增速、阶段）
+- 第3页：风险与反证（红旗提示 + what could go wrong 清单）

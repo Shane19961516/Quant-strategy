@@ -606,12 +606,25 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
     )
 
     evidence_cards = []
+    assumption_rows = []
     for item in evidence:
         reasons = "".join([f"<li>{reason}</li>" for reason in item.get("reasons", [])])
         peer_med = item.get("peer_median_multiple")
         premium = item.get("premium_vs_peer_median")
         premium_text = "N/A" if premium is None else f"{float(premium) * 100:.1f}%"
         peer_text = "N/A" if peer_med is None else f"{float(peer_med):.2f}x"
+        assumption_rows.append(
+            "<tr>"
+            f"<td>{item.get('segment', 'N/A')}</td>"
+            f"<td>{float(item.get('chosen_multiple', 0.0)):.2f}x</td>"
+            f"<td>{peer_text}</td>"
+            f"<td>{premium_text}</td>"
+            f"<td>{_fmt_pct(item.get('gross_margin'))}</td>"
+            f"<td>{_fmt_pct(item.get('market_share'))}</td>"
+            f"<td>{_fmt_pct(item.get('growth_rate'))}</td>"
+            f"<td>{_fmt_stage(item.get('lifecycle_stage', 'N/A'))}</td>"
+            "</tr>"
+        )
         evidence_cards.append(
             "<div class='card'>"
             f"<h3>{item.get('segment', 'N/A')}</h3>"
@@ -648,6 +661,18 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         if not evidence_cards
         else "".join(evidence_cards)
     )
+    assumption_table_block = (
+        "<p>未提供论据字段，无法生成估值假设矩阵。</p>"
+        if not assumption_rows
+        else (
+            "<table><thead><tr>"
+            "<th>分部</th><th>给定倍数</th><th>可比中位数</th><th>溢价/折价</th>"
+            "<th>毛利率</th><th>市占率</th><th>增速</th><th>阶段</th>"
+            "</tr></thead><tbody>"
+            + "".join(assumption_rows)
+            + "</tbody></table>"
+        )
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -666,46 +691,77 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
     .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; }}
     .risk {{ background: #fff5f5; border-left: 4px solid #e05050; padding: 12px; }}
+    .page {{ padding: 6px 0 24px 0; border-bottom: 2px dashed #ddd; margin-bottom: 24px; }}
+    .kpi {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }}
+    .kpi-item {{ background: #f8faff; border: 1px solid #dbe6ff; border-radius: 8px; padding: 10px; }}
+    .kpi-label {{ color: #666; font-size: 13px; }}
+    .kpi-value {{ font-weight: bold; font-size: 18px; margin-top: 4px; }}
   </style>
 </head>
 <body>
   <h1>{title}</h1>
   <div class="meta">生成时间：{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC</div>
 
-  <div class="section summary">
-    <h2>结论</h2>
-    <p>{conclusion}</p>
+  <div class="page">
+    <h2>第1页：Executive Summary</h2>
+    <div class="section summary">
+      <h2>结论</h2>
+      <p>{conclusion}</p>
+    </div>
+
+    <div class="section kpi">
+      <div class="kpi-item"><div class="kpi-label">当前立场</div><div class="kpi-value">{investment_view.get("stance", "中性")}</div></div>
+      <div class="kpi-item"><div class="kpi-label">现价</div><div class="kpi-value">{current_price_text}</div></div>
+      <div class="kpi-item"><div class="kpi-label">基准每股估值</div><div class="kpi-value">{float(investment_view.get("base_fair_value", 0.0)):,.2f}</div></div>
+      <div class="kpi-item"><div class="kpi-label">上行空间(Base)</div><div class="kpi-value">{upside_text}</div></div>
+      <div class="kpi-item"><div class="kpi-label">下行情景(Bear)</div><div class="kpi-value">{downside_text}</div></div>
+    </div>
+
+    <div class="section">
+      <h2>情景估值结果</h2>
+      <table>
+        <thead>
+          <tr><th>Scenario</th><th>Enterprise Value</th><th>Equity Value</th><th>Per Share</th></tr>
+        </thead>
+        <tbody>{table_html}</tbody>
+      </table>
+    </div>
+
+    <div class="section summary">
+      <h3>后续跟踪触发条件</h3>
+      <ul>{trigger_html}</ul>
+    </div>
   </div>
 
-  <div class="section">
-    <h2>情景估值结果</h2>
-    <table>
-      <thead>
-        <tr><th>Scenario</th><th>Enterprise Value</th><th>Equity Value</th><th>Per Share</th></tr>
-      </thead>
-      <tbody>{table_html}</tbody>
-    </table>
+  <div class="page">
+    <h2>第2页：估值假设矩阵</h2>
+    <div class="section">
+      {assumption_table_block}
+    </div>
+    <div class="section">
+      <h3>分部论据卡片（Base情景）</h3>
+      <div class="cards">{evidence_block}</div>
+    </div>
   </div>
 
-  <div class="section">
-    <h2>论据明细（Base情景）</h2>
-    <div class="cards">{evidence_block}</div>
+  <div class="page">
+    <h2>第3页：风险与反证（What could go wrong）</h2>
+    <div class="section risk">
+      <h2>关键风险提示</h2>
+      <ul>{flags_html}</ul>
+    </div>
+    <div class="section">
+      <h3>反证检查清单</h3>
+      <ul>
+        <li>可比公司样本是否存在业务结构错配（硬件/软件、国内/海外、成长/成熟）？</li>
+        <li>分部毛利率与增速是否可持续，是否受到周期/监管/竞争冲击？</li>
+        <li>高溢价分部是否有可验证壁垒（品牌、生态、渠道、技术、成本）？</li>
+        <li>估值倍数是否隐含过高终值假设，是否与历史分位偏离过大？</li>
+        <li>资本结构变化（回购、并购、债务）对每股价值传导是否被高估？</li>
+      </ul>
+    </div>
   </div>
 
-  <div class="section risk">
-    <h2>关键风险提示</h2>
-    <ul>{flags_html}</ul>
-  </div>
-
-  <div class="section summary">
-    <h2>投资建议（模板）</h2>
-    <p><b>当前立场：</b>{investment_view.get("stance", "中性")}</p>
-    <p><b>现价：</b>{current_price_text} | <b>基准估值每股：</b>{float(investment_view.get("base_fair_value", 0.0)):,.2f}</p>
-    <p><b>上行空间（Base）：</b>{upside_text} | <b>下行情景（Bear）：</b>{downside_text}</p>
-    <p>{investment_view.get("summary", "")}</p>
-    <h3>后续跟踪触发条件</h3>
-    <ul>{trigger_html}</ul>
-  </div>
 </body>
 </html>
 """
