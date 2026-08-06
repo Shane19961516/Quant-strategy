@@ -224,10 +224,22 @@ def _median(values: List[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
+def _percentile_rank(value: float, peer_values: List[float]) -> float:
+    """Return percentile rank of value within peer_values in [0, 1]."""
+    if not peer_values:
+        return 0.0
+    ordered = sorted(peer_values)
+    less_or_equal = sum(1 for x in ordered if x <= value)
+    return less_or_equal / len(ordered)
+
+
 def _build_segment_evidence(seg: Dict[str, Any], chosen_multiple: float) -> Dict[str, Any]:
     """Build argument chain for selected segment multiple."""
     peer_multiples = [float(x) for x in seg.get("peer_multiples", [])]
     peer_median = _median(peer_multiples) if peer_multiples else None
+    peer_percentile = (
+        _percentile_rank(chosen_multiple, peer_multiples) if peer_multiples else None
+    )
     premium_vs_peer_median = (
         (chosen_multiple / peer_median - 1.0) if peer_median and peer_median > 0 else None
     )
@@ -279,12 +291,33 @@ def _build_segment_evidence(seg: Dict[str, Any], chosen_multiple: float) -> Dict
     else:
         reasons.append("业务阶段未明确，建议补充成长阶段判断")
 
+    # Simple premium/discount decomposition (for auditability).
+    quality_score = 0.0
+    if gross_margin is not None:
+        quality_score += min(max((float(gross_margin) - 0.35) / 0.4, -0.5), 0.5)
+    if growth_rate is not None:
+        quality_score += min(max((float(growth_rate) - 0.1) / 0.3, -0.5), 0.5)
+    if lifecycle_stage == "growth":
+        quality_score += 0.1
+    elif lifecycle_stage == "decline":
+        quality_score -= 0.1
+    quality_premium_estimate = quality_score * 0.15
+
     return {
         "segment": str(seg.get("name", "unknown")),
         "chosen_multiple": chosen_multiple,
         "peer_multiples": peer_multiples,
         "peer_median_multiple": peer_median,
+        "peer_percentile_anchor": peer_percentile,
         "premium_vs_peer_median": premium_vs_peer_median,
+        "premium_decomposition": {
+            "quality_premium_estimate": quality_premium_estimate,
+            "residual_premium": (
+                None
+                if premium_vs_peer_median is None
+                else premium_vs_peer_median - quality_premium_estimate
+            ),
+        },
         "gross_margin": gross_margin,
         "market_share": market_share,
         "growth_rate": growth_rate,
@@ -374,10 +407,44 @@ def run_hybrid_yfinance_sotp_scenarios(payload: Dict[str, Any]) -> Dict[str, Any
         scenario_payload = {"ticker": ticker, "segment_splits": adjusted_splits}
         scenarios[scenario_name] = run_hybrid_yfinance_sotp(scenario_payload)
 
+    probabilities = payload.get(
+        "scenario_probabilities", {"bear": 0.25, "base": 0.5, "bull": 0.25}
+    )
+    p_bear = float(probabilities.get("bear", 0.0))
+    p_base = float(probabilities.get("base", 0.0))
+    p_bull = float(probabilities.get("bull", 0.0))
+    p_sum = p_bear + p_base + p_bull
+    if p_sum <= 0:
+        p_bear, p_base, p_bull = 0.25, 0.5, 0.25
+        p_sum = 1.0
+    p_bear, p_base, p_bull = p_bear / p_sum, p_base / p_sum, p_bull / p_sum
+
+    expected_per_share = (
+        p_bear * float(scenarios["bear"]["per_share_value"])
+        + p_base * float(scenarios["base"]["per_share_value"])
+        + p_bull * float(scenarios["bull"]["per_share_value"])
+    )
+    expected_equity_value = (
+        p_bear * float(scenarios["bear"]["equity_value"])
+        + p_base * float(scenarios["base"]["equity_value"])
+        + p_bull * float(scenarios["bull"]["equity_value"])
+    )
+    expected_enterprise_value = (
+        p_bear * float(scenarios["bear"]["enterprise_value"])
+        + p_base * float(scenarios["base"]["enterprise_value"])
+        + p_bull * float(scenarios["bull"]["enterprise_value"])
+    )
+
     return {
         "ticker": ticker,
         "data_source": "yfinance+user-segment-splits",
         "factor_assumptions": scenario_definitions,
+        "scenario_probabilities": {"bear": p_bear, "base": p_base, "bull": p_bull},
+        "probability_weighted": {
+            "enterprise_value": expected_enterprise_value,
+            "equity_value": expected_equity_value,
+            "per_share_value": expected_per_share,
+        },
         "note": (
             "Each scenario scales segment valuation multiples while keeping "
             "segment revenue shares and yfinance balance-sheet/share inputs constant."
@@ -477,8 +544,10 @@ def _build_conclusion_text(result: Dict[str, Any]) -> str:
     bear_ps = float(bear.get("per_share_value", 0.0))
     base_ps = float(base.get("per_share_value", 0.0))
     bull_ps = float(bull.get("per_share_value", 0.0))
+    weighted = result.get("probability_weighted", {})
+    weighted_ps = float(weighted.get("per_share_value", base_ps))
     return (
-        f"基准情景每股估值为 {base_ps:,.2f}，"
+        f"基准情景每股估值为 {base_ps:,.2f}，概率加权每股估值为 {weighted_ps:,.2f}，"
         f"区间为 {bear_ps:,.2f} ~ {bull_ps:,.2f}。"
         "估值区间主要由分部乘数假设驱动，建议优先复核高溢价板块的论据充分性。"
     )
@@ -517,6 +586,8 @@ def _build_investment_recommendation(result: Dict[str, Any]) -> Dict[str, Any]:
     bear = scenarios.get("bear", {})
     bull = scenarios.get("bull", {})
     base_ps = float(base.get("per_share_value", 0.0))
+    weighted = result.get("probability_weighted", {})
+    weighted_ps = float(weighted.get("per_share_value", base_ps))
     bear_ps = float(bear.get("per_share_value", base_ps))
     bull_ps = float(bull.get("per_share_value", base_ps))
 
@@ -539,6 +610,7 @@ def _build_investment_recommendation(result: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     upside_pct = base_ps / current_price - 1.0
+    expected_upside_pct = weighted_ps / current_price - 1.0
     downside_pct = bear_ps / current_price - 1.0
     bull_upside_pct = bull_ps / current_price - 1.0
 
@@ -551,6 +623,7 @@ def _build_investment_recommendation(result: Dict[str, Any]) -> Dict[str, Any]:
 
     summary = (
         f"基准估值较现价的空间为 {upside_pct:.1%}，"
+        f"概率加权空间为 {expected_upside_pct:.1%}，"
         f"悲观情景为 {downside_pct:.1%}，乐观情景为 {bull_upside_pct:.1%}。"
     )
     triggers = [
@@ -562,10 +635,12 @@ def _build_investment_recommendation(result: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "stance": stance,
         "upside_pct": upside_pct,
+        "expected_upside_pct": expected_upside_pct,
         "downside_pct": downside_pct,
         "bull_upside_pct": bull_upside_pct,
         "current_price": current_price,
         "base_fair_value": base_ps,
+        "weighted_fair_value": weighted_ps,
         "summary": summary,
         "triggers": triggers,
     }
@@ -613,11 +688,28 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         premium = item.get("premium_vs_peer_median")
         premium_text = "N/A" if premium is None else f"{float(premium) * 100:.1f}%"
         peer_text = "N/A" if peer_med is None else f"{float(peer_med):.2f}x"
+        percentile_text = (
+            "N/A"
+            if item.get("peer_percentile_anchor") is None
+            else f"{float(item.get('peer_percentile_anchor')):.0%}"
+        )
+        premium_decomp = item.get("premium_decomposition", {})
+        quality_premium_text = (
+            "N/A"
+            if premium_decomp.get("quality_premium_estimate") is None
+            else f"{float(premium_decomp.get('quality_premium_estimate')):.1%}"
+        )
+        residual_premium_text = (
+            "N/A"
+            if premium_decomp.get("residual_premium") is None
+            else f"{float(premium_decomp.get('residual_premium')):.1%}"
+        )
         assumption_rows.append(
             "<tr>"
             f"<td>{item.get('segment', 'N/A')}</td>"
             f"<td>{float(item.get('chosen_multiple', 0.0)):.2f}x</td>"
             f"<td>{peer_text}</td>"
+            f"<td>{'N/A' if item.get('peer_percentile_anchor') is None else f'{float(item.get('peer_percentile_anchor')):.0%}'}</td>"
             f"<td>{premium_text}</td>"
             f"<td>{_fmt_pct(item.get('gross_margin'))}</td>"
             f"<td>{_fmt_pct(item.get('market_share'))}</td>"
@@ -630,7 +722,9 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
             f"<h3>{item.get('segment', 'N/A')}</h3>"
             f"<p><b>给定倍数:</b> {float(item.get('chosen_multiple', 0.0)):.2f}x</p>"
             f"<p><b>可比中位数:</b> {peer_text}</p>"
+            f"<p><b>同组分位:</b> {percentile_text}</p>"
             f"<p><b>相对溢价/折价:</b> {premium_text}</p>"
+            f"<p><b>溢价分解(质量/残差):</b> {quality_premium_text} / {residual_premium_text}</p>"
             f"<p><b>毛利率:</b> {_fmt_pct(item.get('gross_margin'))}</p>"
             f"<p><b>市占率:</b> {_fmt_pct(item.get('market_share'))}</p>"
             f"<p><b>增速:</b> {_fmt_pct(item.get('growth_rate'))}</p>"
@@ -651,6 +745,11 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         if investment_view.get("downside_pct") is None
         else f"{float(investment_view['downside_pct']):.1%}"
     )
+    expected_upside_text = (
+        "N/A"
+        if investment_view.get("expected_upside_pct") is None
+        else f"{float(investment_view['expected_upside_pct']):.1%}"
+    )
     current_price_text = (
         "N/A"
         if investment_view.get("current_price") is None
@@ -666,7 +765,7 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         if not assumption_rows
         else (
             "<table><thead><tr>"
-            "<th>分部</th><th>给定倍数</th><th>可比中位数</th><th>溢价/折价</th>"
+            "<th>分部</th><th>给定倍数</th><th>可比中位数</th><th>同组分位</th><th>溢价/折价</th>"
             "<th>毛利率</th><th>市占率</th><th>增速</th><th>阶段</th>"
             "</tr></thead><tbody>"
             + "".join(assumption_rows)
@@ -713,7 +812,9 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
       <div class="kpi-item"><div class="kpi-label">当前立场</div><div class="kpi-value">{investment_view.get("stance", "中性")}</div></div>
       <div class="kpi-item"><div class="kpi-label">现价</div><div class="kpi-value">{current_price_text}</div></div>
       <div class="kpi-item"><div class="kpi-label">基准每股估值</div><div class="kpi-value">{float(investment_view.get("base_fair_value", 0.0)):,.2f}</div></div>
+      <div class="kpi-item"><div class="kpi-label">概率加权每股估值</div><div class="kpi-value">{float(investment_view.get("weighted_fair_value", 0.0)):,.2f}</div></div>
       <div class="kpi-item"><div class="kpi-label">上行空间(Base)</div><div class="kpi-value">{upside_text}</div></div>
+      <div class="kpi-item"><div class="kpi-label">上行空间(概率加权)</div><div class="kpi-value">{expected_upside_text}</div></div>
       <div class="kpi-item"><div class="kpi-label">下行情景(Bear)</div><div class="kpi-value">{downside_text}</div></div>
     </div>
 
@@ -871,7 +972,8 @@ def generate_pdf_report(result: Dict[str, Any], output_path: str) -> None:
                 f"<b>投资立场：</b>{investment_view.get('stance', '中性')} ｜ "
                 f"<b>现价：</b>"
                 f"{'N/A' if investment_view.get('current_price') is None else f'{float(investment_view.get('current_price')):,.2f}'} ｜ "
-                f"<b>基准每股估值：</b>{float(investment_view.get('base_fair_value', 0.0)):,.2f}"
+                f"<b>基准每股估值：</b>{float(investment_view.get('base_fair_value', 0.0)):,.2f} ｜ "
+                f"<b>概率加权每股估值：</b>{float(investment_view.get('weighted_fair_value', 0.0)):,.2f}"
             ),
             body_style,
         )
@@ -926,16 +1028,18 @@ def generate_pdf_report(result: Dict[str, Any], output_path: str) -> None:
     evidence = base_result.get("evidence_report", [])
     if evidence:
         assumption_data = [[
-            "分部", "给定倍数", "可比中位数", "溢价/折价", "毛利率", "市占率", "增速", "阶段"
+            "分部", "给定倍数", "可比中位数", "同组分位", "溢价/折价", "毛利率", "市占率", "增速", "阶段"
         ]]
         for item in evidence:
             peer_med = item.get("peer_median_multiple")
             premium = item.get("premium_vs_peer_median")
+            percentile_anchor = item.get("peer_percentile_anchor")
             assumption_data.append(
                 [
                     str(item.get("segment", "N/A")),
                     f"{float(item.get('chosen_multiple', 0.0)):.2f}x",
                     "N/A" if peer_med is None else f"{float(peer_med):.2f}x",
+                    "N/A" if percentile_anchor is None else f"{float(percentile_anchor):.0%}",
                     "N/A" if premium is None else f"{float(premium) * 100:.1f}%",
                     _fmt_pct(item.get("gross_margin")),
                     _fmt_pct(item.get("market_share")),
@@ -945,7 +1049,7 @@ def generate_pdf_report(result: Dict[str, Any], output_path: str) -> None:
             )
         assumption_table = Table(
             assumption_data,
-            colWidths=[90, 62, 70, 64, 52, 52, 50, 52],
+            colWidths=[82, 54, 58, 50, 56, 46, 46, 46, 48],
         )
         assumption_table.setStyle(
             TableStyle(
@@ -964,12 +1068,22 @@ def generate_pdf_report(result: Dict[str, Any], output_path: str) -> None:
         story.append(Spacer(1, 10))
         story.append(Paragraph("<b>论据摘要：</b>", body_style))
         for item in evidence:
+            premium_decomp = item.get("premium_decomposition", {})
             story.append(
                 Paragraph(
                     f"<b>{item.get('segment', 'N/A')}</b>（{float(item.get('chosen_multiple', 0.0)):.2f}x）",
                     body_style,
                 )
             )
+            if item.get("peer_percentile_anchor") is not None:
+                story.append(
+                    Paragraph(
+                        f"• 同组分位：{float(item.get('peer_percentile_anchor')):.0%} ｜ 溢价分解（质量/残差）："
+                        f"{float(premium_decomp.get('quality_premium_estimate', 0.0)):.1%} / "
+                        f"{float(premium_decomp.get('residual_premium', 0.0)):.1%}",
+                        body_style,
+                    )
+                )
             for reason in item.get("reasons", [])[:4]:
                 story.append(Paragraph(f"• {reason}", body_style))
             story.append(Spacer(1, 4))

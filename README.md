@@ -136,13 +136,15 @@ python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
     {"name":"Services","revenue_share":0.25,"valuation_multiple":12.0}
   ],
   "bear_factor": 0.85,
-  "bull_factor": 1.15
+  "bull_factor": 1.15,
+  "scenario_probabilities": {"bear": 0.25, "base": 0.50, "bull": 0.25}
 }'
 ```
 
 说明：
 - bear/base/bull 分别按 `bear_factor` / `1.0` / `bull_factor` 缩放每个分部倍数。
 - 分部收入占比与 yfinance 抓取的资本结构参数在三情景下保持一致。
+- 支持 `scenario_probabilities` 做概率加权估值（自动归一化），输出 `probability_weighted` 结果。
 
 可选紧凑输出格式（便于快速对比）：
 
