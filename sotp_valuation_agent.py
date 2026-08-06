@@ -146,6 +146,12 @@ def fetch_yfinance_snapshot(ticker: str) -> Dict[str, float]:
     total_debt = float(info.get("totalDebt") or 0.0)
     total_cash = float(info.get("totalCash") or 0.0)
     enterprise_to_revenue = float(info.get("enterpriseToRevenue") or 0.0)
+    current_price = float(
+        info.get("currentPrice")
+        or info.get("regularMarketPrice")
+        or info.get("previousClose")
+        or 0.0
+    )
 
     if total_revenue <= 0:
         raise ValueError(f"Could not fetch positive totalRevenue for ticker '{ticker}'.")
@@ -164,6 +170,7 @@ def fetch_yfinance_snapshot(ticker: str) -> Dict[str, float]:
         "shares_outstanding": shares_outstanding,
         "net_debt": net_debt,
         "enterprise_to_revenue": enterprise_to_revenue,
+        "current_price": current_price,
     }
 
 
@@ -503,6 +510,67 @@ def _build_risk_flags(result: Dict[str, Any]) -> List[str]:
     return flags
 
 
+def _build_investment_recommendation(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a simple investment-view section for the visual report."""
+    scenarios = result.get("scenarios", {})
+    base = scenarios.get("base", result)
+    bear = scenarios.get("bear", {})
+    bull = scenarios.get("bull", {})
+    base_ps = float(base.get("per_share_value", 0.0))
+    bear_ps = float(bear.get("per_share_value", base_ps))
+    bull_ps = float(bull.get("per_share_value", base_ps))
+
+    snapshot = base.get("snapshot", result.get("snapshot", {}))
+    current_price = float(snapshot.get("current_price", 0.0) or 0.0)
+
+    if current_price <= 0:
+        return {
+            "stance": "中性",
+            "upside_pct": None,
+            "downside_pct": None,
+            "current_price": None,
+            "base_fair_value": base_ps,
+            "summary": "未获取到实时价格，无法计算安全边际，暂给中性结论。",
+            "triggers": [
+                "补充实时价格后重新评估上/下行空间",
+                "复核可比公司样本和倍数口径一致性",
+                "跟踪核心分部毛利率和增速是否偏离假设",
+            ],
+        }
+
+    upside_pct = base_ps / current_price - 1.0
+    downside_pct = bear_ps / current_price - 1.0
+    bull_upside_pct = bull_ps / current_price - 1.0
+
+    if upside_pct >= 0.2 and downside_pct > -0.15:
+        stance = "偏积极"
+    elif upside_pct <= 0.05:
+        stance = "偏谨慎"
+    else:
+        stance = "中性"
+
+    summary = (
+        f"基准估值较现价的空间为 {upside_pct:.1%}，"
+        f"悲观情景为 {downside_pct:.1%}，乐观情景为 {bull_upside_pct:.1%}。"
+    )
+    triggers = [
+        "若核心分部增速与毛利率持续上修，可提升目标倍数并上调估值区间",
+        "若可比公司中位数倍数下移或竞争加剧，需下调高溢价分部估值",
+        "若公司持续回购/优化资本结构，可能提升每股价值兑现速度",
+    ]
+
+    return {
+        "stance": stance,
+        "upside_pct": upside_pct,
+        "downside_pct": downside_pct,
+        "bull_upside_pct": bull_upside_pct,
+        "current_price": current_price,
+        "base_fair_value": base_ps,
+        "summary": summary,
+        "triggers": triggers,
+    }
+
+
 def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
     """Generate a visual HTML report with conclusions and evidence."""
     title = f"SOTP Valuation Report - {result.get('ticker', 'N/A')}"
@@ -523,6 +591,7 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
     base_result = scenarios.get("base", result)
     evidence = base_result.get("evidence_report", [])
     flags = _build_risk_flags(result)
+    investment_view = _build_investment_recommendation(result)
 
     table_html = "".join(
         [
@@ -558,6 +627,22 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         )
 
     flags_html = "".join([f"<li>{flag}</li>" for flag in flags])
+    trigger_html = "".join([f"<li>{t}</li>" for t in investment_view.get("triggers", [])])
+    upside_text = (
+        "N/A"
+        if investment_view.get("upside_pct") is None
+        else f"{float(investment_view['upside_pct']):.1%}"
+    )
+    downside_text = (
+        "N/A"
+        if investment_view.get("downside_pct") is None
+        else f"{float(investment_view['downside_pct']):.1%}"
+    )
+    current_price_text = (
+        "N/A"
+        if investment_view.get("current_price") is None
+        else f"{float(investment_view['current_price']):,.2f}"
+    )
     evidence_block = (
         "<p>本次结果未提供 evidence_report，请在 hybrid 模式输入论据字段。</p>"
         if not evidence_cards
@@ -610,6 +695,16 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
   <div class="section risk">
     <h2>关键风险提示</h2>
     <ul>{flags_html}</ul>
+  </div>
+
+  <div class="section summary">
+    <h2>投资建议（模板）</h2>
+    <p><b>当前立场：</b>{investment_view.get("stance", "中性")}</p>
+    <p><b>现价：</b>{current_price_text} | <b>基准估值每股：</b>{float(investment_view.get("base_fair_value", 0.0)):,.2f}</p>
+    <p><b>上行空间（Base）：</b>{upside_text} | <b>下行情景（Bear）：</b>{downside_text}</p>
+    <p>{investment_view.get("summary", "")}</p>
+    <h3>后续跟踪触发条件</h3>
+    <ul>{trigger_html}</ul>
   </div>
 </body>
 </html>

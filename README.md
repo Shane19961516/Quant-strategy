@@ -169,3 +169,8 @@ python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
   "bull_factor":1.15
 }' --report-out ./aapl_sotp_report.html
 ```
+
+报告现已包含“投资建议（模板）”区块：
+- 当前立场（偏积极/中性/偏谨慎）
+- 基于实时价格的上行/下行空间
+- 建议跟踪触发条件（倍数、竞争、资本结构）
