@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any
+import argparse
 import json
 
 
@@ -121,16 +122,109 @@ def run_from_json_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return agent.run()
 
 
-if __name__ == "__main__":
-    # Example payload for a quick local run:
-    # python sotp_valuation_agent.py '{"segments":[...],"net_debt":...}'
-    import sys
+def _require_yfinance():
+    try:
+        import yfinance as yf  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "yfinance is required for --ticker mode. Install with: pip install yfinance"
+        ) from exc
+    return yf
 
-    if len(sys.argv) != 2:
-        raise SystemExit(
-            "Usage: python sotp_valuation_agent.py '<json-payload>'"
+
+def fetch_yfinance_snapshot(ticker: str) -> Dict[str, float]:
+    """Fetch valuation inputs from yfinance."""
+    yf = _require_yfinance()
+    tk = yf.Ticker(ticker)
+    info = tk.info or {}
+
+    total_revenue = float(info.get("totalRevenue") or 0.0)
+    shares_outstanding = float(info.get("sharesOutstanding") or 0.0)
+    total_debt = float(info.get("totalDebt") or 0.0)
+    total_cash = float(info.get("totalCash") or 0.0)
+    enterprise_to_revenue = float(info.get("enterpriseToRevenue") or 0.0)
+
+    if total_revenue <= 0:
+        raise ValueError(f"Could not fetch positive totalRevenue for ticker '{ticker}'.")
+    if shares_outstanding <= 0:
+        raise ValueError(
+            f"Could not fetch positive sharesOutstanding for ticker '{ticker}'."
         )
 
-    payload = json.loads(sys.argv[1])
-    result = run_from_json_payload(payload)
+    # net_debt > 0 means net debt; net_debt < 0 means net cash.
+    net_debt = total_debt - total_cash
+    if enterprise_to_revenue <= 0:
+        enterprise_to_revenue = 6.0
+
+    return {
+        "total_revenue": total_revenue,
+        "shares_outstanding": shares_outstanding,
+        "net_debt": net_debt,
+        "enterprise_to_revenue": enterprise_to_revenue,
+    }
+
+
+def run_yfinance_scenarios(ticker: str) -> Dict[str, Any]:
+    """Run bear/base/bull valuation scenarios using yfinance inputs."""
+    snap = fetch_yfinance_snapshot(ticker)
+    base_multiple = snap["enterprise_to_revenue"]
+    scenario_multiples = {
+        "bear": round(base_multiple * 0.8, 4),
+        "base": round(base_multiple, 4),
+        "bull": round(base_multiple * 1.2, 4),
+    }
+
+    results: Dict[str, Any] = {}
+    for scenario, multiple in scenario_multiples.items():
+        agent = SOTPValuationAgent(
+            segments=[
+                Segment(
+                    name="Revenue Base (yfinance)",
+                    metric_value=snap["total_revenue"],
+                    valuation_multiple=multiple,
+                    ownership=1.0,
+                )
+            ],
+            net_debt=snap["net_debt"],
+            shares_outstanding=snap["shares_outstanding"],
+        )
+        results[scenario] = agent.run()
+
+    return {
+        "ticker": ticker.upper(),
+        "data_source": "yfinance",
+        "snapshot": snap,
+        "scenario_multiples": scenario_multiples,
+        "note": (
+            "yfinance does not provide standardized segment revenue splits for SOTP; "
+            "this mode values one revenue segment with scenario multiples."
+        ),
+        "scenarios": results,
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
+    parser.add_argument(
+        "payload",
+        nargs="?",
+        help="JSON payload for manual SOTP run.",
+    )
+    parser.add_argument(
+        "--ticker",
+        help="Ticker symbol for yfinance-powered scenario valuation.",
+    )
+    args = parser.parse_args()
+
+    if args.ticker:
+        result = run_yfinance_scenarios(args.ticker)
+    elif args.payload:
+        payload = json.loads(args.payload)
+        result = run_from_json_payload(payload)
+    else:
+        raise SystemExit(
+            "Usage: python sotp_valuation_agent.py '<json-payload>' OR "
+            "python sotp_valuation_agent.py --ticker AAPL"
+        )
+
     print(json.dumps(result, indent=2))

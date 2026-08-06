@@ -88,3 +88,11 @@ python sotp_valuation_agent.py '{
   "shares_outstanding": 300.0
 }'
 ```
+
+使用 yfinance 自动拉取财务数据并生成 bear/base/bull 三情景：
+
+```bash
+python3 sotp_valuation_agent.py --ticker AAPL
+```
+
+说明：yfinance 不提供标准化分部收入拆分，因此该模式默认使用单一收入分部（Revenue Base）并围绕 `enterpriseToRevenue` 生成情景倍数。
