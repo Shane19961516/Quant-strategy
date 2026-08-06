@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any
 import argparse
+import csv
 import json
+from io import StringIO
 
 
 @dataclass
@@ -293,6 +295,66 @@ def run_hybrid_yfinance_sotp_scenarios(payload: Dict[str, Any]) -> Dict[str, Any
     }
 
 
+def _scenario_rows_from_result(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Flatten scenario JSON into table-like rows."""
+    scenarios = result.get("scenarios", {})
+    rows: List[Dict[str, Any]] = []
+    for scenario_name, data in scenarios.items():
+        rows.append(
+            {
+                "scenario": scenario_name,
+                "enterprise_value": float(data.get("enterprise_value", 0.0)),
+                "equity_value": float(data.get("equity_value", 0.0)),
+                "per_share_value": float(data.get("per_share_value", 0.0)),
+            }
+        )
+    return rows
+
+
+def render_rows_as_table(rows: List[Dict[str, Any]]) -> str:
+    """Render rows as aligned plain-text table."""
+    if not rows:
+        return "No rows."
+
+    headers = ["scenario", "enterprise_value", "equity_value", "per_share_value"]
+    formatted_rows = []
+    for row in rows:
+        formatted_rows.append(
+            {
+                "scenario": str(row["scenario"]),
+                "enterprise_value": f"{row['enterprise_value']:,.2f}",
+                "equity_value": f"{row['equity_value']:,.2f}",
+                "per_share_value": f"{row['per_share_value']:,.2f}",
+            }
+        )
+
+    widths = {h: len(h) for h in headers}
+    for row in formatted_rows:
+        for h in headers:
+            widths[h] = max(widths[h], len(row[h]))
+
+    line = " | ".join(h.ljust(widths[h]) for h in headers)
+    sep = "-+-".join("-" * widths[h] for h in headers)
+    body = [
+        " | ".join(row[h].ljust(widths[h]) for h in headers)
+        for row in formatted_rows
+    ]
+    return "\n".join([line, sep] + body)
+
+
+def render_rows_as_csv(rows: List[Dict[str, Any]]) -> str:
+    """Render rows as CSV text."""
+    output = StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["scenario", "enterprise_value", "equity_value", "per_share_value"],
+    )
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return output.getvalue().strip()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
     parser.add_argument(
@@ -325,16 +387,25 @@ if __name__ == "__main__":
             "\"bear_factor\":0.85,\"bull_factor\":1.15}'"
         ),
     )
+    parser.add_argument(
+        "--output-format",
+        choices=["json", "table", "csv"],
+        default="json",
+        help="Output format for scenario modes.",
+    )
     args = parser.parse_args()
 
+    is_scenario_mode = False
     if args.hybrid_scenarios_payload:
         hybrid_scenarios_payload = json.loads(args.hybrid_scenarios_payload)
         result = run_hybrid_yfinance_sotp_scenarios(hybrid_scenarios_payload)
+        is_scenario_mode = True
     elif args.hybrid_payload:
         hybrid_payload = json.loads(args.hybrid_payload)
         result = run_hybrid_yfinance_sotp(hybrid_payload)
     elif args.ticker:
         result = run_yfinance_scenarios(args.ticker)
+        is_scenario_mode = True
     elif args.payload:
         payload = json.loads(args.payload)
         result = run_from_json_payload(payload)
@@ -346,4 +417,15 @@ if __name__ == "__main__":
             "python sotp_valuation_agent.py --hybrid-scenarios-payload '<json-payload>'"
         )
 
-    print(json.dumps(result, indent=2))
+    if args.output_format == "json":
+        print(json.dumps(result, indent=2))
+    elif args.output_format == "table":
+        if not is_scenario_mode:
+            raise SystemExit("--output-format table is supported only for scenario modes.")
+        rows = _scenario_rows_from_result(result)
+        print(render_rows_as_table(rows))
+    else:  # csv
+        if not is_scenario_mode:
+            raise SystemExit("--output-format csv is supported only for scenario modes.")
+        rows = _scenario_rows_from_result(result)
+        print(render_rows_as_csv(rows))
