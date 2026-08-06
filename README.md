@@ -63,3 +63,28 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 将日收益率转换为设定频率的收益率，默认为6个月（披露完整持仓数据的报告期仅为半年报和年报），
 
 详见代码。
+
+五.SOTP valuation Agent
+------
+
+新增 `sotp_valuation_agent.py`，用于执行分部估值（Sum-of-the-Parts, SOTP）并输出：
+
+- 分部估值明细（每个业务板块的 implied value）
+- 企业价值（Enterprise Value）
+- 股权价值（Equity Value）
+- 每股价值（Per Share Value）
+
+运行示例：
+
+```bash
+python sotp_valuation_agent.py '{
+  "segments": [
+    {"name":"Core Business","metric_value":120.0,"valuation_multiple":8.5,"ownership":1.0},
+    {"name":"Fintech","metric_value":35.0,"valuation_multiple":12.0,"ownership":0.75}
+  ],
+  "net_debt": 180.0,
+  "non_operating_assets": 60.0,
+  "minority_interest": 25.0,
+  "shares_outstanding": 300.0
+}'
+```
