@@ -96,3 +96,19 @@ python3 sotp_valuation_agent.py --ticker AAPL
 ```
 
 说明：yfinance 不提供标准化分部收入拆分，因此该模式默认使用单一收入分部（Revenue Base）并围绕 `enterpriseToRevenue` 生成情景倍数。
+
+Hybrid 模式（推荐）：yfinance 提供资本结构，用户提供分部拆分（更接近真实 SOTP）
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-payload '{
+  "ticker": "AAPL",
+  "segment_splits": [
+    {"name":"Products","revenue_share":0.75,"valuation_multiple":6.5},
+    {"name":"Services","revenue_share":0.25,"valuation_multiple":12.0}
+  ]
+}'
+```
+
+说明：
+- `revenue_share` 会自动归一化（总和不必严格等于 1）。
+- 未提供 `valuation_multiple` 时，默认使用 yfinance 的 `enterpriseToRevenue`。

@@ -203,6 +203,49 @@ def run_yfinance_scenarios(ticker: str) -> Dict[str, Any]:
     }
 
 
+def run_hybrid_yfinance_sotp(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run multi-segment SOTP using yfinance + user segment split assumptions."""
+    ticker = str(payload["ticker"]).upper()
+    splits_raw = payload["segment_splits"]
+    splits: List[Dict[str, Any]] = list(splits_raw)
+    if not splits:
+        raise ValueError("segment_splits must contain at least one segment.")
+
+    snap = fetch_yfinance_snapshot(ticker)
+    total_revenue = snap["total_revenue"]
+    split_sum = sum(float(seg["revenue_share"]) for seg in splits)
+    if split_sum <= 0:
+        raise ValueError("Sum of segment revenue_share values must be positive.")
+
+    # Normalize shares to 1.0 if user passes percentages or imperfect totals.
+    normalized_segments: List[Segment] = []
+    base_multiple = snap["enterprise_to_revenue"]
+    for seg in splits:
+        name = str(seg["name"])
+        revenue_share = float(seg["revenue_share"]) / split_sum
+        seg_multiple = float(seg.get("valuation_multiple", base_multiple))
+        normalized_segments.append(
+            Segment(
+                name=name,
+                metric_value=total_revenue * revenue_share,
+                valuation_multiple=seg_multiple,
+                ownership=float(seg.get("ownership", 1.0)),
+            )
+        )
+
+    agent = SOTPValuationAgent(
+        segments=normalized_segments,
+        net_debt=snap["net_debt"],
+        shares_outstanding=snap["shares_outstanding"],
+    )
+    result = agent.run()
+    result["ticker"] = ticker
+    result["data_source"] = "yfinance+user-segment-splits"
+    result["snapshot"] = snap
+    result["input_segment_splits"] = splits
+    return result
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
     parser.add_argument(
@@ -214,9 +257,22 @@ if __name__ == "__main__":
         "--ticker",
         help="Ticker symbol for yfinance-powered scenario valuation.",
     )
+    parser.add_argument(
+        "--hybrid-payload",
+        help=(
+            "JSON payload for hybrid SOTP. "
+            "Example: "
+            "'{\"ticker\":\"AAPL\",\"segment_splits\":[{\"name\":\"Products\","
+            "\"revenue_share\":0.75,\"valuation_multiple\":6.5},"
+            "{\"name\":\"Services\",\"revenue_share\":0.25,\"valuation_multiple\":12.0}]}'"
+        ),
+    )
     args = parser.parse_args()
 
-    if args.ticker:
+    if args.hybrid_payload:
+        hybrid_payload = json.loads(args.hybrid_payload)
+        result = run_hybrid_yfinance_sotp(hybrid_payload)
+    elif args.ticker:
         result = run_yfinance_scenarios(args.ticker)
     elif args.payload:
         payload = json.loads(args.payload)
@@ -224,7 +280,8 @@ if __name__ == "__main__":
     else:
         raise SystemExit(
             "Usage: python sotp_valuation_agent.py '<json-payload>' OR "
-            "python sotp_valuation_agent.py --ticker AAPL"
+            "python sotp_valuation_agent.py --ticker AAPL OR "
+            "python sotp_valuation_agent.py --hybrid-payload '<json-payload>'"
         )
 
     print(json.dumps(result, indent=2))
