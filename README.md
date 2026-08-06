@@ -112,6 +112,19 @@ python3 sotp_valuation_agent.py --hybrid-payload '{
 说明：
 - `revenue_share` 会自动归一化（总和不必严格等于 1）。
 - 未提供 `valuation_multiple` 时，默认使用 yfinance 的 `enterpriseToRevenue`。
+- 可在每个分部补充论据字段：`peer_multiples`、`gross_margin`、`market_share`、`growth_rate`、`lifecycle_stage`（`introduction/growth/mature/decline`），程序会输出 `evidence_report` 解释为何给该倍数。
+
+带论据字段的示例：
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-payload '{
+  "ticker":"AAPL",
+  "segment_splits":[
+    {"name":"Products","revenue_share":0.75,"valuation_multiple":6.5,"peer_multiples":[5.8,6.1,6.4,6.0],"gross_margin":0.38,"market_share":0.24,"growth_rate":0.06,"lifecycle_stage":"mature"},
+    {"name":"Services","revenue_share":0.25,"valuation_multiple":12.0,"peer_multiples":[8.5,9.2,10.1,9.8],"gross_margin":0.72,"market_share":0.18,"growth_rate":0.19,"lifecycle_stage":"growth"}
+  ]
+}'
+```
 
 Hybrid 情景模式（自动 bear/base/bull）：
 

@@ -205,6 +205,86 @@ def run_yfinance_scenarios(ticker: str) -> Dict[str, Any]:
     }
 
 
+def _median(values: List[float]) -> float:
+    ordered = sorted(values)
+    n = len(ordered)
+    if n == 0:
+        return 0.0
+    mid = n // 2
+    if n % 2 == 1:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _build_segment_evidence(seg: Dict[str, Any], chosen_multiple: float) -> Dict[str, Any]:
+    """Build argument chain for selected segment multiple."""
+    peer_multiples = [float(x) for x in seg.get("peer_multiples", [])]
+    peer_median = _median(peer_multiples) if peer_multiples else None
+    premium_vs_peer_median = (
+        (chosen_multiple / peer_median - 1.0) if peer_median and peer_median > 0 else None
+    )
+
+    gross_margin = seg.get("gross_margin")
+    market_share = seg.get("market_share")
+    growth_rate = seg.get("growth_rate")
+    lifecycle_stage = str(seg.get("lifecycle_stage", "unknown")).lower()
+
+    reasons: List[str] = []
+    if peer_median is not None:
+        diff_pct = (chosen_multiple / peer_median - 1.0) * 100
+        reasons.append(
+            f"相对可比公司中位数倍数({peer_median:.2f}x)，当前设定为{chosen_multiple:.2f}x，溢价/折价{diff_pct:.1f}%"
+        )
+    else:
+        reasons.append("未提供可比公司倍数，当前倍数主要基于主观假设")
+
+    if gross_margin is not None:
+        gm = float(gross_margin)
+        reasons.append(f"毛利率假设为{gm:.1%}")
+        if gm >= 0.55:
+            reasons.append("高毛利通常支持更高估值中枢")
+        elif gm <= 0.30:
+            reasons.append("毛利率偏低，估值应谨慎给溢价")
+
+    if market_share is not None:
+        ms = float(market_share)
+        reasons.append(f"市占率假设为{ms:.1%}")
+        if ms >= 0.30:
+            reasons.append("较高市占率体现规模与渠道壁垒")
+
+    if growth_rate is not None:
+        gr = float(growth_rate)
+        reasons.append(f"增速假设为{gr:.1%}")
+        if gr >= 0.20:
+            reasons.append("高增速阶段可支持估值溢价")
+        elif gr <= 0.05:
+            reasons.append("低增速阶段更接近成熟期估值框架")
+
+    lifecycle_map = {
+        "introduction": "导入期",
+        "growth": "成长期",
+        "mature": "成熟期",
+        "decline": "衰退期",
+    }
+    if lifecycle_stage in lifecycle_map:
+        reasons.append(f"业务阶段判断：{lifecycle_map[lifecycle_stage]}")
+    else:
+        reasons.append("业务阶段未明确，建议补充成长阶段判断")
+
+    return {
+        "segment": str(seg.get("name", "unknown")),
+        "chosen_multiple": chosen_multiple,
+        "peer_multiples": peer_multiples,
+        "peer_median_multiple": peer_median,
+        "premium_vs_peer_median": premium_vs_peer_median,
+        "gross_margin": gross_margin,
+        "market_share": market_share,
+        "growth_rate": growth_rate,
+        "lifecycle_stage": lifecycle_stage,
+        "reasons": reasons,
+    }
+
+
 def run_hybrid_yfinance_sotp(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run multi-segment SOTP using yfinance + user segment split assumptions."""
     ticker = str(payload["ticker"]).upper()
@@ -222,10 +302,12 @@ def run_hybrid_yfinance_sotp(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Normalize shares to 1.0 if user passes percentages or imperfect totals.
     normalized_segments: List[Segment] = []
     base_multiple = snap["enterprise_to_revenue"]
+    evidence_report = []
     for seg in splits:
         name = str(seg["name"])
         revenue_share = float(seg["revenue_share"]) / split_sum
         seg_multiple = float(seg.get("valuation_multiple", base_multiple))
+        evidence_report.append(_build_segment_evidence(seg, seg_multiple))
         normalized_segments.append(
             Segment(
                 name=name,
@@ -245,6 +327,7 @@ def run_hybrid_yfinance_sotp(payload: Dict[str, Any]) -> Dict[str, Any]:
     result["data_source"] = "yfinance+user-segment-splits"
     result["snapshot"] = snap
     result["input_segment_splits"] = splits
+    result["evidence_report"] = evidence_report
     return result
 
 
@@ -418,7 +501,7 @@ if __name__ == "__main__":
         )
 
     if args.output_format == "json":
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2, ensure_ascii=False))
     elif args.output_format == "table":
         if not is_scenario_mode:
             raise SystemExit("--output-format table is supported only for scenario modes.")
