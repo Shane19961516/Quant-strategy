@@ -112,3 +112,21 @@ python3 sotp_valuation_agent.py --hybrid-payload '{
 说明：
 - `revenue_share` 会自动归一化（总和不必严格等于 1）。
 - 未提供 `valuation_multiple` 时，默认使用 yfinance 的 `enterpriseToRevenue`。
+
+Hybrid 情景模式（自动 bear/base/bull）：
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
+  "ticker": "AAPL",
+  "segment_splits": [
+    {"name":"Products","revenue_share":0.75,"valuation_multiple":6.5},
+    {"name":"Services","revenue_share":0.25,"valuation_multiple":12.0}
+  ],
+  "bear_factor": 0.85,
+  "bull_factor": 1.15
+}'
+```
+
+说明：
+- bear/base/bull 分别按 `bear_factor` / `1.0` / `bull_factor` 缩放每个分部倍数。
+- 分部收入占比与 yfinance 抓取的资本结构参数在三情景下保持一致。

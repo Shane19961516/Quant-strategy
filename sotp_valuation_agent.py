@@ -246,6 +246,53 @@ def run_hybrid_yfinance_sotp(payload: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def run_hybrid_yfinance_sotp_scenarios(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run bear/base/bull scenarios for hybrid yfinance SOTP."""
+    ticker = str(payload["ticker"]).upper()
+    splits_raw = payload["segment_splits"]
+    splits: List[Dict[str, Any]] = list(splits_raw)
+    if not splits:
+        raise ValueError("segment_splits must contain at least one segment.")
+
+    bear_factor = float(payload.get("bear_factor", 0.85))
+    bull_factor = float(payload.get("bull_factor", 1.15))
+    if bear_factor <= 0 or bull_factor <= 0:
+        raise ValueError("bear_factor and bull_factor must be positive.")
+
+    base_payload = {"ticker": ticker, "segment_splits": splits}
+    base_result = run_hybrid_yfinance_sotp(base_payload)
+    snapshot = base_result["snapshot"]
+    base_multiple_fallback = float(snapshot["enterprise_to_revenue"])
+
+    scenarios = {}
+    scenario_definitions = {
+        "bear": bear_factor,
+        "base": 1.0,
+        "bull": bull_factor,
+    }
+    for scenario_name, factor in scenario_definitions.items():
+        adjusted_splits = []
+        for seg in splits:
+            segment_multiple = float(seg.get("valuation_multiple", base_multiple_fallback))
+            adjusted = dict(seg)
+            adjusted["valuation_multiple"] = segment_multiple * factor
+            adjusted_splits.append(adjusted)
+
+        scenario_payload = {"ticker": ticker, "segment_splits": adjusted_splits}
+        scenarios[scenario_name] = run_hybrid_yfinance_sotp(scenario_payload)
+
+    return {
+        "ticker": ticker,
+        "data_source": "yfinance+user-segment-splits",
+        "factor_assumptions": scenario_definitions,
+        "note": (
+            "Each scenario scales segment valuation multiples while keeping "
+            "segment revenue shares and yfinance balance-sheet/share inputs constant."
+        ),
+        "scenarios": scenarios,
+    }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
     parser.add_argument(
@@ -267,9 +314,23 @@ if __name__ == "__main__":
             "{\"name\":\"Services\",\"revenue_share\":0.25,\"valuation_multiple\":12.0}]}'"
         ),
     )
+    parser.add_argument(
+        "--hybrid-scenarios-payload",
+        help=(
+            "JSON payload for hybrid bear/base/bull scenarios. "
+            "Example: "
+            "'{\"ticker\":\"AAPL\",\"segment_splits\":[{\"name\":\"Products\","
+            "\"revenue_share\":0.75,\"valuation_multiple\":6.5},"
+            "{\"name\":\"Services\",\"revenue_share\":0.25,\"valuation_multiple\":12.0}],"
+            "\"bear_factor\":0.85,\"bull_factor\":1.15}'"
+        ),
+    )
     args = parser.parse_args()
 
-    if args.hybrid_payload:
+    if args.hybrid_scenarios_payload:
+        hybrid_scenarios_payload = json.loads(args.hybrid_scenarios_payload)
+        result = run_hybrid_yfinance_sotp_scenarios(hybrid_scenarios_payload)
+    elif args.hybrid_payload:
         hybrid_payload = json.loads(args.hybrid_payload)
         result = run_hybrid_yfinance_sotp(hybrid_payload)
     elif args.ticker:
@@ -281,7 +342,8 @@ if __name__ == "__main__":
         raise SystemExit(
             "Usage: python sotp_valuation_agent.py '<json-payload>' OR "
             "python sotp_valuation_agent.py --ticker AAPL OR "
-            "python sotp_valuation_agent.py --hybrid-payload '<json-payload>'"
+            "python sotp_valuation_agent.py --hybrid-payload '<json-payload>' OR "
+            "python sotp_valuation_agent.py --hybrid-scenarios-payload '<json-payload>'"
         )
 
     print(json.dumps(result, indent=2))
