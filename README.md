@@ -179,3 +179,15 @@ python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
 - 第1页：Executive Summary（结论、核心KPI、情景估值）
 - 第2页：估值假设矩阵（倍数、可比中位数、毛利、市占率、增速、阶段）
 - 第3页：风险与反证（红旗提示 + what could go wrong 清单）
+
+支持导出美化 PDF：
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{...}' --pdf-out ./aapl_sotp_report.pdf
+```
+
+也可以同时导出 HTML + PDF：
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{...}' --report-out ./aapl_sotp_report.html --pdf-out ./aapl_sotp_report.pdf
+```

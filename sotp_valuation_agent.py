@@ -769,6 +769,237 @@ def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
         f.write(html)
 
 
+def _require_reportlab():
+    try:
+        from reportlab.lib import colors  # noqa: F401
+        from reportlab.lib.pagesizes import A4  # noqa: F401
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: F401
+        from reportlab.pdfbase import pdfmetrics  # noqa: F401
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # noqa: F401
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle,
+            PageBreak,
+        )  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "reportlab is required for --pdf-out mode. Install with: pip install reportlab"
+        ) from exc
+
+
+def generate_pdf_report(result: Dict[str, Any], output_path: str) -> None:
+    """Generate a polished committee-style PDF report."""
+    _require_reportlab()
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        Table,
+        TableStyle,
+        PageBreak,
+    )
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+
+    doc = SimpleDocTemplate(
+        output_path,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=32,
+        bottomMargin=32,
+        title=f"SOTP Report - {result.get('ticker', 'N/A')}",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "TitleCN",
+        parent=styles["Title"],
+        fontName="STSong-Light",
+        fontSize=20,
+        textColor=colors.HexColor("#1f3a6e"),
+        spaceAfter=12,
+    )
+    heading_style = ParagraphStyle(
+        "HeadingCN",
+        parent=styles["Heading2"],
+        fontName="STSong-Light",
+        fontSize=14,
+        textColor=colors.HexColor("#1f3a6e"),
+        spaceBefore=10,
+        spaceAfter=8,
+    )
+    body_style = ParagraphStyle(
+        "BodyCN",
+        parent=styles["BodyText"],
+        fontName="STSong-Light",
+        fontSize=10.5,
+        leading=15,
+    )
+    small_style = ParagraphStyle(
+        "SmallCN",
+        parent=styles["BodyText"],
+        fontName="STSong-Light",
+        fontSize=9.5,
+        textColor=colors.HexColor("#555555"),
+    )
+
+    story = []
+    ticker = result.get("ticker", "N/A")
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    story.append(Paragraph(f"SOTP 估值报告（审委会版）- {ticker}", title_style))
+    story.append(Paragraph(f"生成时间：{generated_at}", small_style))
+    story.append(Spacer(1, 10))
+
+    # Page 1: Executive summary
+    story.append(Paragraph("第1页：Executive Summary", heading_style))
+    conclusion = _build_conclusion_text(result)
+    investment_view = _build_investment_recommendation(result)
+    story.append(Paragraph(f"<b>结论：</b>{conclusion}", body_style))
+    story.append(Spacer(1, 6))
+    story.append(
+        Paragraph(
+            (
+                f"<b>投资立场：</b>{investment_view.get('stance', '中性')} ｜ "
+                f"<b>现价：</b>"
+                f"{'N/A' if investment_view.get('current_price') is None else f'{float(investment_view.get('current_price')):,.2f}'} ｜ "
+                f"<b>基准每股估值：</b>{float(investment_view.get('base_fair_value', 0.0)):,.2f}"
+            ),
+            body_style,
+        )
+    )
+    story.append(Spacer(1, 8))
+
+    rows = _scenario_rows_from_result(result)
+    if not rows:
+        rows = [
+            {
+                "scenario": "base",
+                "enterprise_value": float(result.get("enterprise_value", 0.0)),
+                "equity_value": float(result.get("equity_value", 0.0)),
+                "per_share_value": float(result.get("per_share_value", 0.0)),
+            }
+        ]
+    scenario_table_data = [["Scenario", "Enterprise Value", "Equity Value", "Per Share"]]
+    for r in rows:
+        scenario_table_data.append(
+            [
+                str(r["scenario"]),
+                _fmt_money(float(r["enterprise_value"])),
+                _fmt_money(float(r["equity_value"])),
+                f"{float(r['per_share_value']):,.2f}",
+            ]
+        )
+    scenario_table = Table(scenario_table_data, colWidths=[72, 150, 150, 100])
+    scenario_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eaf1ff")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1f3a6e")),
+                ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d5f0")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fbff")]),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+            ]
+        )
+    )
+    story.append(scenario_table)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("<b>跟踪触发条件：</b>", body_style))
+    for trigger in investment_view.get("triggers", []):
+        story.append(Paragraph(f"• {trigger}", body_style))
+
+    # Page 2: assumption matrix + evidence
+    story.append(PageBreak())
+    story.append(Paragraph("第2页：估值假设矩阵与论据", heading_style))
+    scenarios = result.get("scenarios", {})
+    base_result = scenarios.get("base", result)
+    evidence = base_result.get("evidence_report", [])
+    if evidence:
+        assumption_data = [[
+            "分部", "给定倍数", "可比中位数", "溢价/折价", "毛利率", "市占率", "增速", "阶段"
+        ]]
+        for item in evidence:
+            peer_med = item.get("peer_median_multiple")
+            premium = item.get("premium_vs_peer_median")
+            assumption_data.append(
+                [
+                    str(item.get("segment", "N/A")),
+                    f"{float(item.get('chosen_multiple', 0.0)):.2f}x",
+                    "N/A" if peer_med is None else f"{float(peer_med):.2f}x",
+                    "N/A" if premium is None else f"{float(premium) * 100:.1f}%",
+                    _fmt_pct(item.get("gross_margin")),
+                    _fmt_pct(item.get("market_share")),
+                    _fmt_pct(item.get("growth_rate")),
+                    _fmt_stage(item.get("lifecycle_stage", "N/A")),
+                ]
+            )
+        assumption_table = Table(
+            assumption_data,
+            colWidths=[90, 62, 70, 64, 52, 52, 50, 52],
+        )
+        assumption_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef7ee")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#2e6b3f")),
+                    ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9e1cc")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fff8")]),
+                    ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+                ]
+            )
+        )
+        story.append(assumption_table)
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("<b>论据摘要：</b>", body_style))
+        for item in evidence:
+            story.append(
+                Paragraph(
+                    f"<b>{item.get('segment', 'N/A')}</b>（{float(item.get('chosen_multiple', 0.0)):.2f}x）",
+                    body_style,
+                )
+            )
+            for reason in item.get("reasons", [])[:4]:
+                story.append(Paragraph(f"• {reason}", body_style))
+            story.append(Spacer(1, 4))
+    else:
+        story.append(
+            Paragraph("未提供 evidence_report。请使用 hybrid 输入 peer_multiples/毛利/市占率/增速/阶段字段。", body_style)
+        )
+
+    # Page 3: risk and falsification
+    story.append(PageBreak())
+    story.append(Paragraph("第3页：风险与反证（What could go wrong）", heading_style))
+    flags = _build_risk_flags(result)
+    story.append(Paragraph("<b>关键风险提示：</b>", body_style))
+    for flag in flags:
+        story.append(Paragraph(f"• {flag}", body_style))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("<b>反证检查清单：</b>", body_style))
+    checklist = [
+        "可比公司样本是否存在结构错配（地域、成长性、商业模式）？",
+        "分部毛利率与增速是否可持续，是否有下行压力？",
+        "高溢价分部是否有可验证壁垒（品牌、生态、渠道、技术）？",
+        "当前倍数与历史分位是否偏离过大？",
+        "资本结构变化对每股价值的传导是否被高估？",
+    ]
+    for item in checklist:
+        story.append(Paragraph(f"• {item}", body_style))
+
+    doc.build(story)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
     parser.add_argument(
@@ -811,6 +1042,10 @@ if __name__ == "__main__":
         "--report-out",
         help="Output path for visual HTML report (e.g. ./sotp_report.html).",
     )
+    parser.add_argument(
+        "--pdf-out",
+        help="Output path for visual PDF report (e.g. ./sotp_report.pdf).",
+    )
     args = parser.parse_args()
 
     is_scenario_mode = False
@@ -837,7 +1072,12 @@ if __name__ == "__main__":
 
     if args.report_out:
         generate_visual_report(result, args.report_out)
-        print(f"Visual report generated: {args.report_out}")
+        print(f"Visual HTML report generated: {args.report_out}")
+    if args.pdf_out:
+        generate_pdf_report(result, args.pdf_out)
+        print(f"Visual PDF report generated: {args.pdf_out}")
+    if args.report_out or args.pdf_out:
+        pass
     elif args.output_format == "json":
         print(json.dumps(result, indent=2, ensure_ascii=False))
     elif args.output_format == "table":
