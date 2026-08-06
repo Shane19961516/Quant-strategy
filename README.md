@@ -155,3 +155,17 @@ python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{...}' --output-form
 ```
 
 说明：`--output-format table/csv` 仅适用于情景模式（`--ticker` 与 `--hybrid-scenarios-payload`）。
+
+可视化报告输出（HTML，含结论 + 论据 + 风险提示）：
+
+```bash
+python3 sotp_valuation_agent.py --hybrid-scenarios-payload '{
+  "ticker":"AAPL",
+  "segment_splits":[
+    {"name":"Products","revenue_share":0.75,"valuation_multiple":6.5,"peer_multiples":[5.8,6.1,6.4,6.0],"gross_margin":0.38,"market_share":0.24,"growth_rate":0.06,"lifecycle_stage":"mature"},
+    {"name":"Services","revenue_share":0.25,"valuation_multiple":12.0,"peer_multiples":[8.5,9.2,10.1,9.8],"gross_margin":0.72,"market_share":0.18,"growth_rate":0.19,"lifecycle_stage":"growth"}
+  ],
+  "bear_factor":0.85,
+  "bull_factor":1.15
+}' --report-out ./aapl_sotp_report.html
+```

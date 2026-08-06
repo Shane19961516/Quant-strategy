@@ -13,6 +13,7 @@ import argparse
 import csv
 import json
 from io import StringIO
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -438,6 +439,185 @@ def render_rows_as_csv(rows: List[Dict[str, Any]]) -> str:
     return output.getvalue().strip()
 
 
+def _fmt_money(value: float) -> str:
+    return f"{value:,.2f}"
+
+
+def _fmt_pct(value: Any) -> str:
+    if value is None:
+        return "N/A"
+    return f"{float(value):.1%}"
+
+
+def _fmt_stage(stage: Any) -> str:
+    stage_map = {
+        "introduction": "导入期",
+        "growth": "成长期",
+        "mature": "成熟期",
+        "decline": "衰退期",
+    }
+    key = str(stage).lower()
+    return stage_map.get(key, str(stage))
+
+
+def _build_conclusion_text(result: Dict[str, Any]) -> str:
+    scenarios = result.get("scenarios", {})
+    if not scenarios:
+        return "单点估值结果已生成。"
+    bear = scenarios.get("bear", {})
+    base = scenarios.get("base", {})
+    bull = scenarios.get("bull", {})
+    bear_ps = float(bear.get("per_share_value", 0.0))
+    base_ps = float(base.get("per_share_value", 0.0))
+    bull_ps = float(bull.get("per_share_value", 0.0))
+    return (
+        f"基准情景每股估值为 {base_ps:,.2f}，"
+        f"区间为 {bear_ps:,.2f} ~ {bull_ps:,.2f}。"
+        "估值区间主要由分部乘数假设驱动，建议优先复核高溢价板块的论据充分性。"
+    )
+
+
+def _build_risk_flags(result: Dict[str, Any]) -> List[str]:
+    scenarios = result.get("scenarios", {})
+    base = scenarios.get("base", result)
+    evidence = base.get("evidence_report", [])
+    flags: List[str] = []
+    for item in evidence:
+        premium = item.get("premium_vs_peer_median")
+        growth = item.get("growth_rate")
+        margin = item.get("gross_margin")
+        stage = item.get("lifecycle_stage")
+        segment = item.get("segment", "unknown")
+        if premium is not None and growth is not None and stage in ("mature", "decline"):
+            if float(premium) > 0.2 and float(growth) < 0.1:
+                flags.append(
+                    f"{segment}: 处于{stage}阶段且增速偏低，但相对可比中位数溢价超过20%，需补充论据。"
+                )
+        if premium is not None and margin is not None:
+            if float(premium) > 0.25 and float(margin) < 0.35:
+                flags.append(
+                    f"{segment}: 毛利率偏低但估值溢价较高，建议下调倍数或强化竞争壁垒论证。"
+                )
+    if not flags:
+        flags.append("未触发自动红旗规则，建议仍进行可比口径一致性复核。")
+    return flags
+
+
+def generate_visual_report(result: Dict[str, Any], output_path: str) -> None:
+    """Generate a visual HTML report with conclusions and evidence."""
+    title = f"SOTP Valuation Report - {result.get('ticker', 'N/A')}"
+    conclusion = _build_conclusion_text(result)
+    rows = _scenario_rows_from_result(result)
+    if not rows:
+        base = result
+        rows = [
+            {
+                "scenario": "base",
+                "enterprise_value": float(base.get("enterprise_value", 0.0)),
+                "equity_value": float(base.get("equity_value", 0.0)),
+                "per_share_value": float(base.get("per_share_value", 0.0)),
+            }
+        ]
+
+    scenarios = result.get("scenarios", {})
+    base_result = scenarios.get("base", result)
+    evidence = base_result.get("evidence_report", [])
+    flags = _build_risk_flags(result)
+
+    table_html = "".join(
+        [
+            "<tr>"
+            f"<td>{r['scenario']}</td>"
+            f"<td>{_fmt_money(float(r['enterprise_value']))}</td>"
+            f"<td>{_fmt_money(float(r['equity_value']))}</td>"
+            f"<td>{float(r['per_share_value']):,.2f}</td>"
+            "</tr>"
+            for r in rows
+        ]
+    )
+
+    evidence_cards = []
+    for item in evidence:
+        reasons = "".join([f"<li>{reason}</li>" for reason in item.get("reasons", [])])
+        peer_med = item.get("peer_median_multiple")
+        premium = item.get("premium_vs_peer_median")
+        premium_text = "N/A" if premium is None else f"{float(premium) * 100:.1f}%"
+        peer_text = "N/A" if peer_med is None else f"{float(peer_med):.2f}x"
+        evidence_cards.append(
+            "<div class='card'>"
+            f"<h3>{item.get('segment', 'N/A')}</h3>"
+            f"<p><b>给定倍数:</b> {float(item.get('chosen_multiple', 0.0)):.2f}x</p>"
+            f"<p><b>可比中位数:</b> {peer_text}</p>"
+            f"<p><b>相对溢价/折价:</b> {premium_text}</p>"
+            f"<p><b>毛利率:</b> {_fmt_pct(item.get('gross_margin'))}</p>"
+            f"<p><b>市占率:</b> {_fmt_pct(item.get('market_share'))}</p>"
+            f"<p><b>增速:</b> {_fmt_pct(item.get('growth_rate'))}</p>"
+            f"<p><b>发展阶段:</b> {_fmt_stage(item.get('lifecycle_stage', 'N/A'))}</p>"
+            f"<ul>{reasons}</ul>"
+            "</div>"
+        )
+
+    flags_html = "".join([f"<li>{flag}</li>" for flag in flags])
+    evidence_block = (
+        "<p>本次结果未提供 evidence_report，请在 hybrid 模式输入论据字段。</p>"
+        if not evidence_cards
+        else "".join(evidence_cards)
+    )
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>{title}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
+    h1, h2 {{ margin-bottom: 8px; }}
+    .meta {{ color: #666; margin-bottom: 20px; }}
+    .section {{ margin-top: 20px; }}
+    .summary {{ background: #f3f7ff; border-left: 4px solid #4a78ff; padding: 12px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+    th {{ background: #f6f6f6; }}
+    .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
+    .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; }}
+    .risk {{ background: #fff5f5; border-left: 4px solid #e05050; padding: 12px; }}
+  </style>
+</head>
+<body>
+  <h1>{title}</h1>
+  <div class="meta">生成时间：{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC</div>
+
+  <div class="section summary">
+    <h2>结论</h2>
+    <p>{conclusion}</p>
+  </div>
+
+  <div class="section">
+    <h2>情景估值结果</h2>
+    <table>
+      <thead>
+        <tr><th>Scenario</th><th>Enterprise Value</th><th>Equity Value</th><th>Per Share</th></tr>
+      </thead>
+      <tbody>{table_html}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>论据明细（Base情景）</h2>
+    <div class="cards">{evidence_block}</div>
+  </div>
+
+  <div class="section risk">
+    <h2>关键风险提示</h2>
+    <ul>{flags_html}</ul>
+  </div>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run SOTP valuation agent.")
     parser.add_argument(
@@ -476,6 +656,10 @@ if __name__ == "__main__":
         default="json",
         help="Output format for scenario modes.",
     )
+    parser.add_argument(
+        "--report-out",
+        help="Output path for visual HTML report (e.g. ./sotp_report.html).",
+    )
     args = parser.parse_args()
 
     is_scenario_mode = False
@@ -500,7 +684,10 @@ if __name__ == "__main__":
             "python sotp_valuation_agent.py --hybrid-scenarios-payload '<json-payload>'"
         )
 
-    if args.output_format == "json":
+    if args.report_out:
+        generate_visual_report(result, args.report_out)
+        print(f"Visual report generated: {args.report_out}")
+    elif args.output_format == "json":
         print(json.dumps(result, indent=2, ensure_ascii=False))
     elif args.output_format == "table":
         if not is_scenario_mode:
