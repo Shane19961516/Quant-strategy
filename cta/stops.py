@@ -107,12 +107,13 @@ def apply_atr_stop(
                     exit_px = stop
 
             if hit:
-                # 止损价（或跳空开盘价）相对昨收，截断亏损
-                if not np.isnan(prev_close) and prev_close != 0:
+                # 连续主力合约开盘含换月伪跳，统一按止损价结算（截断亏损、避免伪穿仓）
+                fill = stop if not np.isnan(stop) else exit_px
+                if not np.isnan(prev_close) and prev_close != 0 and not np.isnan(fill):
                     if pos > 0:
-                        stop_exit_ret[i] = exit_px / prev_close - 1.0
+                        stop_exit_ret[i] = fill / prev_close - 1.0
                     else:
-                        stop_exit_ret[i] = 1.0 - exit_px / prev_close
+                        stop_exit_ret[i] = 1.0 - fill / prev_close
                 pos = 0.0
                 entry = np.nan
                 stop = np.nan
