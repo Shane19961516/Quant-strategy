@@ -63,3 +63,39 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 将日收益率转换为设定频率的收益率，默认为6个月（披露完整持仓数据的报告期仅为半年报和年报），
 
 详见代码。
+
+
+五.期货量化 CTA 策略
+------
+
+新增 `cta/` 模块：经典趋势跟踪 CTA（Commodity Trading Advisor）多品种回测框架。
+
+### 策略逻辑
+1. **信号**：双均线交叉、唐奇安通道突破（海龟）、时间序列动量（TSMOM），以及三者合成（`combo`）
+2. **仓位**：单品种波动率目标（`weight = signal × target_vol / σ`）
+3. **组合**：截面等风险归一 + 组合波动再缩放；T+1 成交，扣除手续费与滑点
+
+### 快速运行
+```bash
+pip install pandas numpy matplotlib
+python -m cta.run_demo --compare --plot
+# 或
+python cta_futures_strategy.py --method combo --plot
+```
+
+默认使用合成期货日线（IF/RB/AU/CU/C/M/SC/TA）。若有真实数据，将各品种 CSV（含 `date,open,high,low,close`）放入目录后：
+```bash
+python -m cta.run_demo --data-dir /path/to/futures_csv --method donchian --plot
+```
+
+结果输出至 `cta_result/`（净值、权重、信号、绩效摘要、对比表与回撤图）。
+
+### 模块说明
+| 文件 | 作用 |
+|------|------|
+| `cta/signals.py` | 双均线 / 唐奇安 / TSMOM / 信号合成 |
+| `cta/risk.py` | ATR、波动率目标仓位、组合波动缩放 |
+| `cta/backtest.py` | 多品种回测引擎 `CTABacktester` |
+| `cta/metrics.py` | 夏普、索提诺、最大回撤、卡玛等 |
+| `cta/data.py` | 合成数据与 CSV 加载 |
+| `cta/run_demo.py` | 命令行演示入口 |
