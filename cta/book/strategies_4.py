@@ -209,22 +209,22 @@ def select_near_deferred(
     dt: pd.Timestamp,
     cfg: CalendarConfig,
 ) -> Optional[Tuple[str, str]]:
-    """选近月+次近月：到期日晚于 dt+roll_days，且当日流动性达标，按到期日排序取前两名。"""
+    """选近月+次近月：名义到期晚于 dt+roll_days，当日有行情且流动性达标，按到期排序取前两名。"""
     cands = []
     for code, df in contracts.items():
         exp = parse_contract_ym(code)
         if exp is None:
             continue
-        # 用数据末日与名义到期取较早者，避免已摘牌合约
-        last = df.index.max()
-        eff_exp = min(exp, last)
-        if eff_exp <= dt + pd.Timedelta(days=cfg.roll_days):
+        if exp <= dt + pd.Timedelta(days=cfg.roll_days):
+            continue
+        # 合约数据已结束则跳过
+        if dt > df.index.max():
             continue
         if not _liquid_ok(df, dt, cfg):
             continue
         if dt not in df.index or pd.isna(df.loc[dt, "close"]):
             continue
-        cands.append((eff_exp, code))
+        cands.append((exp, code))
     if len(cands) < 2:
         return None
     cands.sort(key=lambda x: (x[0], x[1]))
@@ -312,43 +312,45 @@ def _backtest_symbol_calendar(
     pos = 0.0
     prev_near_px = prev_def_px = np.nan
 
-    for i, dt in enumerate(idx):
+    for dt in idx:
         need_roll = False
-        liquidity_fail = False
+        hold_flat = False  # 临时缺行情/流动性：平仓但保留合约对
+
         if near is None or deferred is None:
             need_roll = True
         else:
             exp = parse_contract_ym(near)
-            last = contracts[near].index.max()
-            eff = min(exp, last) if exp is not None else last
-            if eff <= dt + pd.Timedelta(days=cfg.roll_days):
+            near_last = contracts[near].index.max()
+            # 仅按名义到期 / 合约摘牌移仓，避免数据缺口导致每日重选
+            if exp is not None and exp <= dt + pd.Timedelta(days=cfg.roll_days):
+                need_roll = True
+            elif dt > near_last:
                 need_roll = True
             elif dt not in contracts[near].index or dt not in contracts[deferred].index:
-                need_roll = True
+                hold_flat = True
             elif not (
                 _liquid_ok(contracts[near], dt, cfg) and _liquid_ok(contracts[deferred], dt, cfg)
             ):
-                # 流动性不足：只平仓，不换合约对（避免频繁重置 z）
-                liquidity_fail = True
+                hold_flat = True
 
-        # 先用旧合约对结算昨仓盈亏（收盘换仓：今日盈亏对应昨收仓位）
+        # 昨仓盈亏（收盘换仓）
         pnl = 0.0
-        if pos != 0.0 and near is not None and deferred is not None:
-            if dt in contracts[near].index and dt in contracts[deferred].index:
-                pn = float(contracts[near].loc[dt, "close"])
-                pd_ = float(contracts[deferred].loc[dt, "close"])
-                if not np.isnan(prev_near_px) and not np.isnan(prev_def_px):
-                    # pos=+1: 多近空远；每手点值盈亏 = mult * (Δnear - Δdeferred) * pos
-                    pnl = mult * ((pn - prev_near_px) - (pd_ - prev_def_px)) * pos
-                prev_near_px, prev_def_px = pn, pd_
-            else:
-                # 缺行情：强制平仓，不计跳价
-                pos = 0.0
-                prev_near_px = prev_def_px = np.nan
+        if (
+            pos != 0.0
+            and near is not None
+            and deferred is not None
+            and dt in contracts[near].index
+            and dt in contracts[deferred].index
+            and not np.isnan(prev_near_px)
+            and not np.isnan(prev_def_px)
+        ):
+            pn = float(contracts[near].loc[dt, "close"])
+            pd_ = float(contracts[deferred].loc[dt, "close"])
+            pnl = mult * ((pn - prev_near_px) - (pd_ - prev_def_px)) * pos
+            prev_near_px, prev_def_px = pn, pd_
 
         rolled = False
         if need_roll:
-            # 移仓：平旧仓（盈亏已用旧合约计），新对需重新积累 z 窗口
             pos = 0.0
             pair = select_near_deferred(contracts, dt, cfg)
             if pair is None:
@@ -364,25 +366,62 @@ def _backtest_symbol_calendar(
                         "near": "",
                         "deferred": "",
                         "spread": np.nan,
-                        "roll": 1.0,
+                        "roll": 0.0,  # 无可用合约对，不是移仓
                     }
                 )
                 continue
-            near, deferred = pair
-            spread_buf = []
-            rolled = True
+            new_near, new_def = pair
+            # 同一对重复“移仓”不重置 z（防止边界日抖动）
+            if (new_near, new_def) != (near, deferred):
+                near, deferred = new_near, new_def
+                spread_buf = []
+                rolled = True
+            else:
+                near, deferred = new_near, new_def
             pn = float(contracts[near].loc[dt, "close"])
             pd_ = float(contracts[deferred].loc[dt, "close"])
             prev_near_px, prev_def_px = pn, pd_
 
-        # 更新价差与信号（同一合约对内连续）
+        if near is None or deferred is None:
+            rows.append(
+                {
+                    "date": dt,
+                    "pos": 0.0,
+                    "pnl_per_lot": pnl,
+                    "margin_per_lot": 0.0,
+                    "near": "",
+                    "deferred": "",
+                    "spread": np.nan,
+                    "roll": float(rolled),
+                }
+            )
+            continue
+
+        if dt not in contracts[near].index or dt not in contracts[deferred].index:
+            # 保留合约对，当日空仓
+            pos = 0.0
+            rows.append(
+                {
+                    "date": dt,
+                    "pos": 0.0,
+                    "pnl_per_lot": pnl,
+                    "margin_per_lot": 0.0,
+                    "near": near,
+                    "deferred": deferred,
+                    "spread": np.nan,
+                    "roll": float(rolled),
+                }
+            )
+            continue
+
         pn = float(contracts[near].loc[dt, "close"])
         pd_ = float(contracts[deferred].loc[dt, "close"])
         spr = pn - pd_
+
         if rolled:
             spread_buf = [spr]
             pos = 0.0
-        elif liquidity_fail:
+        elif hold_flat:
             pos = 0.0
             spread_buf.append(spr)
             prev_near_px, prev_def_px = pn, pd_
@@ -408,8 +447,8 @@ def _backtest_symbol_calendar(
                 "pos": pos,
                 "pnl_per_lot": pnl,
                 "margin_per_lot": margin_lot if pos != 0 else 0.0,
-                "near": near or "",
-                "deferred": deferred or "",
+                "near": near,
+                "deferred": deferred,
                 "spread": spr,
                 "roll": float(rolled),
             }
