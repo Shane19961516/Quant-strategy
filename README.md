@@ -75,7 +75,7 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 每个候选参数强制叠加：
 - **ATR 初始止损**：入场价 ± `atr_mult * ATR`
 - **ATR 跟踪止损**：沿有利方向收紧，`trail_mult` 通常宽于初始止损
-- 止损日按止损价（跳空则按开盘）结算，不用 close-to-close 穿仓
+- 止损日按止损价结算（连续主力合约开盘含换月伪跳，不用开盘价穿仓）
 
 入口：`cta/stops.py`；参数网格含 `atr_mult ∈ {1.5, 2.0, 2.5, 3.0}`。
 
