@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """策略四（实盘口径）：跨期价差套利。
 
-相对旧版的关键改动：
-1. 不再每日按持仓量重选主/次（避免价差跳变虚增收益）
-2. 选定近月+次近月后固定持有，临近交割强制移仓
-3. 流动性过滤（成交量/持仓）
-4. 按合约乘数与保证金率计手数；跨期保证金按两腿折扣
-5. 远月更高滑点；换月日用旧合约对结算盈亏
+相对旧版 / 对照主流做法：
+1. 固定近月+次近月（不按持仓量日更），交割前移仓
+2. 只做流动性好的黑色+铜（RB/HC/I/CU），不做全市场乱扫
+3. 价差滚动 z 均值回归 + 成本门槛 + 半衰期过滤
+4. 按合约乘数/保证金率计手数；远月更高滑点
+5. 纯利率持有成本带在商品上实测失效（缺仓储/便利收益），故不用
 """
 
 from __future__ import annotations
@@ -47,20 +47,40 @@ CONTRACT_MONTHS = {k: v["months"] for k, v in CONTRACT_SPEC.items()}
 
 @dataclass
 class CalendarConfig:
+    """跨期实盘参数（对齐主流商品跨期做法）。
+
+    信号：固定近/远月价差的滚动 z 均值回归（牛/熊市套利）。
+    落地关键不在复杂信号，而在：
+    1) 只做流动性好、价差相对平稳的品种（黑色+铜）
+    2) 固定合约对 + 交割前移仓
+    3) 成本/滑点覆盖后再开仓
+    4) 半衰期过滤（价差若近似随机游走则不做）
+    """
+
     z_window: int = 20
     entry_z: float = 2.0
     exit_z: float = 0.0
     stop_z: float = 4.0
-    # 近月距最后交易日少于此日历天数则移仓
+    # 近月距名义到期少于此日历天数则移仓
     roll_days: int = 10
-    min_volume: float = 3000.0
-    min_oi: float = 8000.0
+    min_volume: float = 5000.0
+    min_oi: float = 10000.0
     # 跨期套利保证金 ≈ 两腿保证金之和 * 折扣
     spread_margin_coef: float = 0.70
-    near_cost_bps: float = 1.0
-    far_cost_bps: float = 3.0
-    # 排除品种（股指等）
-    exclude: Tuple[str, ...] = ("IF", "RU")
+    # 交易所组合单通常优于两腿拆单；仍对远月保守加点
+    near_cost_bps: float = 0.8
+    far_cost_bps: float = 2.0
+    # 开仓需覆盖约 cost_mult 倍双边成本（价格点）；0 关闭
+    cost_mult: float = 1.5
+    # 价差半衰期过滤默认关闭：滚动 HL 在短合约段上不稳定，易过度拒单
+    # 品种池本身已承担“可回归性”筛选；需要时可设 min/max_half_life
+    min_half_life: float = 0.0
+    max_half_life: float = 0.0
+    hl_lookback: int = 60
+    # 白名单：主流可交易跨期池（黑色+铜）；其余默认不做
+    allow: Tuple[str, ...] = ("RB", "HC", "I", "CU")
+    # 额外排除（与 allow 同时生效）
+    exclude: Tuple[str, ...] = ("IF", "RU", "AU", "SC", "MA", "Y", "C", "TA", "M")
 
 
 def _contract_codes(symbol: str, start_year: int = 2017, end_year: int = 2027) -> List[str]:
@@ -231,18 +251,43 @@ def select_near_deferred(
     return cands[0][1], cands[1][1]
 
 
+def _half_life_ar1(x: np.ndarray) -> float:
+    """OU/AR(1) 半衰期（样本不足或非均值回归时返回 nan）。"""
+    if x is None or len(x) < 20:
+        return float("nan")
+    s = pd.Series(x, dtype=float).dropna()
+    if len(s) < 20:
+        return float("nan")
+    lag = s.shift(1)
+    d = s.diff()
+    df = pd.concat([d, lag], axis=1).dropna()
+    df.columns = ["d", "lag"]
+    if float(df["lag"].var()) < 1e-12:
+        return float("nan")
+    b = float(np.polyfit(df["lag"].to_numpy(), df["d"].to_numpy(), 1)[0])
+    if b >= 0:
+        return float("nan")
+    return float(-np.log(2.0) / b)
+
+
 def calendar_spread_signal_on_series(
     spread: np.ndarray,
     window: int = 20,
     entry_z: float = 2.0,
     exit_z: float = 0.0,
     stop_z: float = 4.0,
+    near_px: Optional[np.ndarray] = None,
+    near_cost_bps: float = 0.0,
+    far_cost_bps: float = 0.0,
+    cost_mult: float = 0.0,
+    min_half_life: float = 0.0,
+    max_half_life: float = 0.0,
+    hl_lookback: int = 60,
 ) -> np.ndarray:
-    """对连续同一合约对的价差序列生成仓位（内部用）。"""
+    """固定合约对上的价差 z 回归信号（可加成本门槛与半衰期过滤）。"""
     n = len(spread)
     out = np.zeros(n, dtype=float)
     pos = 0.0
-    # 简单滚动；样本不足时不开仓
     for i in range(n):
         if i + 1 < window:
             out[i] = 0.0
@@ -260,10 +305,35 @@ def calendar_spread_signal_on_series(
             pos = 0.0
             continue
         z = (spread[i] - mu) / sd
+
+        # 半衰期：仅约束新开仓
+        allow_entry = True
+        if min_half_life > 0 or max_half_life > 0:
+            lb = max(hl_lookback, window)
+            if i + 1 >= lb:
+                hl = _half_life_ar1(spread[i + 1 - lb : i + 1])
+                if np.isnan(hl):
+                    allow_entry = False
+                else:
+                    if min_half_life > 0 and hl < min_half_life:
+                        allow_entry = False
+                    if max_half_life > 0 and hl > max_half_life:
+                        allow_entry = False
+            else:
+                allow_entry = False
+
+        # 成本门槛：偏离均值需覆盖双边成本
+        if allow_entry and cost_mult > 0 and near_px is not None and i < len(near_px):
+            px = float(near_px[i])
+            if px > 0:
+                rt_cost = px * ((near_cost_bps + far_cost_bps) / 10000.0) * 2.0
+                if abs(spread[i] - mu) < cost_mult * rt_cost:
+                    allow_entry = False
+
         if pos == 0.0:
-            if z >= entry_z:
+            if allow_entry and z >= entry_z:
                 pos = -1.0
-            elif z <= -entry_z:
+            elif allow_entry and z <= -entry_z:
                 pos = 1.0
         else:
             if abs(z) >= stop_z:
@@ -309,6 +379,7 @@ def _backtest_symbol_calendar(
     rows = []
     near = deferred = None
     spread_buf: List[float] = []
+    near_px_buf: List[float] = []
     pos = 0.0
     prev_near_px = prev_def_px = np.nan
 
@@ -356,6 +427,7 @@ def _backtest_symbol_calendar(
             if pair is None:
                 near = deferred = None
                 spread_buf = []
+                near_px_buf = []
                 prev_near_px = prev_def_px = np.nan
                 rows.append(
                     {
@@ -375,6 +447,7 @@ def _backtest_symbol_calendar(
             if (new_near, new_def) != (near, deferred):
                 near, deferred = new_near, new_def
                 spread_buf = []
+                near_px_buf = []
                 rolled = True
             else:
                 near, deferred = new_near, new_def
@@ -420,13 +493,16 @@ def _backtest_symbol_calendar(
 
         if rolled:
             spread_buf = [spr]
+            near_px_buf = [pn]
             pos = 0.0
         elif hold_flat:
             pos = 0.0
             spread_buf.append(spr)
+            near_px_buf.append(pn)
             prev_near_px, prev_def_px = pn, pd_
         else:
             spread_buf.append(spr)
+            near_px_buf.append(pn)
             if len(spread_buf) >= cfg.z_window:
                 sig_arr = calendar_spread_signal_on_series(
                     np.asarray(spread_buf, dtype=float),
@@ -434,6 +510,13 @@ def _backtest_symbol_calendar(
                     cfg.entry_z,
                     cfg.exit_z,
                     cfg.stop_z,
+                    near_px=np.asarray(near_px_buf, dtype=float),
+                    near_cost_bps=cfg.near_cost_bps,
+                    far_cost_bps=cfg.far_cost_bps,
+                    cost_mult=cfg.cost_mult,
+                    min_half_life=cfg.min_half_life,
+                    max_half_life=cfg.max_half_life,
+                    hl_lookback=cfg.hl_lookback,
                 )
                 pos = float(sig_arr[-1])
             else:
@@ -462,15 +545,19 @@ def build_calendar_book(
     cal_cfg: Optional[CalendarConfig] = None,
 ) -> Dict[str, pd.DataFrame]:
     cal_cfg = cal_cfg or CalendarConfig()
+    allow = {s.upper() for s in cal_cfg.allow} if cal_cfg.allow else None
     out = {}
     for sym, contracts in contract_store.items():
-        if sym in cal_cfg.exclude or sym not in CONTRACT_SPEC:
+        sym_u = sym.upper()
+        if sym_u in cal_cfg.exclude or sym_u not in CONTRACT_SPEC:
+            continue
+        if allow is not None and sym_u not in allow:
             continue
         if len(contracts) < 2:
             continue
-        df = _backtest_symbol_calendar(sym, contracts, cal_cfg)
+        df = _backtest_symbol_calendar(sym_u, contracts, cal_cfg)
         if not df.empty:
-            out[sym] = df
+            out[sym_u] = df
     return out
 
 
