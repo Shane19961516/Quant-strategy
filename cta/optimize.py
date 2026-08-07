@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""策略参数网格搜索：跨品种泛化 + 局部夏普稳定 + 样本外验证。
+"""策略参数网格搜索：跨品种/跨配对泛化 + 局部夏普稳定 + 样本外验证。
 
-所有候选参数都叠加 ATR 止损（趋势策略高赔率低胜率的必要组件）。
+默认策略集为套利/反转（pairs / bollinger / reversal）。
+趋势方法仍保留，但反转/配对使用内置回归出场 + z 止损，不再套 ATR 跟踪止盈。
 """
 
 from __future__ import annotations
@@ -14,8 +15,20 @@ import numpy as np
 import pandas as pd
 
 from .metrics import performance_summary
-from .signals import donchian_breakout_signal, dual_ma_signal, ts_momentum_signal
+from .pairs import build_pairs_symbol_signals, unit_pair_returns
+from .signals import (
+    bollinger_reversion_signal,
+    donchian_breakout_signal,
+    dual_ma_signal,
+    short_term_reversal_signal,
+    ts_momentum_signal,
+)
 from .stops import StopConfig, apply_atr_stop
+
+DEFAULT_METHODS = ("pairs", "bollinger", "reversal")
+TREND_METHODS = {"dual_ma", "donchian", "tsmom"}
+REVERSION_METHODS = {"bollinger", "reversal"}
+PAIR_METHODS = {"pairs"}
 
 
 @dataclass(frozen=True)
@@ -43,6 +56,24 @@ def build_raw_signal(method: str, ohlc: pd.DataFrame, params: Dict[str, float]) 
         )
     if method == "tsmom":
         return ts_momentum_signal(close, lookback=int(params["lookback"]), skip=int(params.get("skip", 1)))
+    if method == "bollinger":
+        return bollinger_reversion_signal(
+            close,
+            window=int(params["window"]),
+            n_std=float(params["n_std"]),
+            exit_z=float(params.get("exit_z", 0.0)),
+            stop_z=float(params["stop_z"]),
+        )
+    if method == "reversal":
+        return short_term_reversal_signal(
+            close,
+            lookback=int(params["lookback"]),
+            entry_z=float(params["entry_z"]),
+            exit_z=float(params.get("exit_z", 0.0)),
+            stop_z=float(params["stop_z"]),
+        )
+    if method == "pairs":
+        raise ValueError("pairs is cross-asset; use build_method_signal_frame")
     raise ValueError(method)
 
 
@@ -58,9 +89,17 @@ def _stop_config(params: Dict[str, float]) -> StopConfig:
     )
 
 
+def uses_atr_stop(method: str) -> bool:
+    return method in TREND_METHODS
+
+
 def build_stopped_signal(method: str, ohlc: pd.DataFrame, params: Dict[str, float]) -> pd.Series:
-    """原始信号 + ATR 止损/跟踪止损。"""
+    """单品种信号。趋势叠加 ATR 止损；反转用内置出场。"""
+    if method == "pairs":
+        raise ValueError("pairs is cross-asset; use build_method_signal_frame")
     raw = build_raw_signal(method, ohlc, params)
+    if not uses_atr_stop(method):
+        return raw.fillna(0.0)
     open_ = ohlc["open"] if "open" in ohlc.columns else None
     stopped, _, _ = apply_atr_stop(
         raw, ohlc["high"], ohlc["low"], ohlc["close"], _stop_config(params), open_=open_
@@ -71,13 +110,40 @@ def build_stopped_signal(method: str, ohlc: pd.DataFrame, params: Dict[str, floa
 def build_stopped_signal_with_exits(
     method: str, ohlc: pd.DataFrame, params: Dict[str, float]
 ) -> Tuple[pd.Series, pd.Series]:
-    """返回 (stopped_signal, stop_exit_ret)。"""
+    """返回 (signal, stop_exit_ret)。反转/配对无 ATR 止损日收益（全 NaN）。"""
+    if method == "pairs":
+        raise ValueError("pairs is cross-asset; use build_method_signal_frame")
     raw = build_raw_signal(method, ohlc, params)
+    if not uses_atr_stop(method):
+        empty = pd.Series(np.nan, index=ohlc.index, name="stop_exit_ret")
+        return raw.fillna(0.0), empty
     open_ = ohlc["open"] if "open" in ohlc.columns else None
     stopped, _, exit_ret = apply_atr_stop(
         raw, ohlc["high"], ohlc["low"], ohlc["close"], _stop_config(params), open_=open_
     )
     return stopped, exit_ret
+
+
+def build_method_signal_frame(
+    panels: Dict[str, pd.DataFrame],
+    method: str,
+    params: Dict[str, float],
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """统一出口：返回 (signals, stop_exit_ret) 两个 DataFrame。"""
+    if method == "pairs":
+        sig = build_pairs_symbol_signals(panels, params)
+        exits = pd.DataFrame(np.nan, index=sig.index, columns=sig.columns)
+        return sig, exits
+    sigs = {}
+    exits = {}
+    for sym, ohlc in panels.items():
+        s, e = build_stopped_signal_with_exits(method, ohlc, params)
+        sigs[sym] = s
+        exits[sym] = e
+    return (
+        pd.DataFrame(sigs).sort_index().fillna(0.0),
+        pd.DataFrame(exits).sort_index(),
+    )
 
 
 def unit_strategy_returns(
@@ -86,10 +152,14 @@ def unit_strategy_returns(
     params: Dict[str, float],
     cost_bps: float = 1.0,
 ) -> pd.DataFrame:
-    """各品种单位名义仓位（|w|=1）下的策略日收益，T+1。
+    """单位名义策略日收益。
 
-    若当日触发 ATR 止损，用止损价收益替换 close-to-close，避免穿仓高估亏损。
+    - 单品种方法：每列一个品种
+    - pairs：每列一个经济配对（美元中性）
     """
+    if method == "pairs":
+        return unit_pair_returns(panels, params, cost_bps=cost_bps)
+
     cols = {}
     for sym, ohlc in panels.items():
         sig, exit_ret = build_stopped_signal_with_exits(method, ohlc, params)
@@ -97,7 +167,6 @@ def unit_strategy_returns(
         ret = ohlc["close"].pct_change().fillna(0.0)
         ret = ret.mask(ret.abs() > 0.08, 0.0)
         traded = sig.shift(1).fillna(0.0)
-        # 止损日：持仓收益按止损价结算
         asset_pnl = traded * ret
         stop_hit = exit_ret.notna() & (traded != 0)
         asset_pnl = asset_pnl.where(~stop_hit, exit_ret)
@@ -112,11 +181,10 @@ def equal_weight_portfolio_returns(asset_strat_ret: pd.DataFrame) -> pd.Series:
 
 
 def param_grid(method: str) -> List[ParamSet]:
-    """信号参数 × 止损参数。网格控制规模以免过拟合搜索空间过大。"""
+    """信号参数网格。"""
     grids: List[ParamSet] = []
-    # 趋势策略：紧止损截断左尾，宽跟踪止损让利润奔跑
-    atr_grid = [1.5, 2.0, 2.5, 3.0]
     if method == "dual_ma":
+        atr_grid = [1.5, 2.0, 2.5, 3.0]
         for fast, slow, atr_m in product([10, 20, 30], [60, 100, 120], atr_grid):
             if fast < slow:
                 grids.append(
@@ -126,6 +194,7 @@ def param_grid(method: str) -> List[ParamSet]:
                     )
                 )
     elif method == "donchian":
+        atr_grid = [1.5, 2.0, 2.5, 3.0]
         for entry, exit_, atr_m in product([20, 40, 55], [10, 20], atr_grid):
             if exit_ < entry:
                 grids.append(
@@ -135,6 +204,7 @@ def param_grid(method: str) -> List[ParamSet]:
                     )
                 )
     elif method == "tsmom":
+        atr_grid = [1.5, 2.0, 2.5, 3.0]
         for lookback, atr_m in product([20, 60, 90, 120], atr_grid):
             grids.append(
                 ParamSet(
@@ -142,6 +212,34 @@ def param_grid(method: str) -> List[ParamSet]:
                     (("lookback", lookback), ("skip", 1), ("atr_mult", atr_m), ("trail_mult", atr_m + 1.0)),
                 )
             )
+    elif method == "bollinger":
+        for window, n_std, stop_z in product([10, 20, 40], [1.5, 2.0, 2.5], [3.0, 3.5, 4.0]):
+            if stop_z > n_std:
+                grids.append(
+                    ParamSet(
+                        "bollinger",
+                        (("window", window), ("n_std", n_std), ("exit_z", 0.0), ("stop_z", stop_z)),
+                    )
+                )
+    elif method == "reversal":
+        for lookback, entry_z, stop_z in product([3, 5, 10], [1.0, 1.5, 2.0], [2.5, 3.0, 3.5]):
+            if stop_z > entry_z:
+                grids.append(
+                    ParamSet(
+                        "reversal",
+                        (("lookback", lookback), ("entry_z", entry_z), ("exit_z", 0.0), ("stop_z", stop_z)),
+                    )
+                )
+    elif method == "pairs":
+        # 同一组参数用于全部经济配对（跨配对泛化）
+        for window, entry_z, stop_z in product([20, 40, 60, 90], [1.5, 2.0, 2.5], [3.0, 3.5, 4.0]):
+            if stop_z > entry_z:
+                grids.append(
+                    ParamSet(
+                        "pairs",
+                        (("window", window), ("entry_z", entry_z), ("exit_z", 0.0), ("stop_z", stop_z)),
+                    )
+                )
     else:
         raise ValueError(method)
     return grids
@@ -165,10 +263,15 @@ def _neighbor_keys(ps: ParamSet, all_sets: Sequence[ParamSet]) -> List[ParamSet]
                 "slow": 20,
                 "entry": 15,
                 "exit": 10,
-                "lookback": 30,
+                "lookback": 2 if ps.method == "reversal" else 30,
                 "skip": 4,
                 "atr_mult": 0.5,
                 "trail_mult": 0.5,
+                "window": 20,
+                "n_std": 0.5,
+                "entry_z": 0.5,
+                "exit_z": 0.25,
+                "stop_z": 0.5,
             }.get(k, 10)
             if abs(d0[k] - d1[k]) <= step * 1.01:
                 dist += 1
@@ -199,6 +302,10 @@ def optimize_strategy_params(
     max_local_sharpe_std: float = 0.40,
     cost_bps: float = 0.5,
 ) -> OptimizeResult:
+    # 配对数量少，正收益“腿”占比阈值略放宽
+    if method == "pairs" and min_positive_asset_frac > 0.4:
+        min_positive_asset_frac = 0.4
+
     grid = param_grid(method)
     train_end_ts = pd.Timestamp(train_end)
     valid_end_ts = pd.Timestamp(valid_end)
@@ -216,7 +323,7 @@ def optimize_strategy_params(
         tr_sum = performance_summary((1 + tr).cumprod(), tr)
         va_sum = performance_summary((1 + va).cumprod(), va)
         asset_tr = asset_ret.loc[:train_end_ts]
-        pos_frac = float((asset_tr.sum() > 0).mean())
+        pos_frac = float((asset_tr.sum() > 0).mean()) if asset_tr.shape[1] else 0.0
 
         rows.append(
             {
@@ -258,13 +365,13 @@ def optimize_strategy_params(
     ].copy()
 
     def _score(df: pd.DataFrame) -> pd.Series:
-        # 趋势策略更看重验证夏普与回撤控制
+        # 套利/反转更强调验证夏普与回撤
         return (
-            0.35 * df["train_sharpe"]
-            + 0.40 * df["valid_sharpe"]
+            0.30 * df["train_sharpe"]
+            + 0.45 * df["valid_sharpe"]
             + 0.10 * df["pos_asset_frac"]
-            - 0.30 * df["local_sharpe_std"]
-            - 0.15 * df["train_maxdd"].abs()
+            - 0.25 * df["local_sharpe_std"]
+            - 0.25 * df["train_maxdd"].abs()
             + 0.10 * np.clip(df["train_cagr"], -1, 1)
         )
 
@@ -288,5 +395,5 @@ def optimize_all_methods(
     methods: Optional[Iterable[str]] = None,
     **kwargs,
 ) -> Dict[str, OptimizeResult]:
-    methods = list(methods or ["dual_ma", "donchian", "tsmom"])
+    methods = list(methods or DEFAULT_METHODS)
     return {m: optimize_strategy_params(panels, m, **kwargs) for m in methods}

@@ -65,59 +65,48 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 详见代码。
 
 
-五.期货量化 CTA 策略
+五.期货量化策略（套利 / 反转）
 ------
 
-新增 `cta/` 模块。正确流程分两步：
+新增 `cta/` 模块。默认策略已从趋势 CTA 切换为 **配对套利 + 均值回归**：
 
-### 0) 趋势止损（必要组件）
-趋势 CTA 是**高赔率、低胜率**：必须截断亏损、让利润奔跑。
-每个候选参数强制叠加：
-- **ATR 初始止损**：入场价 ± `atr_mult * ATR`
-- **ATR 跟踪止损**：沿有利方向收紧，`trail_mult` 通常宽于初始止损
-- 止损日按止损价结算（连续主力合约开盘含换月伪跳，不用开盘价穿仓）
+### 0) 为何换方向
+趋势策略在本数据/杠杆设定下呈高赔率低胜率，组合 MaxDD 大、全样本难盈利。
+筛查显示：**有产业逻辑的价差配对**（尤其 RB-HC）夏普与回撤明显优于单边趋势/单品种反转。
 
-入口：`cta/stops.py`；参数网格含 `atr_mult ∈ {1.5, 2.0, 2.5, 3.0}`。
+### 1) 默认策略集
+| 方法 | 逻辑 | 止损 |
+|------|------|------|
+| `pairs` | 经济关联对数价差 z-score 套利 | \|z\|≥stop_z 离场 |
+| `bollinger` | 布林带均值回归 | \|z\|≥stop_z 离场 |
+| `reversal` | 短周期收益 z-score 反转 | \|z\|≥stop_z 离场 |
 
-报告口径用**交易回合**胜率/赔率（`trade_win_rate` / `trade_payoff`），不是日胜率。
+默认经济配对（非全市场挖矿）：
+`RB-HC`, `I-RB`, `Y-M`, `C-M`, `MA-TA`
 
-### 1) 参数寻优（先做）
-对 dual_ma / donchian / tsmom **各自**做网格搜索，要求：
-- **同一组参数**用于全部品种（跨品种泛化）
-- 训练期组合收益为正、夏普达标；正收益品种占比达标
-- **局部夏普稳定**：参数邻域夏普波动不大（抑制过拟合）
-- 验证集夏普/收益不过度恶化
+同一组参数用于全部配对/品种（跨截面泛化）+ 训练/验证分割 + 局部夏普稳定。
 
-入口：`cta/optimize.py`
-
-### 2) 仓位控制（后做）
-在最优参数信号上施加：
+### 2) 仓位控制
 - 单品种 **10 倍杠杆** ⇒ 保证金 = |名义|/10
 - **总保证金 ≤ 30%**（总名义杠杆 ≤ 3x）
 - 滚动相关性 **> 0.5** 归为同一类；**每类保证金 ≤ 10%**
 - 滚动 **180 日历史 95% 单日 VaR ≤ 3%**
 
-入口：`cta/portfolio_risk.py` + `cta/pipeline.py`
-
 ### 数据源（akshare）
-新浪主力连续日线（`RB0`/`CU0`/…），缓存目录 `cta_data_akshare/`。
+新浪主力连续日线，缓存目录 `cta_data_akshare/`。
 
 ```bash
 pip install -r requirements-cta.txt
 python -m cta.run_pipeline --data-dir cta_data_akshare --plot
-# 或在线拉取
-python -m cta.run_pipeline --akshare --plot
 ```
 
 ### 模块说明
 | 文件 | 作用 |
 |------|------|
-| `cta/akshare_data.py` | akshare 主力连续拉取与缓存 |
-| `cta/stops.py` | ATR 初始止损 + 跟踪止损 + 交易胜率/赔率 |
-| `cta/optimize.py` | 跨品种稳健参数寻优（含止损参数） |
+| `cta/pairs.py` | 经济配对价差 z-score 套利 |
+| `cta/signals.py` | 布林反转 / 短周期反转 / 趋势信号 |
+| `cta/stops.py` | 趋势用 ATR 止损（可选方法） |
+| `cta/optimize.py` | 跨品种/跨配对稳健参数寻优 |
 | `cta/portfolio_risk.py` | 保证金 / 相关性聚类 / 滚动 VaR |
-| `cta/pipeline.py` | 寻优 → 止损信号 → 仓位 主流程 |
+| `cta/pipeline.py` | 寻优 → 信号 → 仓位 主流程 |
 | `cta/run_pipeline.py` | 命令行入口 |
-| `cta/signals.py` | 双均线 / 唐奇安 / TSMOM |
-| `cta/metrics.py` | 绩效指标 |
-| `cta/data.py` | 合成数据与 CSV 加载 |

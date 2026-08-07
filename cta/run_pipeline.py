@@ -81,7 +81,15 @@ def _plot_total_nav(result: PipelineResult, path: str) -> None:
 
 def _plot_strategy_nav(result: PipelineResult, path: str) -> None:
     """各策略 NAV + 总资金 NAV 对比，并标注最大回撤。"""
-    colors = {"dual_ma": "#2a9d8f", "donchian": "#e9c46a", "tsmom": "#e76f51", "NAV": "#1f4e79"}
+    colors = {
+        "pairs": "#2a9d8f",
+        "bollinger": "#e9c46a",
+        "reversal": "#e76f51",
+        "dual_ma": "#8ab17d",
+        "donchian": "#f4a261",
+        "tsmom": "#264653",
+        "NAV": "#1f4e79",
+    }
     fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1.4]})
 
     for col in result.sleeve_nav.columns:
@@ -187,7 +195,7 @@ def main(argv=None) -> int:
         corr_window=args.var_window,
     )
 
-    print("开始参数寻优（跨品种泛化 + 局部夏普稳定 + 验证集）...")
+    print("开始参数寻优（套利/反转：跨配对或跨品种泛化 + 验证集）...")
     result = run_cta_pipeline(
         panels,
         train_end=args.train_end,

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CTA 信号：双均线、唐奇安通道突破、时间序列动量。"""
+"""CTA 信号：趋势、布林反转、短周期反转。"""
 
 from __future__ import annotations
 
@@ -89,6 +89,81 @@ def ts_momentum_signal(
     signal = signal.where(mom.notna(), np.nan)
     signal = signal.replace(0.0, 0.0)
     return signal.rename("signal")
+
+
+def bollinger_reversion_signal(
+    close: pd.Series,
+    window: int = 20,
+    n_std: float = 2.0,
+    exit_z: float = 0.0,
+    stop_z: float = 3.5,
+) -> pd.Series:
+    """布林带均值回归：上轨外做空、下轨外做多，回到均值平仓；过远止损。"""
+    if stop_z <= n_std:
+        raise ValueError("stop_z must be > n_std")
+    ma = close.rolling(window, min_periods=window).mean()
+    sd = close.rolling(window, min_periods=window).std()
+    z = ((close - ma) / sd.replace(0.0, np.nan)).to_numpy(dtype=float)
+    n = len(close)
+    out = np.zeros(n, dtype=float)
+    pos = 0.0
+    for i in range(n):
+        zi = z[i]
+        if np.isnan(zi):
+            out[i] = 0.0
+            continue
+        if pos == 0.0:
+            if zi >= n_std:
+                pos = -1.0
+            elif zi <= -n_std:
+                pos = 1.0
+        else:
+            if abs(zi) >= stop_z:
+                pos = 0.0
+            elif pos > 0 and zi >= exit_z:
+                pos = 0.0
+            elif pos < 0 and zi <= -exit_z:
+                pos = 0.0
+        out[i] = pos
+    return pd.Series(out, index=close.index, name="signal")
+
+
+def short_term_reversal_signal(
+    close: pd.Series,
+    lookback: int = 5,
+    entry_z: float = 1.5,
+    exit_z: float = 0.0,
+    stop_z: float = 3.0,
+) -> pd.Series:
+    """短周期收益 z-score 反转：大涨后做空、大跌后做多。"""
+    if stop_z <= entry_z:
+        raise ValueError("stop_z must be > entry_z")
+    ret = close.pct_change(lookback)
+    mu = ret.rolling(60, min_periods=30).mean()
+    sd = ret.rolling(60, min_periods=30).std()
+    z = ((ret - mu) / sd.replace(0.0, np.nan)).to_numpy(dtype=float)
+    n = len(close)
+    out = np.zeros(n, dtype=float)
+    pos = 0.0
+    for i in range(n):
+        zi = z[i]
+        if np.isnan(zi):
+            out[i] = 0.0
+            continue
+        if pos == 0.0:
+            if zi >= entry_z:
+                pos = -1.0
+            elif zi <= -entry_z:
+                pos = 1.0
+        else:
+            if abs(zi) >= stop_z:
+                pos = 0.0
+            elif pos > 0 and zi >= exit_z:
+                pos = 0.0
+            elif pos < 0 and zi <= -exit_z:
+                pos = 0.0
+        out[i] = pos
+    return pd.Series(out, index=close.index, name="signal")
 
 
 def combine_signals(

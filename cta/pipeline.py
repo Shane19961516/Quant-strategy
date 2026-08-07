@@ -11,9 +11,10 @@ import pandas as pd
 
 from .metrics import performance_summary
 from .optimize import (
+    DEFAULT_METHODS,
     OptimizeResult,
+    build_method_signal_frame,
     build_stopped_signal,
-    build_stopped_signal_with_exits,
     optimize_all_methods,
     unit_strategy_returns,
 )
@@ -22,7 +23,7 @@ from .stops import aggregate_trade_stats
 
 
 def _signal(method: str, ohlc: pd.DataFrame, params: Dict) -> pd.Series:
-    """带 ATR 止损的趋势信号。"""
+    """单品种信号（pairs 请用 build_method_signal_frame）。"""
     return build_stopped_signal(method, ohlc, params)
 
 
@@ -81,10 +82,8 @@ def build_method_signals(
     method: str,
     params: Dict,
 ) -> pd.DataFrame:
-    data = {}
-    for sym, ohlc in panels.items():
-        data[sym] = _signal(method, ohlc, params)
-    return pd.DataFrame(data).sort_index().fillna(0.0)
+    sig, _ = build_method_signal_frame(panels, method, params)
+    return sig
 
 
 def build_method_signals_and_exits(
@@ -92,16 +91,7 @@ def build_method_signals_and_exits(
     method: str,
     params: Dict,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    sigs = {}
-    exits = {}
-    for sym, ohlc in panels.items():
-        s, e = build_stopped_signal_with_exits(method, ohlc, params)
-        sigs[sym] = s
-        exits[sym] = e
-    return (
-        pd.DataFrame(sigs).sort_index().fillna(0.0),
-        pd.DataFrame(exits).sort_index(),
-    )
+    return build_method_signal_frame(panels, method, params)
 
 
 def _adjust_returns_for_stops(
@@ -133,7 +123,7 @@ def run_cta_pipeline(
     precomputed_optim: Optional[Dict[str, OptimizeResult]] = None,
 ) -> PipelineResult:
     """主流程。"""
-    methods = methods or ["dual_ma", "donchian", "tsmom"]
+    methods = methods or list(DEFAULT_METHODS)
     limits = limits or MarginVaRLimits()
 
     optim = precomputed_optim or optimize_all_methods(
