@@ -30,15 +30,46 @@ def _load_panels(data_dir: str):
 
 def _plot(result, out_dir: str) -> None:
     os.makedirs(out_dir, exist_ok=True)
+    s1r = float(result.summary_s1["total_return"])
+    s3r = float(result.summary_s3["total_return"])
+    s4r = float(result.summary_s4["total_return"])
+    st = result.summary_total
+
     fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1.3]})
-    axes[0].plot(result.nav_total.index, result.nav_total.values, color="#1f4e79", lw=2.0, label="Total NAV")
-    axes[0].plot(result.nav_s1.index, result.nav_s1.values, lw=1.2, alpha=0.9, label="S1 MA14/16+")
-    axes[0].plot(result.nav_s3.index, result.nav_s3.values, lw=1.2, alpha=0.9, label="S3 Corr pairs")
-    axes[0].plot(result.nav_s4.index, result.nav_s4.values, lw=1.2, alpha=0.9, label="S4 Calendar")
-    axes[0].set_title("Three-Strategy Book NAV (S2 removed, capital=1e6)")
+    axes[0].plot(
+        result.nav_total.index,
+        result.nav_total.values,
+        color="#1f4e79",
+        lw=2.2,
+        label=f"Total  {st['total_return']:+.1%}",
+    )
+    axes[0].plot(
+        result.nav_s1.index,
+        result.nav_s1.values,
+        lw=1.2,
+        alpha=0.9,
+        label=f"S1 MA+  {s1r:+.1%}",
+    )
+    axes[0].plot(
+        result.nav_s3.index,
+        result.nav_s3.values,
+        lw=1.2,
+        alpha=0.9,
+        label=f"S3 Corr  {s3r:+.1%}",
+    )
+    axes[0].plot(
+        result.nav_s4.index,
+        result.nav_s4.values,
+        lw=1.4,
+        alpha=0.95,
+        color="#2a9d8f",
+        label=f"S4 Calendar  {s4r:+.1%}",
+    )
+    axes[0].set_title(
+        "Book NAV (each sleeve = PnL / total capital; Total compounds r1+r3+r4)"
+    )
     axes[0].legend(loc="upper left", fontsize=8)
     axes[0].grid(True, alpha=0.3)
-    st = result.summary_total
     axes[0].text(
         0.99,
         0.04,
@@ -59,16 +90,27 @@ def _plot(result, out_dir: str) -> None:
     fig.savefig(os.path.join(out_dir, "nav_book.png"), dpi=150)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    for name, series, color in [
-        ("S1 MA+", result.nav_s1, "#2a9d8f"),
-        ("S3 Corr", result.nav_s3, "#e76f51"),
-        ("S4 Calendar", result.nav_s4, "#264653"),
+    # 分策略图：图例带累计收益，避免 S4「看起来很平」被误读
+    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, gridspec_kw={"height_ratios": [2.2, 1.4]})
+    for name, series, color, ret in [
+        ("S1 MA+", result.nav_s1, "#2a9d8f", s1r),
+        ("S3 Corr", result.nav_s3, "#e76f51", s3r),
+        ("S4 Calendar", result.nav_s4, "#264653", s4r),
     ]:
-        ax.plot(series.index, series.values, label=name, color=color, lw=1.4)
-    ax.set_title("Per-strategy NAV (return on total capital)")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+        axes[0].plot(series.index, series.values, label=f"{name}  {ret:+.1%}", color=color, lw=1.5)
+    axes[0].set_title("Per-strategy NAV on total capital (1.0 = flat)")
+    axes[0].legend(loc="upper left", fontsize=9)
+    axes[0].grid(True, alpha=0.3)
+    axes[0].axhline(1.0, color="#999", lw=0.8, ls="--")
+
+    # S4 单独放大，避免被 S1/S3 尺度淹没
+    axes[1].plot(result.nav_s4.index, result.nav_s4.values, color="#264653", lw=1.8, label=f"S4 only  {s4r:+.1%}")
+    axes[1].fill_between(result.nav_s4.index, 1.0, result.nav_s4.values, alpha=0.25, color="#264653")
+    axes[1].axhline(1.0, color="#999", lw=0.8, ls="--")
+    axes[1].set_ylabel("S4 NAV")
+    axes[1].set_title("S4 zoom (same series, own scale)")
+    axes[1].legend(loc="upper left", fontsize=9)
+    axes[1].grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "nav_strategies.png"), dpi=150)
     plt.close(fig)
