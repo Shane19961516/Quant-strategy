@@ -1,27 +1,28 @@
 # -*- coding: utf-8 -*-
 """期货量化 CTA 策略框架。
 
-经典趋势跟踪（CTA）组合：信号生成、波动率目标仓位、仓位管理风控、多品种回测与绩效评估。
+流程：跨品种稳健参数寻优 → 多策略信号 → 保证金/相关性/VaR 仓位控制。
 """
 
 from .signals import dual_ma_signal, donchian_breakout_signal, ts_momentum_signal
-from .risk import volatility_target_weights, atr_position_size
-from .backtest import CTABacktester, BacktestResult
+from .optimize import optimize_strategy_params, optimize_all_methods
+from .portfolio_risk import MarginVaRLimits, apply_margin_var_controls, correlation_clusters
+from .pipeline import run_cta_pipeline, PipelineResult
 from .metrics import performance_summary
 from .data import generate_synthetic_futures, load_futures_csv
-from .position_manager import RiskLimits, apply_position_manager
 
 __all__ = [
     "dual_ma_signal",
     "donchian_breakout_signal",
     "ts_momentum_signal",
-    "volatility_target_weights",
-    "atr_position_size",
-    "CTABacktester",
-    "BacktestResult",
+    "optimize_strategy_params",
+    "optimize_all_methods",
+    "MarginVaRLimits",
+    "apply_margin_var_controls",
+    "correlation_clusters",
+    "run_cta_pipeline",
+    "PipelineResult",
     "performance_summary",
     "generate_synthetic_futures",
     "load_futures_csv",
-    "RiskLimits",
-    "apply_position_manager",
 ]

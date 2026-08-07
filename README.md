@@ -68,44 +68,44 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 五.期货量化 CTA 策略
 ------
 
-新增 `cta/` 模块：经典趋势跟踪 CTA（Commodity Trading Advisor）多品种回测框架。
+新增 `cta/` 模块。正确流程分两步：
 
-### 策略逻辑
-1. **信号**：双均线交叉、唐奇安通道突破（海龟）、时间序列动量（TSMOM），以及三者合成（`combo`）
-2. **仓位**：单品种波动率目标（`weight = signal × target_vol / σ`）
-3. **组合**：截面等风险归一 + 组合波动再缩放；T+1 成交，扣除手续费与滑点
-4. **仓位管理 / 硬风控**（默认开启）：
-   - 风险预算：按 2.5σ 预估压缩杠杆，控制单日尾部亏损
-   - 回撤降仓：回撤超过 4% 后线性降仓
-   - 单日最大亏损 ≤ **3%**（组合止损）
-   - 策略最大回撤 ≤ **8%**（净值地板，相对历史高点）
+### 1) 参数寻优（先做）
+对 dual_ma / donchian / tsmom **各自**做网格搜索，要求：
+- **同一组参数**用于全部品种（跨品种泛化）
+- 训练期组合收益为正、夏普达标；正收益品种占比达标
+- **局部夏普稳定**：参数邻域夏普波动不大（抑制过拟合）
+- 验证集夏普/收益不过度恶化
+
+入口：`cta/optimize.py`
+
+### 2) 仓位控制（后做）
+在最优参数信号上施加：
+- 单品种 **10 倍杠杆** ⇒ 保证金 = |名义|/10
+- **总保证金 ≤ 30%**（总名义杠杆 ≤ 3x）
+- 滚动相关性 **> 0.5** 归为同一类；**每类保证金 ≤ 10%**
+- 滚动 **180 日历史 95% 单日 VaR ≤ 3%**
+
+入口：`cta/portfolio_risk.py` + `cta/pipeline.py`
 
 ### 数据源（akshare）
-默认通过 akshare 新浪接口拉取国内期货**主力连续**日线（`RB0`/`CU0`/…），失败时可回退东财。
+新浪主力连续日线（`RB0`/`CU0`/…），缓存目录 `cta_data_akshare/`。
 
 ```bash
 pip install -r requirements-cta.txt
-# 拉取真实数据并回测（缓存至 cta_data_akshare/）
-python -m cta.run_demo --akshare --compare --plot
-# 使用已缓存数据
-python -m cta.run_demo --data-dir cta_data_akshare --method donchian --plot
+python -m cta.run_pipeline --data-dir cta_data_akshare --plot
+# 或在线拉取
+python -m cta.run_pipeline --akshare --plot
 ```
-
-### 风控目标（真实数据回测）
-在 13 个主力连续品种（2018–2026）上，四种信号均满足：
-- 单日最大亏损 ≤ 3%
-- 最大回撤 ≤ 8%
-
-结果输出至 `cta_result/`（净值、权重、信号、绩效摘要、风控诊断与回撤图）。
 
 ### 模块说明
 | 文件 | 作用 |
 |------|------|
 | `cta/akshare_data.py` | akshare 主力连续拉取与缓存 |
-| `cta/signals.py` | 双均线 / 唐奇安 / TSMOM / 信号合成 |
-| `cta/risk.py` | ATR、波动率目标仓位、组合波动缩放 |
-| `cta/position_manager.py` | 仓位管理：风险预算、回撤降仓、硬止损 |
-| `cta/backtest.py` | 多品种回测引擎 `CTABacktester` |
-| `cta/metrics.py` | 夏普、回撤、单日亏损等 |
+| `cta/optimize.py` | 跨品种稳健参数寻优 |
+| `cta/portfolio_risk.py` | 保证金 / 相关性聚类 / 滚动 VaR |
+| `cta/pipeline.py` | 寻优 → 信号 → 仓位 主流程 |
+| `cta/run_pipeline.py` | 命令行入口 |
+| `cta/signals.py` | 双均线 / 唐奇安 / TSMOM |
+| `cta/metrics.py` | 绩效指标 |
 | `cta/data.py` | 合成数据与 CSV 加载 |
-| `cta/run_demo.py` | 命令行演示入口 |

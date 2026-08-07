@@ -40,37 +40,37 @@ def donchian_breakout_signal(
     - 收盘价跌破过去 entry 日最低价 -> 做空
     - 反向触及 exit_ 日通道则平仓（回到 0）
     """
-    upper_entry = high.shift(1).rolling(entry, min_periods=entry).max()
-    lower_entry = low.shift(1).rolling(entry, min_periods=entry).min()
-    upper_exit = high.shift(1).rolling(exit_, min_periods=exit_).max()
-    lower_exit = low.shift(1).rolling(exit_, min_periods=exit_).min()
-
-    signal = pd.Series(np.nan, index=close.index, dtype=float)
+    upper_entry = high.shift(1).rolling(entry, min_periods=entry).max().to_numpy()
+    lower_entry = low.shift(1).rolling(entry, min_periods=entry).min().to_numpy()
+    upper_exit = high.shift(1).rolling(exit_, min_periods=exit_).max().to_numpy()
+    lower_exit = low.shift(1).rolling(exit_, min_periods=exit_).min().to_numpy()
+    c = close.to_numpy()
+    n = len(c)
+    out = np.full(n, np.nan)
     pos = 0.0
-    for i in range(len(close)):
-        c = close.iloc[i]
-        ue, le = upper_entry.iloc[i], lower_entry.iloc[i]
-        ux, lx = upper_exit.iloc[i], lower_exit.iloc[i]
+    for i in range(n):
+        ue, le = upper_entry[i], lower_entry[i]
         if np.isnan(ue) or np.isnan(le):
-            signal.iloc[i] = np.nan
             continue
+        ux, lx = upper_exit[i], lower_exit[i]
+        ci = c[i]
         if pos == 0:
-            if c > ue:
+            if ci > ue:
                 pos = 1.0
-            elif c < le:
+            elif ci < le:
                 pos = -1.0
         elif pos > 0:
-            if c < lx:
+            if (not np.isnan(lx)) and ci < lx:
                 pos = 0.0
-            elif c < le:
+            elif ci < le:
                 pos = -1.0
         elif pos < 0:
-            if c > ux:
+            if (not np.isnan(ux)) and ci > ux:
                 pos = 0.0
-            elif c > ue:
+            elif ci > ue:
                 pos = 1.0
-        signal.iloc[i] = pos
-    return signal.rename("signal")
+        out[i] = pos
+    return pd.Series(out, index=close.index, name="signal")
 
 
 def ts_momentum_signal(
