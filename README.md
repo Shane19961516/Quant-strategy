@@ -74,28 +74,38 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 1. **信号**：双均线交叉、唐奇安通道突破（海龟）、时间序列动量（TSMOM），以及三者合成（`combo`）
 2. **仓位**：单品种波动率目标（`weight = signal × target_vol / σ`）
 3. **组合**：截面等风险归一 + 组合波动再缩放；T+1 成交，扣除手续费与滑点
+4. **仓位管理 / 硬风控**（默认开启）：
+   - 风险预算：按 2.5σ 预估压缩杠杆，控制单日尾部亏损
+   - 回撤降仓：回撤超过 4% 后线性降仓
+   - 单日最大亏损 ≤ **3%**（组合止损）
+   - 策略最大回撤 ≤ **8%**（净值地板，相对历史高点）
 
-### 快速运行
+### 数据源（akshare）
+默认通过 akshare 新浪接口拉取国内期货**主力连续**日线（`RB0`/`CU0`/…），失败时可回退东财。
+
 ```bash
-pip install pandas numpy matplotlib
-python -m cta.run_demo --compare --plot
-# 或
-python cta_futures_strategy.py --method combo --plot
+pip install -r requirements-cta.txt
+# 拉取真实数据并回测（缓存至 cta_data_akshare/）
+python -m cta.run_demo --akshare --compare --plot
+# 使用已缓存数据
+python -m cta.run_demo --data-dir cta_data_akshare --method donchian --plot
 ```
 
-默认使用合成期货日线（IF/RB/AU/CU/C/M/SC/TA）。若有真实数据，将各品种 CSV（含 `date,open,high,low,close`）放入目录后：
-```bash
-python -m cta.run_demo --data-dir /path/to/futures_csv --method donchian --plot
-```
+### 风控目标（真实数据回测）
+在 13 个主力连续品种（2018–2026）上，四种信号均满足：
+- 单日最大亏损 ≤ 3%
+- 最大回撤 ≤ 8%
 
-结果输出至 `cta_result/`（净值、权重、信号、绩效摘要、对比表与回撤图）。
+结果输出至 `cta_result/`（净值、权重、信号、绩效摘要、风控诊断与回撤图）。
 
 ### 模块说明
 | 文件 | 作用 |
 |------|------|
+| `cta/akshare_data.py` | akshare 主力连续拉取与缓存 |
 | `cta/signals.py` | 双均线 / 唐奇安 / TSMOM / 信号合成 |
 | `cta/risk.py` | ATR、波动率目标仓位、组合波动缩放 |
+| `cta/position_manager.py` | 仓位管理：风险预算、回撤降仓、硬止损 |
 | `cta/backtest.py` | 多品种回测引擎 `CTABacktester` |
-| `cta/metrics.py` | 夏普、索提诺、最大回撤、卡玛等 |
+| `cta/metrics.py` | 夏普、回撤、单日亏损等 |
 | `cta/data.py` | 合成数据与 CSV 加载 |
 | `cta/run_demo.py` | 命令行演示入口 |

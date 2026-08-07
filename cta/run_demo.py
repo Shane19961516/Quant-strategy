@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     frames["signals"].to_csv(os.path.join(args.save_dir, "signals.csv"))
     frames["summary"].to_csv(os.path.join(args.save_dir, "summary.csv"), index=False)
     frames["contrib"].to_csv(os.path.join(args.save_dir, "contrib.csv"))
-    for name in ("risk_budget_scale", "dd_scale", "stop_hit"):
+    for name in ("risk_budget_scale", "dd_scale", "stop_hit", "dd_floor_hit"):
         if name in frames:
             frames[name].to_csv(os.path.join(args.save_dir, f"{name}.csv"))
 
