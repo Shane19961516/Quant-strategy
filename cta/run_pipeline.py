@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from .metrics import format_summary
-from .pipeline import run_cta_pipeline
+from .pipeline import PipelineResult, run_cta_pipeline
 from .portfolio_risk import MarginVaRLimits
 
 
@@ -49,24 +49,101 @@ def _load_panels(args):
     return load_panels(args.data_dir)
 
 
-def _plot(equity: pd.Series, margin: pd.Series, var_: pd.Series, path: str) -> None:
-    fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1.2, 1.2]})
-    axes[0].plot(equity.index, equity.values, color="#1f4e79", lw=1.3)
-    axes[0].set_title("CTA Pipeline Equity")
-    axes[0].set_ylabel("Equity")
+def _plot_total_nav(result: PipelineResult, path: str) -> None:
+    """总资金 NAV 曲线 + 回撤。"""
+    nav = result.equity
+    dd = result.nav_drawdown.reindex(nav.index)
+    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, gridspec_kw={"height_ratios": [3, 1.2]})
+    axes[0].plot(nav.index, nav.values, color="#1f4e79", lw=1.6, label="Total Capital NAV")
+    axes[0].set_title("Total Capital NAV")
+    axes[0].set_ylabel("NAV (start=1)")
+    axes[0].legend(loc="upper left", fontsize=9)
+    axes[0].grid(True, alpha=0.3)
+    axes[0].text(
+        0.99,
+        0.05,
+        f"Total={result.summary['total_return']:.1%}  CAGR={result.summary['cagr']:.1%}  "
+        f"Sharpe={result.summary['sharpe']:.2f}  MaxDD={result.summary['max_drawdown']:.1%}",
+        transform=axes[0].transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8, "edgecolor": "#cccccc"},
+    )
+
+    axes[1].fill_between(dd.index, dd.values, 0, color="#c44e52", alpha=0.55)
+    axes[1].set_ylabel("Drawdown")
+    axes[1].grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def _plot_strategy_nav(result: PipelineResult, path: str) -> None:
+    """各策略 NAV + 总资金 NAV 对比，并标注最大回撤。"""
+    colors = {"dual_ma": "#2a9d8f", "donchian": "#e9c46a", "tsmom": "#e76f51", "NAV": "#1f4e79"}
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1.4]})
+
+    for col in result.sleeve_nav.columns:
+        axes[0].plot(
+            result.sleeve_nav.index,
+            result.sleeve_nav[col].values,
+            color=colors.get(col, None),
+            lw=1.2,
+            alpha=0.9,
+            label=f"{col} (MaxDD={result.sleeve_summary.loc[col, 'max_drawdown']:.1%})",
+        )
+    axes[0].plot(
+        result.equity.index,
+        result.equity.values,
+        color=colors["NAV"],
+        lw=2.0,
+        label=f"Total NAV (MaxDD={result.summary['max_drawdown']:.1%})",
+    )
+    axes[0].set_title("Strategy NAV vs Total Capital NAV")
+    axes[0].set_ylabel("NAV")
+    axes[0].legend(loc="upper left", fontsize=8)
     axes[0].grid(True, alpha=0.3)
 
-    axes[1].plot(margin.index, margin.values, color="#2a9d8f", lw=1.0)
-    axes[1].axhline(0.30, color="#333", ls="--", lw=0.8, label="30% margin cap")
-    axes[1].set_ylabel("Total margin")
+    for col in result.sleeve_drawdown.columns:
+        axes[1].plot(
+            result.sleeve_drawdown.index,
+            result.sleeve_drawdown[col].values,
+            color=colors.get(col, None),
+            lw=1.0,
+            alpha=0.8,
+            label=col,
+        )
+    axes[1].plot(
+        result.nav_drawdown.index,
+        result.nav_drawdown.values,
+        color=colors["NAV"],
+        lw=1.5,
+        label="Total",
+    )
+    axes[1].set_ylabel("Drawdown")
+    axes[1].legend(loc="lower left", fontsize=8, ncol=4)
+    axes[1].grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def _plot_risk(result: PipelineResult, path: str) -> None:
+    margin = result.diagnostics["total_margin"]
+    var_ = result.diagnostics["port_var95"]
+    fig, axes = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
+    axes[0].plot(margin.index, margin.values, color="#2a9d8f", lw=1.0)
+    axes[0].axhline(0.30, color="#333", ls="--", lw=0.8, label="30% margin cap")
+    axes[0].set_ylabel("Total margin")
+    axes[0].legend(fontsize=8, loc="upper right")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(var_.index, var_.values, color="#e76f51", lw=1.0)
+    axes[1].axhline(0.03, color="#333", ls="--", lw=0.8, label="3% VaR cap")
+    axes[1].set_ylabel("95% VaR")
     axes[1].legend(fontsize=8, loc="upper right")
     axes[1].grid(True, alpha=0.3)
-
-    axes[2].plot(var_.index, var_.values, color="#e76f51", lw=1.0)
-    axes[2].axhline(0.03, color="#333", ls="--", lw=0.8, label="3% VaR cap")
-    axes[2].set_ylabel("95% VaR")
-    axes[2].legend(fontsize=8, loc="upper right")
-    axes[2].grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=140)
     plt.close(fig)
@@ -92,8 +169,10 @@ def main(argv=None) -> int:
     p.add_argument("--var-window", type=int, default=180)
     p.add_argument("--cost-bps", type=float, default=0.5, help="单边手续费 bp（名义）")
     p.add_argument("--slip-bps", type=float, default=0.5, help="单边滑点 bp（名义）")
-    p.add_argument("--plot", action="store_true")
+    p.add_argument("--plot", action="store_true", default=True)
+    p.add_argument("--no-plot", action="store_true", help="不输出图")
     args = p.parse_args(argv)
+    do_plot = args.plot and not args.no_plot
 
     panels = _load_panels(args)
     print(f"品种数={len(panels)}: {', '.join(sorted(panels))}")
@@ -118,7 +197,7 @@ def main(argv=None) -> int:
         slip_bps=args.slip_bps,
     )
 
-    print("\n=== 各策略最优参数（单位名义、等权品种）===")
+    print("\n=== 各策略最优参数 ===")
     for m, opt in result.optim.items():
         cm = opt.chosen_metrics
         print(
@@ -126,29 +205,24 @@ def main(argv=None) -> int:
             f"train_sharpe={cm.get('train_sharpe', float('nan')):.3f} "
             f"valid_sharpe={cm.get('valid_sharpe', float('nan')):.3f} "
             f"local_std={cm.get('local_sharpe_std', float('nan')):.3f} "
-            f"pos_frac={cm.get('pos_asset_frac', float('nan')):.2f} "
             f"score={cm.get('score', float('nan')):.3f}"
         )
 
-    print("\n=== 各策略单独满预算（30%保证金+分类+VaR）===")
-    show = result.sleeve_summary[
-        ["total_return", "cagr", "ann_vol", "sharpe", "max_drawdown", "avg_gross", "avg_margin", "signal_weight"]
-    ].copy()
-    for c in ["total_return", "cagr", "ann_vol", "max_drawdown", "avg_margin"]:
+    print("\n=== 各策略绩效（含最大回撤）===")
+    cols = ["total_return", "cagr", "ann_vol", "sharpe", "max_drawdown", "max_daily_loss", "signal_weight"]
+    show = result.sleeve_summary[cols].copy()
+    for c in ["total_return", "cagr", "ann_vol", "max_drawdown", "max_daily_loss"]:
         show[c] = show[c].map(lambda x: f"{x:.2%}")
     show["sharpe"] = result.sleeve_summary["sharpe"].map(lambda x: f"{x:.3f}")
-    show["avg_gross"] = result.sleeve_summary["avg_gross"].map(lambda x: f"{x:.2f}x")
     show["signal_weight"] = result.sleeve_summary["signal_weight"].map(lambda x: f"{x:.2%}")
     print(show.to_string())
 
-    print("\n=== 等权品种单位名义（1/N，仅供参考）===")
-    show_u = result.method_unit_summary[["cagr", "ann_vol", "sharpe", "max_drawdown", "total_return"]].copy()
-    for c in ["cagr", "ann_vol", "max_drawdown", "total_return"]:
-        show_u[c] = show_u[c].map(lambda x: f"{x:.2%}")
-    show_u["sharpe"] = result.method_unit_summary["sharpe"].map(lambda x: f"{x:.3f}")
-    print(show_u.to_string())
+    print("\n=== 各策略最大回撤 ===")
+    for m, row in result.sleeve_summary.iterrows():
+        print(f"  {m}: MaxDD = {row['max_drawdown']:.2%}")
+    print(f"  TOTAL资金组合: MaxDD = {result.summary['max_drawdown']:.2%}")
 
-    print("\n=== 组合（保证金+相关性+VaR 约束后）===")
+    print("\n=== 总资金组合（NAV）===")
     print(format_summary(result.summary))
     print(
         f"  平均总保证金: {result.summary.get('avg_total_margin', float('nan')):.2%} | "
@@ -167,6 +241,10 @@ def main(argv=None) -> int:
         f"  最大名义杠杆: {result.summary['max_gross_notional']:.2f}x | "
         f"平均名义杠杆: {result.summary['avg_gross_notional']:.2f}x"
     )
+    print(
+        f"  期末NAV: {float(result.equity.iloc[-1]):.4f} "
+        f"(起点=1.0000)"
+    )
 
     os.makedirs(args.save_dir, exist_ok=True)
     frames = result.to_frames()
@@ -174,12 +252,19 @@ def main(argv=None) -> int:
         path = os.path.join(args.save_dir, f"{name}.csv")
         df.to_csv(path)
 
-    if args.plot:
-        plot_path = os.path.join(args.save_dir, "pipeline_equity.png")
-        _plot(result.equity, result.diagnostics["total_margin"], result.diagnostics["port_var95"], plot_path)
-        print(f"图已保存: {plot_path}")
+    if do_plot:
+        nav_path = os.path.join(args.save_dir, "nav_total.png")
+        strat_path = os.path.join(args.save_dir, "nav_strategies.png")
+        risk_path = os.path.join(args.save_dir, "risk_monitors.png")
+        _plot_total_nav(result, nav_path)
+        _plot_strategy_nav(result, strat_path)
+        _plot_risk(result, risk_path)
+        print(f"\n总资金NAV曲线: {nav_path}")
+        print(f"分策略NAV曲线: {strat_path}")
+        print(f"风控监控图: {risk_path}")
 
     print(f"\n结果目录: {args.save_dir}/")
+    print(f"NAV数据: {args.save_dir}/nav_total.csv , {args.save_dir}/sleeve_nav.csv")
     ok = bool(
         result.summary["margin_ok"]
         and result.summary["cluster_margin_ok"]

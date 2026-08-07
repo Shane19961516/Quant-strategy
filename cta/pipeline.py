@@ -25,9 +25,14 @@ def _signal(method: str, ohlc: pd.DataFrame, params: Dict) -> pd.Series:
     raise ValueError(method)
 
 
+def _drawdown(equity: pd.Series) -> pd.Series:
+    peak = equity.cummax()
+    return (equity / peak - 1.0).rename("drawdown")
+
+
 @dataclass
 class PipelineResult:
-    equity: pd.Series
+    equity: pd.Series  # 总资金 NAV
     returns: pd.Series
     weights: pd.DataFrame
     signals: pd.DataFrame
@@ -38,9 +43,15 @@ class PipelineResult:
     clusters: pd.DataFrame = field(default_factory=pd.DataFrame)
     method_unit_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
     sleeve_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
+    sleeve_nav: pd.DataFrame = field(default_factory=pd.DataFrame)  # 各策略 NAV
+    sleeve_drawdown: pd.DataFrame = field(default_factory=pd.DataFrame)
+    nav_drawdown: pd.Series = field(default_factory=pd.Series)
 
     def to_frames(self) -> Dict[str, pd.DataFrame]:
+        nav = self.equity.rename("NAV").to_frame()
+        nav["drawdown"] = self.nav_drawdown.reindex(nav.index)
         frames = {
+            "nav_total": nav,
             "equity": self.equity.to_frame("equity"),
             "returns": self.returns.to_frame("ret"),
             "weights": self.weights,
@@ -49,6 +60,8 @@ class PipelineResult:
             "clusters": self.clusters,
             "method_unit_summary": self.method_unit_summary,
             "sleeve_summary": self.sleeve_summary,
+            "sleeve_nav": self.sleeve_nav,
+            "sleeve_drawdown": self.sleeve_drawdown,
         }
         for name, series in self.diagnostics.items():
             frames[name] = series.to_frame(name)
@@ -97,7 +110,6 @@ def run_cta_pipeline(
 
     closes = pd.DataFrame({s: panels[s]["close"] for s in panels}).sort_index().ffill()
     asset_ret = closes.pct_change()
-    # 主力连续换月缺口：极端跳空不视为可交易收益，置 0 以免扭曲趋势信号与 PnL
     jump = asset_ret.abs() > 0.08
     asset_ret = asset_ret.mask(jump, 0.0).fillna(0.0)
 
@@ -126,15 +138,15 @@ def run_cta_pipeline(
     sharpe_w = {}
     for m in methods:
         vs = float(optim[m].chosen_metrics.get("valid_sharpe", 0.0) or 0.0)
-        # 按验证夏普平方加权，弱策略权重迅速衰减，避免稀释
         sharpe_w[m] = max(vs, 0.0) ** 2
     wsum = sum(sharpe_w.values())
     if wsum <= 1e-12:
         sharpe_w = {m: 1.0 / len(methods) for m in methods}
         wsum = 1.0
 
-    # 各策略单独打满风控预算，便于核对收益是否合理
     sleeve_rows = []
+    sleeve_nav_cols = {}
+    sleeve_dd_cols = {}
     for m in methods:
         sig = method_signals[m].reindex(columns=asset_ret.columns).fillna(0.0)
         sw, snet, seq, sdiag, _ = apply_margin_var_controls(
@@ -146,12 +158,16 @@ def run_cta_pipeline(
             slip_bps=slip_bps,
         )
         ssum = performance_summary(seq, snet)
+        sdd = _drawdown(seq)
+        sleeve_nav_cols[m] = seq.rename(m)
+        sleeve_dd_cols[m] = sdd.rename(m)
         sleeve_rows.append(
             {
                 "method": m,
                 "params": optim[m].best.label(),
                 "signal_weight": sharpe_w[m] / wsum,
                 **ssum,
+                "max_drawdown": float(sdd.min()),
                 "avg_gross": float(sw.abs().sum(axis=1).mean()),
                 "avg_margin": float(sdiag["total_margin"].mean()),
                 "max_margin": float(sdiag["total_margin"].max()),
@@ -159,6 +175,8 @@ def run_cta_pipeline(
             }
         )
     sleeve_summary = pd.DataFrame(sleeve_rows).set_index("method")
+    sleeve_nav = pd.DataFrame(sleeve_nav_cols).sort_index()
+    sleeve_drawdown = pd.DataFrame(sleeve_dd_cols).sort_index()
 
     combined = None
     for m, sig in method_signals.items():
@@ -178,9 +196,12 @@ def run_cta_pipeline(
         cost_bps=cost_bps,
         slip_bps=slip_bps,
     )
+    equity = equity.rename("NAV")
+    nav_dd = _drawdown(equity)
 
     summary = performance_summary(equity, net)
     summary["max_daily_loss"] = float(net.min()) if len(net) else 0.0
+    summary["max_drawdown"] = float(nav_dd.min())
     summary["max_total_margin"] = float(diagnostics["total_margin"].max())
     summary["avg_total_margin"] = float(diagnostics["total_margin"].mean())
     summary["max_cluster_margin"] = float(diagnostics["cluster_margin_max"].max())
@@ -190,6 +211,9 @@ def run_cta_pipeline(
     summary["cluster_margin_ok"] = float(summary["max_cluster_margin"] <= limits.max_cluster_margin + 1e-9)
     summary["max_gross_notional"] = float(weights.abs().sum(axis=1).max())
     summary["avg_gross_notional"] = float(weights.abs().sum(axis=1).mean())
+    # 各策略最大回撤写入总摘要，便于一眼查看
+    for m in methods:
+        summary[f"max_dd_{m}"] = float(sleeve_summary.loc[m, "max_drawdown"])
 
     return PipelineResult(
         equity=equity,
@@ -203,4 +227,7 @@ def run_cta_pipeline(
         clusters=clusters,
         method_unit_summary=method_unit_summary,
         sleeve_summary=sleeve_summary,
+        sleeve_nav=sleeve_nav,
+        sleeve_drawdown=sleeve_drawdown,
+        nav_drawdown=nav_dd,
     )
