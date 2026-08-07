@@ -142,7 +142,10 @@ def main(argv=None) -> int:
             f"S4 {cfg.margin_s4:,.0f}（合计 {cfg.margin_s1+cfg.margin_s3+cfg.margin_s4:,.0f}；"
             f"原 S2 30 万额度闲置为现金缓冲）\n"
         )
-        f.write(f"- 杠杆假设：单边名义 = 保证金 × 10\n")
+        f.write(
+            "- 杠杆/保证金：S1/S3 按名义≈保证金×10；S4 按合约乘数与保证金率、跨期折扣计占用\n"
+        )
+
         f.write(
             f"- 期末权益：{result.summary_total.get('ending_equity', float('nan')):,.0f} 元 "
             f"（绝对盈亏 {result.summary_total.get('pnl_abs', float('nan')):,.0f}）\n\n"
@@ -154,7 +157,12 @@ def main(argv=None) -> int:
         )
         f.write("2. ~~布林带~~：**已移除**\n")
         f.write("3. **相关配对**：滚动20日相关>0.6；对数价差20日 z，|z|≥2 开、回0平、|z|≥4 止损；1:1 名义\n")
-        f.write("4. **跨期价差**：主/次主力价差，20日 z，|z|≥2 回归、|z|≥4 止损\n\n")
+        f.write(
+            "4. **跨期价差（实盘口径）**：固定近月+次近月（不按持仓量日更）；"
+            "临近交割强制移仓；成交量/持仓过滤；按乘数与保证金率计手数；"
+            "近月1bp+远月3bp 成本；默认排除 IF/RU；20日 z，|z|≥2 回归、回0平、|z|≥4 止损\n\n"
+        )
+
         f.write("## 绩效一览\n\n")
         f.write("| 策略 | 累计收益 | 年化 | 夏普 | 最大回撤 | 保证金峰值 |\n")
         f.write("|------|----------|------|------|----------|------------|\n")
