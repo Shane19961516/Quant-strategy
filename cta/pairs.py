@@ -180,3 +180,135 @@ def unit_pair_returns(
         )
         cols[f"{a}_{b}"] = pnl - turn * (cost_bps / 10000.0)
     return pd.DataFrame(cols).sort_index().fillna(0.0)
+
+
+def apply_pairs_book_controls(
+    panels: Dict[str, pd.DataFrame],
+    params: Dict[str, float],
+    asset_returns: pd.DataFrame,
+    limits,
+    cost_bps: float = 0.5,
+    slip_bps: float = 0.5,
+    pairs: Optional[Sequence[Tuple[str, str]]] = None,
+) -> Tuple[pd.DataFrame, pd.Series, pd.Series, Dict[str, pd.Series]]:
+    """配对组合风控：整本书统一缩放，保持每对美元中性（不拆腿）。
+
+    满仓时目标总名义杠杆 = max_total_margin * instrument_leverage，再按滚动 VaR
+    与单对保证金上限等比压缩。
+    """
+    from .portfolio_risk import MarginVaRLimits, historical_var
+
+    limits = limits or MarginVaRLimits()
+    use = available_pairs(panels.keys(), pairs)
+    if not use:
+        raise RuntimeError("no pairs for book controls")
+
+    window = int(params.get("window", 60))
+    entry_z = float(params.get("entry_z", 2.0))
+    exit_z = float(params.get("exit_z", 0.0))
+    stop_z = float(params.get("stop_z", 3.5))
+
+    idx = asset_returns.index
+    symbols = list(asset_returns.columns)
+    n = len(idx)
+    n_pairs = len(use)
+    max_gross = limits.max_total_margin * limits.instrument_leverage
+    leg_base = max_gross / (2.0 * n_pairs)
+
+    pair_pos = []
+    for a, b in use:
+        sa, sb, _ = pair_leg_signals(
+            panels[a]["close"],
+            panels[b]["close"],
+            window=window,
+            entry_z=entry_z,
+            exit_z=exit_z,
+            stop_z=stop_z,
+        )
+        pair_pos.append(
+            (a, b, sa.reindex(idx).fillna(0.0), sb.reindex(idx).fillna(0.0))
+        )
+
+    weight_rows = np.zeros((n, len(symbols)))
+    net_vals = np.zeros(n)
+    equity_vals = np.zeros(n)
+    total_margin = np.zeros(n)
+    port_var = np.zeros(n)
+    var_scale_arr = np.ones(n)
+    cluster_margin_daily = np.zeros(n)
+
+    equity = 1.0
+    prev_w = pd.Series(0.0, index=symbols)
+    rets = asset_returns.reindex(idx).fillna(0.0)
+
+    for i in range(n):
+        raw = pd.Series(0.0, index=symbols)
+        for a, b, sa, sb in pair_pos:
+            raw[a] = float(raw[a]) + float(sa.iloc[i]) * leg_base
+            raw[b] = float(raw[b]) + float(sb.iloc[i]) * leg_base
+
+        scale = 1.0
+        gross = float(raw.abs().sum())
+        if gross > 1e-12:
+            margin = gross / limits.instrument_leverage
+            if margin > limits.max_total_margin:
+                scale *= limits.max_total_margin / margin
+            elif margin > 1e-15:
+                # 未用满保证金时整书上调（保持中性）
+                scale *= min(limits.max_total_margin / margin, 8.0)
+        scaled = raw * scale
+
+        look = rets.iloc[max(0, i - limits.var_window) : i]
+        v = 0.0
+        if len(look) >= limits.min_history and float(scaled.abs().sum()) > 0:
+            synth = look.mul(scaled, axis=1).sum(axis=1)
+            v = historical_var(synth, alpha=limits.var_alpha)
+            if v > limits.max_var and v > 0:
+                vs = limits.max_var / v
+                scaled = scaled * vs
+                scale *= vs
+                v = limits.max_var
+
+        max_cm = 0.0
+        for a, b, sa, sb in pair_pos:
+            cm = (abs(float(scaled[a])) + abs(float(scaled[b]))) / limits.instrument_leverage
+            max_cm = max(max_cm, cm)
+        if max_cm > limits.max_cluster_margin + 1e-12 and max_cm > 0:
+            vs2 = limits.max_cluster_margin / max_cm
+            scaled = scaled * vs2
+            scale *= vs2
+            max_cm = limits.max_cluster_margin
+            # 分类压缩后若总保证金仍超，再压
+            tm = float(scaled.abs().sum() / limits.instrument_leverage)
+            if tm > limits.max_total_margin + 1e-12:
+                vs3 = limits.max_total_margin / tm
+                scaled = scaled * vs3
+                scale *= vs3
+                max_cm *= vs3
+
+        var_scale_arr[i] = scale
+        port_var[i] = float(v)
+        total_margin[i] = float(scaled.abs().sum() / limits.instrument_leverage)
+        cluster_margin_daily[i] = max_cm
+        weight_rows[i, :] = scaled.reindex(symbols).fillna(0.0).to_numpy()
+
+        traded = prev_w
+        gross_pnl = float((traded * rets.iloc[i]).sum())
+        turnover = float((scaled - prev_w).abs().sum())
+        cost = turnover * ((cost_bps + slip_bps) / 10000.0)
+        net = gross_pnl - cost
+        equity *= 1.0 + net
+        equity_vals[i] = equity
+        net_vals[i] = net
+        prev_w = scaled
+
+    weights = pd.DataFrame(weight_rows, index=idx, columns=symbols)
+    net_s = pd.Series(net_vals, index=idx, name="ret")
+    equity_s = pd.Series(equity_vals, index=idx, name="equity")
+    diagnostics = {
+        "total_margin": pd.Series(total_margin, index=idx, name="total_margin"),
+        "port_var95": pd.Series(port_var, index=idx, name="port_var95"),
+        "var_scale": pd.Series(var_scale_arr, index=idx, name="var_scale"),
+        "cluster_margin_max": pd.Series(cluster_margin_daily, index=idx, name="cluster_margin_max"),
+    }
+    return weights, net_s, equity_s, diagnostics

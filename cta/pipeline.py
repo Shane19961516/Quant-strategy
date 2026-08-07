@@ -18,6 +18,7 @@ from .optimize import (
     optimize_all_methods,
     unit_strategy_returns,
 )
+from .pairs import apply_pairs_book_controls
 from .portfolio_risk import MarginVaRLimits, apply_margin_var_controls
 from .stops import aggregate_trade_stats
 
@@ -163,17 +164,23 @@ def run_cta_pipeline(
         )
     method_unit_summary = pd.DataFrame(unit_rows).set_index("method")
 
-    # 验证集无效（夏普≤0 或验证收益≤0）的 sleeve 不参与组合，避免拖累
+    # 验证集有效且训练夏普达标的 sleeve 才进组合（避免验证集运气仓）
     sharpe_w = {}
     for m in methods:
+        ts = float(optim[m].chosen_metrics.get("train_sharpe", 0.0) or 0.0)
         vs = float(optim[m].chosen_metrics.get("valid_sharpe", 0.0) or 0.0)
         vt = float(optim[m].chosen_metrics.get("valid_total", 0.0) or 0.0)
-        sharpe_w[m] = (max(vs, 0.0) ** 2) if (vs > 0.0 and vt > 0.0) else 0.0
+        ok = (ts >= 0.15) and (vs > 0.0) and (vt > 0.0)
+        sharpe_w[m] = (max(vs, 0.0) ** 2) if ok else 0.0
     wsum = sum(sharpe_w.values())
     if wsum <= 1e-12:
-        # 兜底：全部按等权（仍各自独立套止损与风控）
-        sharpe_w = {m: 1.0 / len(methods) for m in methods}
-        wsum = 1.0
+        # 兜底：在训练夏普为正的方法里等权；再不行全体等权
+        pos = {m: 1.0 for m in methods if float(optim[m].chosen_metrics.get("train_sharpe", 0) or 0) > 0}
+        if pos:
+            sharpe_w = {m: pos.get(m, 0.0) for m in methods}
+        else:
+            sharpe_w = {m: 1.0 / len(methods) for m in methods}
+        wsum = sum(sharpe_w.values())
 
     sleeve_rows = []
     sleeve_nav_cols = {}
@@ -182,43 +189,63 @@ def run_cta_pipeline(
     sleeve_weights = {}
     sleeve_diags = {}
     for m in methods:
+        params = optim[m].best.as_dict()
         sig = method_signals[m].reindex(columns=asset_ret.columns).fillna(0.0)
         exits = method_exits[m].reindex(columns=asset_ret.columns)
         adj_ret = _adjust_returns_for_stops(asset_ret, sig, exits)
 
-        per_sym = {s: sig[s] for s in sig.columns}
+        per_sym = {s: sig[s] for s in sig.columns if s in panels}
         tstats = aggregate_trade_stats(panels, per_sym)
 
-        # 单策略报告：打满 30% 预算
-        sw_full, snet_full, seq_full, sdiag_full, _ = apply_margin_var_controls(
-            sig,
-            adj_ret.reindex(sig.index).fillna(0.0),
-            limits=limits,
-            base_notional_per_name=3.0 / max(len(sig.columns), 1),
-            cost_bps=cost_bps,
-            slip_bps=slip_bps,
-        )
-        # 组合贡献：按验证夏普权重分配总预算与风控额度
         w_m = sharpe_w[m] / wsum
         lim_m = MarginVaRLimits(
             instrument_leverage=limits.instrument_leverage,
-            max_total_margin=limits.max_total_margin * w_m,
-            max_cluster_margin=min(limits.max_cluster_margin, limits.max_total_margin * w_m),
+            max_total_margin=max(limits.max_total_margin * w_m, 1e-6),
+            max_cluster_margin=min(limits.max_cluster_margin, max(limits.max_total_margin * w_m, 1e-6)),
             corr_threshold=limits.corr_threshold,
             var_window=limits.var_window,
             var_alpha=limits.var_alpha,
-            max_var=max(limits.max_var * w_m, 0.005),
+            max_var=max(limits.max_var * max(w_m, 0.25), 0.005),
             corr_window=limits.corr_window,
             min_history=limits.min_history,
         )
-        sw, snet, seq, sdiag, _ = apply_margin_var_controls(
-            sig,
-            adj_ret.reindex(sig.index).fillna(0.0),
-            limits=lim_m,
-            base_notional_per_name=(3.0 * w_m) / max(len(sig.columns), 1),
-            cost_bps=cost_bps,
-            slip_bps=slip_bps,
-        )
+
+        if m == "pairs":
+            sw_full, snet_full, seq_full, sdiag_full = apply_pairs_book_controls(
+                panels, params, adj_ret, limits=limits, cost_bps=cost_bps, slip_bps=slip_bps
+            )
+            if w_m <= 1e-12:
+                sw = sw_full * 0.0
+                snet = pd.Series(0.0, index=adj_ret.index, name="ret")
+                seq = pd.Series(1.0, index=adj_ret.index, name="equity")
+                sdiag = {k: v * 0.0 for k, v in sdiag_full.items()}
+            else:
+                sw, snet, seq, sdiag = apply_pairs_book_controls(
+                    panels, params, adj_ret, limits=lim_m, cost_bps=cost_bps, slip_bps=slip_bps
+                )
+        else:
+            sw_full, snet_full, seq_full, sdiag_full, _ = apply_margin_var_controls(
+                sig,
+                adj_ret.reindex(sig.index).fillna(0.0),
+                limits=limits,
+                base_notional_per_name=3.0 / max(len(sig.columns), 1),
+                cost_bps=cost_bps,
+                slip_bps=slip_bps,
+            )
+            if w_m <= 1e-12:
+                sw = sw_full * 0.0
+                snet = pd.Series(0.0, index=adj_ret.index, name="ret")
+                seq = pd.Series(1.0, index=adj_ret.index, name="equity")
+                sdiag = {k: v * 0.0 for k, v in sdiag_full.items()}
+            else:
+                sw, snet, seq, sdiag, _ = apply_margin_var_controls(
+                    sig,
+                    adj_ret.reindex(sig.index).fillna(0.0),
+                    limits=lim_m,
+                    base_notional_per_name=(3.0 * w_m) / max(len(sig.columns), 1),
+                    cost_bps=cost_bps,
+                    slip_bps=slip_bps,
+                )
         ssum = performance_summary(seq_full, snet_full)
         sdd = _drawdown(seq_full)
         sleeve_nav_cols[m] = seq_full.rename(m)

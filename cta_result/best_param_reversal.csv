@@ -1,0 +1,2 @@
+,label,lookback,entry_z,exit_z,stop_z,method,p_lookback,p_entry_z,p_exit_z,p_stop_z,train_sharpe,train_cagr,train_total,train_maxdd,valid_sharpe,valid_cagr,valid_total,valid_maxdd,pos_asset_frac,local_sharpe_std,score
+0,"reversal|lookback=3,entry_z=2,exit_z=0,stop_z=3",3,2,0,3,reversal,3,2.0,0,3.0,-0.23044557199443946,-0.008853219632740772,-0.03375270612331749,-0.05991703838554263,0.30239623273372557,0.011255477442737138,0.021729632893327855,-0.030710299079702685,0.5384615384615384,0.1338574411427676,0.07146184513264689
