@@ -11,6 +11,7 @@ import pandas as pd
 from cta.backtest import CTABacktester
 from cta.data import generate_synthetic_futures
 from cta.metrics import performance_summary
+from cta.position_manager import RiskLimits
 from cta.risk import volatility_target_weights
 from cta.signals import dual_ma_signal, ts_momentum_signal
 
@@ -47,10 +48,28 @@ class TestCTA(unittest.TestCase):
         self.assertIn("sharpe", res.summary)
         self.assertTrue(np.isfinite(res.equity.iloc[-1]))
 
+    def test_risk_limits_enforced(self):
+        limits = RiskLimits(max_daily_loss=0.03, max_drawdown=0.08, dd_scale_start=0.04)
+        bt = CTABacktester(
+            self.panels,
+            method="combo",
+            target_vol=0.04,
+            portfolio_target_vol=0.05,
+            max_leverage=1.0,
+            risk_limits=limits,
+            enable_position_manager=True,
+        )
+        res = bt.run()
+        self.assertGreaterEqual(res.summary["max_daily_loss"], -0.03 - 1e-9)
+        self.assertGreaterEqual(res.summary["max_drawdown"], -0.08 - 1e-9)
+        self.assertEqual(res.summary["daily_loss_ok"], 1.0)
+        self.assertEqual(res.summary["drawdown_ok"], 1.0)
+
     def test_performance_summary(self):
         eq = pd.Series(np.cumprod(1 + np.random.default_rng(0).normal(0.0005, 0.01, 500)))
         s = performance_summary(eq)
         self.assertIn("cagr", s)
+        self.assertIn("max_daily_loss", s)
         self.assertLess(s["max_drawdown"], 0.0)
 
 

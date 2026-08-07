@@ -50,6 +50,7 @@ def performance_summary(
     avg_loss = float(returns[returns < 0].mean()) if (returns < 0).any() else 0.0
     payoff = float(avg_win / abs(avg_loss)) if avg_loss != 0 else np.nan
 
+    max_daily_loss = float(returns.min()) if len(returns) else 0.0
     return {
         "total_return": total_ret,
         "cagr": cagr,
@@ -57,6 +58,7 @@ def performance_summary(
         "sharpe": sharpe,
         "sortino": sortino,
         "max_drawdown": max_dd,
+        "max_daily_loss": max_daily_loss,
         "calmar": calmar,
         "win_rate": win_rate,
         "payoff_ratio": payoff,
@@ -73,16 +75,24 @@ def format_summary(summary: Dict[str, float]) -> str:
         "sharpe": "夏普比率",
         "sortino": "索提诺",
         "max_drawdown": "最大回撤",
+        "max_daily_loss": "单日最大亏损",
         "calmar": "卡玛比率",
         "win_rate": "日胜率",
         "payoff_ratio": "盈亏比",
         "n_obs": "样本数",
+        "daily_loss_ok": "单日亏损达标(<=3%)",
+        "drawdown_ok": "回撤达标(<=8%)",
     }
-    pct_keys = {"total_return", "cagr", "ann_vol", "max_drawdown", "win_rate"}
+    pct_keys = {"total_return", "cagr", "ann_vol", "max_drawdown", "max_daily_loss", "win_rate"}
+    flag_keys = {"daily_loss_ok", "drawdown_ok"}
     for k, label in labels.items():
+        if k not in summary:
+            continue
         v = summary.get(k, np.nan)
         if k == "n_obs":
             lines.append(f"  {label}: {int(v)}")
+        elif k in flag_keys:
+            lines.append(f"  {label}: {'YES' if v else 'NO'}")
         elif k in pct_keys:
             lines.append(f"  {label}: {v:.2%}")
         else:
