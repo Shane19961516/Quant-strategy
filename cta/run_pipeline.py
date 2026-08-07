@@ -90,6 +90,8 @@ def main(argv=None) -> int:
     p.add_argument("--leverage", type=float, default=10.0)
     p.add_argument("--corr-threshold", type=float, default=0.5)
     p.add_argument("--var-window", type=int, default=180)
+    p.add_argument("--cost-bps", type=float, default=0.5, help="单边手续费 bp（名义）")
+    p.add_argument("--slip-bps", type=float, default=0.5, help="单边滑点 bp（名义）")
     p.add_argument("--plot", action="store_true")
     args = p.parse_args(argv)
 
@@ -112,6 +114,8 @@ def main(argv=None) -> int:
         train_end=args.train_end,
         valid_end=args.valid_end,
         limits=limits,
+        cost_bps=args.cost_bps,
+        slip_bps=args.slip_bps,
     )
 
     print("\n=== 各策略最优参数（单位名义、等权品种）===")
@@ -126,17 +130,29 @@ def main(argv=None) -> int:
             f"score={cm.get('score', float('nan')):.3f}"
         )
 
-    print("\n=== 单位仓位全样本绩效 ===")
-    show = result.method_unit_summary[["cagr", "ann_vol", "sharpe", "max_drawdown", "total_return"]].copy()
-    for c in ["cagr", "ann_vol", "max_drawdown", "total_return"]:
+    print("\n=== 各策略单独满预算（30%保证金+分类+VaR）===")
+    show = result.sleeve_summary[
+        ["total_return", "cagr", "ann_vol", "sharpe", "max_drawdown", "avg_gross", "avg_margin", "signal_weight"]
+    ].copy()
+    for c in ["total_return", "cagr", "ann_vol", "max_drawdown", "avg_margin"]:
         show[c] = show[c].map(lambda x: f"{x:.2%}")
-    show["sharpe"] = result.method_unit_summary["sharpe"].map(lambda x: f"{x:.3f}")
+    show["sharpe"] = result.sleeve_summary["sharpe"].map(lambda x: f"{x:.3f}")
+    show["avg_gross"] = result.sleeve_summary["avg_gross"].map(lambda x: f"{x:.2f}x")
+    show["signal_weight"] = result.sleeve_summary["signal_weight"].map(lambda x: f"{x:.2%}")
     print(show.to_string())
+
+    print("\n=== 等权品种单位名义（1/N，仅供参考）===")
+    show_u = result.method_unit_summary[["cagr", "ann_vol", "sharpe", "max_drawdown", "total_return"]].copy()
+    for c in ["cagr", "ann_vol", "max_drawdown", "total_return"]:
+        show_u[c] = show_u[c].map(lambda x: f"{x:.2%}")
+    show_u["sharpe"] = result.method_unit_summary["sharpe"].map(lambda x: f"{x:.3f}")
+    print(show_u.to_string())
 
     print("\n=== 组合（保证金+相关性+VaR 约束后）===")
     print(format_summary(result.summary))
     print(
-        f"  最大总保证金: {result.summary['max_total_margin']:.2%} "
+        f"  平均总保证金: {result.summary.get('avg_total_margin', float('nan')):.2%} | "
+        f"最大总保证金: {result.summary['max_total_margin']:.2%} "
         f"(ok={bool(result.summary['margin_ok'])})"
     )
     print(

@@ -5,13 +5,13 @@
 - 单品种 10 倍杠杆 => 保证金 = |名义权重| / 10
 - 全部策略总保证金 ≤ 30%  （总名义杠杆 ≤ 3x）
 - 收益相关性 > 0.5 归为同一类；每类保证金 ≤ 10%
-- 滚动 180 日历史 95% 单日 VaR ≤ 3%
+- 滚动 180 日、按*当前目标权重*合成的历史 95% 单日 VaR ≤ 3%
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -19,13 +19,13 @@ import pandas as pd
 
 @dataclass
 class MarginVaRLimits:
-    instrument_leverage: float = 10.0  # 10 倍杠杆
-    max_total_margin: float = 0.30  # 总占用资金 ≤ 30%
-    max_cluster_margin: float = 0.10  # 每类保证金 ≤ 10%
+    instrument_leverage: float = 10.0
+    max_total_margin: float = 0.30
+    max_cluster_margin: float = 0.10
     corr_threshold: float = 0.50
     var_window: int = 180
     var_alpha: float = 0.95
-    max_var: float = 0.03  # 95% 单日 VaR ≤ 3%
+    max_var: float = 0.03
     corr_window: int = 180
     min_history: int = 60
 
@@ -38,7 +38,7 @@ def correlation_clusters(
     returns: pd.DataFrame,
     threshold: float = 0.5,
 ) -> Dict[str, int]:
-    """基于相关矩阵的连通分量聚类：|corr| 不用，按 user 要求 corr>0.5（同向）。"""
+    """corr > threshold 的品种并入同一连通分量。"""
     cols = list(returns.columns)
     if not cols:
         return {}
@@ -66,35 +66,74 @@ def correlation_clusters(
     return {c: root_ids[roots[c]] for c in cols}
 
 
-def _scale_to_margin_caps(
+def _cap_margins_down(
     notionals: pd.Series,
     clusters: Dict[str, int],
     limits: MarginVaRLimits,
 ) -> pd.Series:
-    """将名义权重缩放到满足总保证金与分类保证金上限。"""
-    w = notionals.copy().astype(float)
+    """仅向下压缩：分类 ≤10%，总计 ≤30%。"""
+    w = notionals.astype(float).copy()
     lev = limits.instrument_leverage
-    if w.abs().sum() == 0:
+    if float(w.abs().sum()) == 0.0:
         return w
 
-    # 1) 总保证金
-    total_margin = w.abs().sum() / lev
-    if total_margin > limits.max_total_margin:
-        w *= limits.max_total_margin / total_margin
-
-    # 2) 分类保证金
-    for cid in sorted(set(clusters.values())):
+    for cid in set(clusters.values()):
         members = [s for s, c in clusters.items() if c == cid and s in w.index]
         if not members:
             continue
-        cm = w[members].abs().sum() / lev
-        if cm > limits.max_cluster_margin:
+        cm = float(w[members].abs().sum() / lev)
+        if cm > limits.max_cluster_margin + 1e-15:
             w[members] *= limits.max_cluster_margin / cm
 
-    # 分类缩放可能使总和再超限，再压一次总保证金
-    total_margin = w.abs().sum() / lev
-    if total_margin > limits.max_total_margin:
-        w *= limits.max_total_margin / total_margin
+    total = float(w.abs().sum() / lev)
+    if total > limits.max_total_margin + 1e-15:
+        w *= limits.max_total_margin / total
+    return w
+
+
+def _fill_margin_budget(
+    notionals: pd.Series,
+    clusters: Dict[str, int],
+    limits: MarginVaRLimits,
+) -> pd.Series:
+    """在不突破分类/总上限的前提下，尽量打满总保证金额度。"""
+    w = _cap_margins_down(notionals, clusters, limits)
+    lev = limits.instrument_leverage
+    if float(w.abs().sum()) == 0.0:
+        return w
+
+    def cluster_margins(x: pd.Series) -> Dict[int, float]:
+        out: Dict[int, float] = {}
+        for cid in set(clusters.values()):
+            members = [s for s, c in clusters.items() if c == cid and s in x.index]
+            out[cid] = float(x[members].abs().sum() / lev) if members else 0.0
+        return out
+
+    for _ in range(8):
+        total = float(w.abs().sum() / lev)
+        if total <= 1e-15 or total >= limits.max_total_margin - 1e-12:
+            break
+        cms = cluster_margins(w)
+        headrooms = [limits.max_cluster_margin / cm for cm in cms.values() if cm > 1e-15]
+        if not headrooms:
+            break
+        up = min(limits.max_total_margin / total, min(headrooms))
+        if up <= 1.0 + 1e-12:
+            break
+        w *= up
+    return w
+
+
+def _scale_to_margin_caps(
+    notionals: pd.Series,
+    clusters: Dict[str, int],
+    limits: MarginVaRLimits,
+    fill: bool = True,
+) -> pd.Series:
+    """先分类/总向下压缩；可选再把总保证金余量填满。"""
+    w = _cap_margins_down(notionals, clusters, limits)
+    if fill:
+        w = _fill_margin_budget(w, clusters, limits)
     return w
 
 
@@ -103,7 +142,7 @@ def historical_var(returns: pd.Series, alpha: float = 0.95) -> float:
     r = returns.dropna()
     if len(r) < 30:
         return 0.0
-    q = np.quantile(r, 1.0 - alpha)
+    q = float(np.quantile(r.to_numpy(), 1.0 - alpha))
     return float(max(0.0, -q))
 
 
@@ -118,14 +157,8 @@ def apply_margin_var_controls(
 ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, Dict[str, pd.Series], pd.DataFrame]:
     """按日因果施加保证金/相关性/VaR 约束。
 
-    signal_directions: 各策略-品种方向，列名建议 method_symbol 或 symbol。
-      这里约定列就是品种；多策略应先在外部合成/并列后传入。
-      若列含多策略同一品种，调用方应先聚合。
-
-    简化：输入为品种方向矩阵（已是多策略合成后的目标方向 ∈ [-1,1]），
-    初始名义 = direction * base_notional_per_name，再按约束缩放。
-
-    返回: weights(名义/NAV), net_returns, equity, diagnostics, cluster_ids_over_time
+    VaR 只使用「当前目标权重 × 历史品种收益」的合成序列，
+    绝不用旧仓位下的已实现组合收益（否则会把当前仓位错误压低）。
     """
     limits = limits or MarginVaRLimits()
     dirs = signal_directions.fillna(0.0).astype(float)
@@ -140,13 +173,12 @@ def apply_margin_var_controls(
     port_var = np.zeros(n)
     var_scale = np.ones(n)
     cluster_hist: List[Dict[str, int]] = []
+    cluster_margin_daily = np.zeros(n)
 
     equity = float(initial_capital)
     prev_w = pd.Series(0.0, index=symbols)
-    realized_port = []
-    cluster_margin_daily = np.zeros(n)
 
-    for i, dt in enumerate(dirs.index):
+    for i in range(n):
         start = max(0, i - limits.corr_window)
         hist = rets.iloc[start:i]
         if len(hist) >= limits.min_history:
@@ -156,24 +188,29 @@ def apply_margin_var_controls(
         cluster_hist.append(clusters)
 
         raw = dirs.iloc[i] * base_notional_per_name
-        capped = _scale_to_margin_caps(raw, clusters, limits)
+        # 先按保证金约束分配（含余量填充）
+        capped = _scale_to_margin_caps(raw, clusters, limits, fill=True)
 
         scale = 1.0
         v = 0.0
-        if i >= limits.min_history:
-            if len(realized_port) >= limits.min_history:
-                window_rets = pd.Series(realized_port[-limits.var_window :])
-                v = historical_var(window_rets, alpha=limits.var_alpha)
-            look = rets.iloc[max(0, i - limits.var_window) : i]
-            if len(look) >= limits.min_history:
-                synth = look.mul(capped, axis=1).sum(axis=1)
-                v = max(v, historical_var(synth, alpha=limits.var_alpha))
+        look = rets.iloc[max(0, i - limits.var_window) : i]
+        if len(look) >= limits.min_history:
+            synth = look.mul(capped, axis=1).sum(axis=1)
+            v = historical_var(synth, alpha=limits.var_alpha)
             if v > limits.max_var and v > 0:
                 scale = limits.max_var / v
                 capped = capped * scale
-                capped = _scale_to_margin_caps(capped, clusters, limits)
-                v = v * scale
-        port_var[i] = v
+                # VaR 绑定后只向下压缩保证金，不再回补额度
+                capped = _scale_to_margin_caps(capped, clusters, limits, fill=False)
+                v2 = historical_var(look.mul(capped, axis=1).sum(axis=1), alpha=limits.var_alpha)
+                if v2 > limits.max_var + 1e-12 and v2 > 0:
+                    scale2 = limits.max_var / v2
+                    capped = capped * scale2
+                    scale *= scale2
+                    v = limits.max_var
+                else:
+                    v = v2
+        port_var[i] = float(min(v, limits.max_var)) if v > 0 else 0.0
         var_scale[i] = scale
 
         day_max_cm = 0.0
@@ -194,7 +231,6 @@ def apply_margin_var_controls(
         equity *= 1.0 + net
         equity_vals[i] = equity
         net_vals[i] = net
-        realized_port.append(net)
         prev_w = capped
 
     weights = pd.DataFrame(weight_rows, index=dirs.index, columns=symbols)
