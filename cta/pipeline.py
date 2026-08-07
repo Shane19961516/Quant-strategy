@@ -4,25 +4,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from .metrics import performance_summary
-from .optimize import OptimizeResult, optimize_all_methods, unit_strategy_returns
+from .optimize import (
+    OptimizeResult,
+    build_stopped_signal,
+    build_stopped_signal_with_exits,
+    optimize_all_methods,
+    unit_strategy_returns,
+)
 from .portfolio_risk import MarginVaRLimits, apply_margin_var_controls
-from .signals import donchian_breakout_signal, dual_ma_signal, ts_momentum_signal
+from .stops import aggregate_trade_stats
 
 
 def _signal(method: str, ohlc: pd.DataFrame, params: Dict) -> pd.Series:
-    c, h, l = ohlc["close"], ohlc["high"], ohlc["low"]
-    if method == "dual_ma":
-        return dual_ma_signal(c, fast=int(params["fast"]), slow=int(params["slow"]))
-    if method == "donchian":
-        return donchian_breakout_signal(h, l, c, entry=int(params["entry"]), exit_=int(params["exit"]))
-    if method == "tsmom":
-        return ts_momentum_signal(c, lookback=int(params["lookback"]), skip=int(params.get("skip", 1)))
-    raise ValueError(method)
+    """带 ATR 止损的趋势信号。"""
+    return build_stopped_signal(method, ohlc, params)
 
 
 def _drawdown(equity: pd.Series) -> pd.Series:
@@ -86,6 +87,41 @@ def build_method_signals(
     return pd.DataFrame(data).sort_index().fillna(0.0)
 
 
+def build_method_signals_and_exits(
+    panels: Dict[str, pd.DataFrame],
+    method: str,
+    params: Dict,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    sigs = {}
+    exits = {}
+    for sym, ohlc in panels.items():
+        s, e = build_stopped_signal_with_exits(method, ohlc, params)
+        sigs[sym] = s
+        exits[sym] = e
+    return (
+        pd.DataFrame(sigs).sort_index().fillna(0.0),
+        pd.DataFrame(exits).sort_index(),
+    )
+
+
+def _adjust_returns_for_stops(
+    asset_ret: pd.DataFrame,
+    signal: pd.DataFrame,
+    stop_exit_ret: pd.DataFrame,
+) -> pd.DataFrame:
+    """止损日用止损价收益替换，使 weight_{t-1} * ret_t 等于止损实现盈亏。"""
+    traded = signal.shift(1).fillna(0.0)
+    adj = asset_ret.reindex_like(signal).fillna(0.0).copy()
+    stop_exit_ret = stop_exit_ret.reindex_like(signal)
+    for col in adj.columns:
+        hit = stop_exit_ret[col].notna() & (traded[col] != 0)
+        # exit_ret 已是持仓方向上的已实现收益；换算成价格收益
+        # traded * ret_adj = exit_ret  => ret_adj = exit_ret / traded
+        ret_adj = stop_exit_ret[col] / traded[col].replace(0, np.nan)
+        adj.loc[hit, col] = ret_adj.loc[hit]
+    return adj.fillna(0.0)
+
+
 def run_cta_pipeline(
     panels: Dict[str, pd.DataFrame],
     methods: Optional[List[str]] = None,
@@ -114,11 +150,13 @@ def run_cta_pipeline(
     asset_ret = asset_ret.mask(jump, 0.0).fillna(0.0)
 
     method_signals: Dict[str, pd.DataFrame] = {}
+    method_exits: Dict[str, pd.DataFrame] = {}
     unit_rows = []
     for m in methods:
         params = optim[m].best.as_dict()
-        sig = build_method_signals(panels, m, params)
+        sig, exits = build_method_signals_and_exits(panels, m, params)
         method_signals[m] = sig
+        method_exits[m] = exits
         u = unit_strategy_returns(panels, m, params, cost_bps=cost_bps)
         port = u.mean(axis=1)
         summ = performance_summary((1 + port).cumprod(), port)
@@ -135,67 +173,133 @@ def run_cta_pipeline(
         )
     method_unit_summary = pd.DataFrame(unit_rows).set_index("method")
 
+    # 验证集无效（夏普≤0 或验证收益≤0）的 sleeve 不参与组合，避免拖累
     sharpe_w = {}
     for m in methods:
         vs = float(optim[m].chosen_metrics.get("valid_sharpe", 0.0) or 0.0)
-        sharpe_w[m] = max(vs, 0.0) ** 2
+        vt = float(optim[m].chosen_metrics.get("valid_total", 0.0) or 0.0)
+        sharpe_w[m] = (max(vs, 0.0) ** 2) if (vs > 0.0 and vt > 0.0) else 0.0
     wsum = sum(sharpe_w.values())
     if wsum <= 1e-12:
+        # 兜底：全部按等权（仍各自独立套止损与风控）
         sharpe_w = {m: 1.0 / len(methods) for m in methods}
         wsum = 1.0
 
     sleeve_rows = []
     sleeve_nav_cols = {}
     sleeve_dd_cols = {}
+    sleeve_nets = {}
+    sleeve_weights = {}
+    sleeve_diags = {}
     for m in methods:
         sig = method_signals[m].reindex(columns=asset_ret.columns).fillna(0.0)
-        sw, snet, seq, sdiag, _ = apply_margin_var_controls(
+        exits = method_exits[m].reindex(columns=asset_ret.columns)
+        adj_ret = _adjust_returns_for_stops(asset_ret, sig, exits)
+
+        per_sym = {s: sig[s] for s in sig.columns}
+        tstats = aggregate_trade_stats(panels, per_sym)
+
+        # 单策略报告：打满 30% 预算
+        sw_full, snet_full, seq_full, sdiag_full, _ = apply_margin_var_controls(
             sig,
-            asset_ret.reindex(sig.index).fillna(0.0),
+            adj_ret.reindex(sig.index).fillna(0.0),
             limits=limits,
             base_notional_per_name=3.0 / max(len(sig.columns), 1),
             cost_bps=cost_bps,
             slip_bps=slip_bps,
         )
-        ssum = performance_summary(seq, snet)
-        sdd = _drawdown(seq)
-        sleeve_nav_cols[m] = seq.rename(m)
+        # 组合贡献：按验证夏普权重分配总预算与风控额度
+        w_m = sharpe_w[m] / wsum
+        lim_m = MarginVaRLimits(
+            instrument_leverage=limits.instrument_leverage,
+            max_total_margin=limits.max_total_margin * w_m,
+            max_cluster_margin=min(limits.max_cluster_margin, limits.max_total_margin * w_m),
+            corr_threshold=limits.corr_threshold,
+            var_window=limits.var_window,
+            var_alpha=limits.var_alpha,
+            max_var=max(limits.max_var * w_m, 0.005),
+            corr_window=limits.corr_window,
+            min_history=limits.min_history,
+        )
+        sw, snet, seq, sdiag, _ = apply_margin_var_controls(
+            sig,
+            adj_ret.reindex(sig.index).fillna(0.0),
+            limits=lim_m,
+            base_notional_per_name=(3.0 * w_m) / max(len(sig.columns), 1),
+            cost_bps=cost_bps,
+            slip_bps=slip_bps,
+        )
+        ssum = performance_summary(seq_full, snet_full)
+        sdd = _drawdown(seq_full)
+        sleeve_nav_cols[m] = seq_full.rename(m)
         sleeve_dd_cols[m] = sdd.rename(m)
+        sleeve_nets[m] = snet.reindex(asset_ret.index).fillna(0.0)
+        sleeve_weights[m] = sw
+        sleeve_diags[m] = sdiag
         sleeve_rows.append(
             {
                 "method": m,
                 "params": optim[m].best.label(),
-                "signal_weight": sharpe_w[m] / wsum,
+                "signal_weight": w_m,
                 **ssum,
                 "max_drawdown": float(sdd.min()),
-                "avg_gross": float(sw.abs().sum(axis=1).mean()),
-                "avg_margin": float(sdiag["total_margin"].mean()),
-                "max_margin": float(sdiag["total_margin"].max()),
-                "max_var": float(sdiag["port_var95"].max()),
+                "n_trades": tstats["n_trades"],
+                "trade_win_rate": tstats["trade_win_rate"],
+                "trade_payoff": tstats["trade_payoff"],
+                "avg_win": tstats["avg_win"],
+                "avg_loss": tstats["avg_loss"],
+                "expectancy": tstats["expectancy"],
+                "avg_gross": float(sw_full.abs().sum(axis=1).mean()),
+                "avg_margin": float(sdiag_full["total_margin"].mean()),
+                "max_margin": float(sdiag_full["total_margin"].max()),
+                "max_var": float(sdiag_full["port_var95"].max()),
             }
         )
     sleeve_summary = pd.DataFrame(sleeve_rows).set_index("method")
     sleeve_nav = pd.DataFrame(sleeve_nav_cols).sort_index()
     sleeve_drawdown = pd.DataFrame(sleeve_dd_cols).sort_index()
 
+    # 总资金 NAV = 各策略加权 sleeve 收益之和（止损盈亏已在 sleeve 内正确结算）
+    net = sum(sleeve_nets.values())
+    equity = (1.0 + net).cumprod()
+    equity = equity.rename("NAV")
+    # 合成权重（名义）
+    weights = None
+    for m, sw in sleeve_weights.items():
+        weights = sw.copy() if weights is None else weights.add(sw, fill_value=0.0)
+    weights = weights.fillna(0.0)
+    # 诊断：保证金/VaR 取加权 sleeve 近似
+    diagnostics = {
+        "total_margin": sum(
+            (sleeve_diags[m]["total_margin"] * (sharpe_w[m] / wsum)) for m in methods
+        ).rename("total_margin"),
+        "port_var95": sum(
+            (sleeve_diags[m]["port_var95"] * (sharpe_w[m] / wsum)) for m in methods
+        ).rename("port_var95"),
+        "var_scale": pd.Series(1.0, index=equity.index, name="var_scale"),
+        "cluster_margin_max": sum(
+            (sleeve_diags[m]["cluster_margin_max"] * (sharpe_w[m] / wsum)) for m in methods
+        ).rename("cluster_margin_max"),
+    }
+    # 对总组合再施加一次总保证金/VaR 硬约束缩放（保持口径）
+    # 若加权后总保证金超 30%，等比压缩净值收益与权重
+    tm = weights.abs().sum(axis=1) / limits.instrument_leverage
+    overflow = tm > limits.max_total_margin + 1e-12
+    if overflow.any():
+        scale = (limits.max_total_margin / tm.where(tm > 0, np.nan)).clip(upper=1.0).fillna(1.0)
+        weights = weights.mul(scale, axis=0)
+        net = net * scale.shift(1).fillna(1.0)
+        equity = (1.0 + net).cumprod().rename("NAV")
+        diagnostics["total_margin"] = (weights.abs().sum(axis=1) / limits.instrument_leverage).rename("total_margin")
+
+    # 组合信号仅用于输出
     combined = None
     for m, sig in method_signals.items():
         part = sig * (sharpe_w[m] / wsum)
         combined = part if combined is None else combined.add(part, fill_value=0.0)
     combined = combined.clip(-1.0, 1.0).sort_index().fillna(0.0)
-    asset_ret = asset_ret.reindex(combined.index).fillna(0.0)
-    combined = combined.reindex(columns=asset_ret.columns).fillna(0.0)
-
-    n_assets = max(len(combined.columns), 1)
-    base = 3.0 / n_assets
-    weights, net, equity, diagnostics, clusters = apply_margin_var_controls(
-        combined,
-        asset_ret,
-        limits=limits,
-        base_notional_per_name=base,
-        cost_bps=cost_bps,
-        slip_bps=slip_bps,
-    )
+    combined = combined.reindex(index=equity.index, columns=asset_ret.columns).fillna(0.0)
+    clusters = pd.DataFrame(index=equity.index)
     equity = equity.rename("NAV")
     nav_dd = _drawdown(equity)
 

@@ -70,6 +70,17 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 
 新增 `cta/` 模块。正确流程分两步：
 
+### 0) 趋势止损（必要组件）
+趋势 CTA 是**高赔率、低胜率**：必须截断亏损、让利润奔跑。
+每个候选参数强制叠加：
+- **ATR 初始止损**：入场价 ± `atr_mult * ATR`
+- **ATR 跟踪止损**：沿有利方向收紧，`trail_mult` 通常宽于初始止损
+- 止损日按止损价（跳空则按开盘）结算，不用 close-to-close 穿仓
+
+入口：`cta/stops.py`；参数网格含 `atr_mult ∈ {1.5, 2.0, 2.5, 3.0}`。
+
+报告口径用**交易回合**胜率/赔率（`trade_win_rate` / `trade_payoff`），不是日胜率。
+
 ### 1) 参数寻优（先做）
 对 dual_ma / donchian / tsmom **各自**做网格搜索，要求：
 - **同一组参数**用于全部品种（跨品种泛化）
@@ -102,9 +113,10 @@ python -m cta.run_pipeline --akshare --plot
 | 文件 | 作用 |
 |------|------|
 | `cta/akshare_data.py` | akshare 主力连续拉取与缓存 |
-| `cta/optimize.py` | 跨品种稳健参数寻优 |
+| `cta/stops.py` | ATR 初始止损 + 跟踪止损 + 交易胜率/赔率 |
+| `cta/optimize.py` | 跨品种稳健参数寻优（含止损参数） |
 | `cta/portfolio_risk.py` | 保证金 / 相关性聚类 / 滚动 VaR |
-| `cta/pipeline.py` | 寻优 → 信号 → 仓位 主流程 |
+| `cta/pipeline.py` | 寻优 → 止损信号 → 仓位 主流程 |
 | `cta/run_pipeline.py` | 命令行入口 |
 | `cta/signals.py` | 双均线 / 唐奇安 / TSMOM |
 | `cta/metrics.py` | 绩效指标 |

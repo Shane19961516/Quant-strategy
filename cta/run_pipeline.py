@@ -208,18 +208,34 @@ def main(argv=None) -> int:
             f"score={cm.get('score', float('nan')):.3f}"
         )
 
-    print("\n=== 各策略绩效（含最大回撤）===")
-    cols = ["total_return", "cagr", "ann_vol", "sharpe", "max_drawdown", "max_daily_loss", "signal_weight"]
+    print("\n=== 各策略绩效（含止损后 MaxDD / 交易胜率 / 赔率）===")
+    cols = [
+        "total_return",
+        "cagr",
+        "sharpe",
+        "max_drawdown",
+        "trade_win_rate",
+        "trade_payoff",
+        "n_trades",
+        "signal_weight",
+    ]
     show = result.sleeve_summary[cols].copy()
-    for c in ["total_return", "cagr", "ann_vol", "max_drawdown", "max_daily_loss"]:
+    for c in ["total_return", "cagr", "max_drawdown", "trade_win_rate"]:
         show[c] = show[c].map(lambda x: f"{x:.2%}")
     show["sharpe"] = result.sleeve_summary["sharpe"].map(lambda x: f"{x:.3f}")
+    show["trade_payoff"] = result.sleeve_summary["trade_payoff"].map(lambda x: f"{x:.2f}")
+    show["n_trades"] = result.sleeve_summary["n_trades"].map(lambda x: f"{int(x)}")
     show["signal_weight"] = result.sleeve_summary["signal_weight"].map(lambda x: f"{x:.2%}")
     print(show.to_string())
 
     print("\n=== 各策略最大回撤 ===")
     for m, row in result.sleeve_summary.iterrows():
-        print(f"  {m}: MaxDD = {row['max_drawdown']:.2%}")
+        print(
+            f"  {m}: MaxDD={row['max_drawdown']:.2%} | "
+            f"交易胜率={row['trade_win_rate']:.1%} | "
+            f"赔率={row['trade_payoff']:.2f} | "
+            f"交易数={int(row['n_trades'])}"
+        )
     print(f"  TOTAL资金组合: MaxDD = {result.summary['max_drawdown']:.2%}")
 
     print("\n=== 总资金组合（NAV）===")
