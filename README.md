@@ -100,13 +100,22 @@ pip install -r requirements-cta.txt
 python -m cta.run_pipeline --data-dir cta_data_akshare --plot
 ```
 
-### 模块说明
-| 文件 | 作用 |
-|------|------|
-| `cta/pairs.py` | 经济配对价差 z-score 套利 |
-| `cta/signals.py` | 布林反转 / 短周期反转 / 趋势信号 |
-| `cta/stops.py` | 趋势用 ATR 止损（可选方法） |
-| `cta/optimize.py` | 跨品种/跨配对稳健参数寻优 |
-| `cta/portfolio_risk.py` | 保证金 / 相关性聚类 / 滚动 VaR |
-| `cta/pipeline.py` | 寻优 → 信号 → 仓位 主流程 |
-| `cta/run_pipeline.py` | 命令行入口 |
+六.用户定义四策略资金簿
+------
+
+按指定规则实现，资金 **100 万**，保证金权限：
+
+| 策略 | 规则 | 保证金权限 |
+|------|------|------------|
+| 一 | MA14/16 交叉，回中轨平仓，不重复开仓 | 15 万 |
+| 二 | 20日布林±2σ 穿轨回穿，回中轨平，±4σ止损 | 30 万 |
+| 三 | 滚动20日相关>0.6 配对，1:1名义价差回归 | 15 万 |
+| 四 | 主力/次主力价差，20日 2σ回归、4σ止损 | 20 万 |
+
+```bash
+python -m cta.book.run_book --data-dir cta_data_akshare --plot
+# 首次会拉取分合约缓存到 cta_data_contracts/；已有缓存可用 --skip-s4-fetch
+```
+
+结果目录：`cta_result_book/`（`nav_book.png`、`report.md`、`summary_book.csv`）。
+
