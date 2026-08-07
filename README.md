@@ -100,21 +100,19 @@ pip install -r requirements-cta.txt
 python -m cta.run_pipeline --data-dir cta_data_akshare --plot
 ```
 
-六.用户定义四策略资金簿
+六.用户定义策略资金簿
 ------
 
-按指定规则实现，资金 **100 万**，保证金权限：
+资金 **100 万**。策略二（布林）已移除。保证金权限：
 
 | 策略 | 规则 | 保证金权限 |
 |------|------|------------|
-| 一 | MA14/16 交叉，回中轨平仓，不重复开仓 | 15 万 |
-| 二 | 20日布林±2σ 穿轨回穿，回中轨平，±4σ止损 | 30 万 |
+| 一 | MA14/16 交叉 + MA60 过滤 + 中轨±1ATR 平仓 + 2.5ATR 跟踪止损 | 15 万 |
 | 三 | 滚动20日相关>0.6 配对，1:1名义价差回归 | 15 万 |
 | 四 | 主力/次主力价差，20日 2σ回归、4σ止损 | 20 万 |
 
 ```bash
-python -m cta.book.run_book --data-dir cta_data_akshare --plot
-# 首次会拉取分合约缓存到 cta_data_contracts/；已有缓存可用 --skip-s4-fetch
+python -m cta.book.run_book --data-dir cta_data_akshare --skip-s4-fetch --plot
 ```
 
 结果目录：`cta_result_book/`（`nav_book.png`、`report.md`、`summary_book.csv`）。
