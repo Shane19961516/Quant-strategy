@@ -63,7 +63,7 @@ def run_breadth_sprint(
     contract_cache: str = "cta_data_contracts",
     plot: bool = True,
 ) -> Dict:
-    panels = {k: v for k, v in load_panels(data_dir).items() if k.upper() != "IF"}
+    panels = load_panels(data_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     print("构建广度袖层（含 carry / OLS 边缘）...")

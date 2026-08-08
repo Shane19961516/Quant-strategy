@@ -49,14 +49,14 @@ STRATEGY_META = {
         "category": "套利",
         "name_cn": "跨期价差回归",
         "name_en": "Calendar spread",
-        "params": "z20±2; RB/HC/I/CU; ~1x",
+        "params": "z20±2; 全品种(除IF); ~1x",
         "source": "国内跨期主流",
     },
     "arb_pairs": {
         "category": "套利",
         "name_cn": "产业配对(相关+半衰期)",
         "name_en": "Gated economic pairs",
-        "params": "z60, corr≥0.55, HL 5-45d",
+        "params": "全链条配对, z60, corr≥0.55, HL 5-45d",
         "source": "产业链统计套利",
     },
     "arb_xs_reversal": {
@@ -388,8 +388,7 @@ def run_research_suite(
     contract_cache: str = "cta_data_contracts",
     plot: bool = True,
 ) -> Dict:
-    panels = load_panels(data_dir)
-    panels = {k: v for k, v in panels.items() if k.upper() != "IF"}
+    panels = load_panels(data_dir)  # 全品种；套利路径内部会排除 IF
     os.makedirs(out_dir, exist_ok=True)
 
     keys = list(STRATEGY_META.keys())

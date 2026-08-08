@@ -76,10 +76,13 @@ class TestSuiteSmoke(unittest.TestCase):
         self.assertTrue(np.isfinite(nav2.iloc[-1]))
 
     def test_stable_yearly_helper(self):
-        from cta.suite.stable_book import _yearly_table, LIVE_V4_CORE
+        from cta.suite.stable_book import _yearly_table, SLEEVE_BLACKLIST
+        from cta.suite.universe import ALL_COMMODITIES, FULL_ECONOMIC_PAIRS, ALL_CALENDAR_SYMBOLS
 
-        self.assertIn("pair_RB_HC", LIVE_V4_CORE)
-        self.assertNotIn("pair_I_RB", LIVE_V4_CORE)
+        self.assertIn("pair_I_RB", SLEEVE_BLACKLIST)
+        self.assertIn("SC", ALL_COMMODITIES)
+        self.assertIn("RU", ALL_CALENDAR_SYMBOLS)
+        self.assertGreaterEqual(len(FULL_ECONOMIC_PAIRS), 8)
         idx = pd.bdate_range("2020-01-01", periods=300)
         r = pd.Series(0.001, index=idx)
         y = _yearly_table(r)

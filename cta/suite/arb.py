@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from ..pairs import DEFAULT_ECONOMIC_PAIRS, available_pairs, pair_leg_signals
+from ..pairs import available_pairs, pair_leg_signals
 from ..book.strategies_4 import (
     CalendarConfig,
     build_calendar_book,
@@ -21,6 +21,7 @@ from ..book.strategies_4 import (
     simulate_spread_book_realistic,
 )
 from .noleverage import _align_closes, simulate_directional, simulate_pairs
+from .universe import FULL_ECONOMIC_PAIRS, full_calendar_config
 
 
 def _half_life(spread: pd.Series) -> float:
@@ -53,7 +54,7 @@ def build_gated_pair_legs(
     hl_lookback: int = 80,
 ) -> pd.DataFrame:
     """产业配对：滚动相关不足或半衰期异常时禁止开仓。"""
-    use = available_pairs(panels.keys(), pairs or DEFAULT_ECONOMIC_PAIRS)
+    use = available_pairs(panels.keys(), pairs or FULL_ECONOMIC_PAIRS)
     closes = _align_closes(panels)
     acc = {s: pd.Series(0.0, index=closes.index) for s in closes.columns}
 
@@ -158,7 +159,11 @@ def run_arb_xs_reversal(
     cost_bps: float = 1.5,
     slip_bps: float = 1.5,
 ) -> Tuple[pd.Series, pd.Series, pd.DataFrame]:
-    prefer = [s for s in ("RB", "HC", "I", "CU", "TA", "M", "C", "Y", "AU", "MA") if s in panels]
+    prefer = [
+        s
+        for s in ("RB", "HC", "I", "CU", "TA", "M", "C", "Y", "AU", "MA", "RU", "SC")
+        if s in panels
+    ]
     use = prefer or [s for s in panels if s.upper() != "IF"]
     sub = {s: panels[s] for s in use}
     closes = _align_closes(sub)
@@ -174,8 +179,8 @@ def run_arb_calendar(
     contract_cache: str = "cta_data_contracts",
     cal_cfg: Optional[CalendarConfig] = None,
 ) -> Tuple[pd.Series, pd.Series, pd.DataFrame]:
-    """跨期：保证金预算 ≈ 0.10*capital，近似两腿名义合计 1×。"""
-    cal_cfg = cal_cfg or CalendarConfig()
+    """跨期：保证金预算 ≈ 0.10*capital，近似两腿名义合计 1×。默认全品种。"""
+    cal_cfg = cal_cfg or full_calendar_config()
     store = load_cached_contracts_only(list(panels.keys()), cache_dir=contract_cache)
     book = build_calendar_book(store, cal_cfg)
     if not book:

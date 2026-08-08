@@ -13,18 +13,18 @@ import numpy as np
 import pandas as pd
 
 from ..book.strategies_4 import (
-    CalendarConfig,
     CONTRACT_SPEC,
     _backtest_symbol_calendar,
     load_cached_contracts_only,
     simulate_spread_book_realistic,
 )
-from ..pairs import DEFAULT_ECONOMIC_PAIRS, pair_leg_signals
+from ..pairs import pair_leg_signals
 from ..signals import donchian_breakout_signal, dual_ma_signal, ts_momentum_signal
 from ..stops import StopConfig, apply_atr_stop
 from .arb import _half_life
 from .noleverage import _align_closes, simulate_directional, simulate_pairs
 from .trend import _filter_panels
+from .universe import ALL_CALENDAR_SYMBOLS, available_full_pairs, full_calendar_config
 
 
 def _pair_sleeve(
@@ -93,9 +93,7 @@ def _calendar_sleeve(
     contract_cache: str,
 ) -> Tuple[pd.Series, pd.Series]:
     store = load_cached_contracts_only([sym], cache_dir=contract_cache)
-    cal = CalendarConfig(allow=(sym,), exclude=tuple(s for s in CONTRACT_SPEC if s != sym))
-    # allow only this symbol
-    cal.allow = (sym,)
+    cal = full_calendar_config(allow=(sym.upper(),))
     book = {}
     contracts = store.get(sym.upper(), {})
     if len(contracts) >= 2:
@@ -156,23 +154,32 @@ def build_breadth_sleeves(
     contract_cache: str = "cta_data_contracts",
     cost_bps: float = 1.5,
     slip_bps: float = 1.5,
+    full_universe: bool = True,
 ) -> Dict[str, pd.Series]:
-    """返回各袖层日收益（已按自身 full capital / lev≤1 计）。"""
-    panels = {k.upper(): v for k, v in panels.items() if k.upper() != "IF"}
+    """返回各袖层日收益（已按自身 full capital / lev≤1 计）。
+
+    full_universe=True：全商品配对 + 全品种跨期（除 IF）。
+    """
+    # 趋势可含 IF；套利/跨期不含
+    panels_all = {k.upper(): v for k, v in panels.items()}
+    panels_cmd = {k: v for k, v in panels_all.items() if k != "IF"}
     rets: Dict[str, pd.Series] = {}
 
     for kind in ("tsmom60", "tsmom120", "donchian55", "dualma_atr"):
-        _, r = _trend_sleeve(panels, kind, capital, cost_bps, slip_bps)
+        _, r = _trend_sleeve(panels_all if full_universe else panels_cmd, kind, capital, cost_bps, slip_bps)
         rets[f"trend_{kind}"] = r.fillna(0.0)
 
-    for a, b in DEFAULT_ECONOMIC_PAIRS:
-        if a in panels and b in panels:
-            _, r = _pair_sleeve(panels, a, b, capital, cost_bps, slip_bps)
-            rets[f"pair_{a}_{b}"] = r.fillna(0.0)
+    pairs = available_full_pairs(panels_cmd.keys()) if full_universe else available_full_pairs(
+        [s for s in ("RB", "HC", "I", "Y", "M", "C", "MA", "TA") if s in panels_cmd]
+    )
+    for a, b in pairs:
+        _, r = _pair_sleeve(panels_cmd, a, b, capital, cost_bps, slip_bps)
+        rets[f"pair_{a}_{b}"] = r.fillna(0.0)
 
-    for sym in ("RB", "HC", "I", "CU"):
-        if sym in panels:
-            _, r = _calendar_sleeve(panels, sym, capital, contract_cache)
+    cal_syms = ALL_CALENDAR_SYMBOLS if full_universe else ("RB", "HC", "I", "CU")
+    for sym in cal_syms:
+        if sym in panels_cmd or sym in CONTRACT_SPEC:
+            _, r = _calendar_sleeve(panels_cmd, sym, capital, contract_cache)
             rets[f"cal_{sym}"] = r.fillna(0.0)
 
     return rets

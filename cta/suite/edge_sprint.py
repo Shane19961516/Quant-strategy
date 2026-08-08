@@ -30,6 +30,7 @@ from .arb import _half_life
 from .factory import activity_aware_portfolio, build_breadth_sleeves
 from .noleverage import _align_closes, simulate_directional, simulate_pairs, slice_period, walk_forward_oos_sharpes
 from .trend import _filter_panels
+from .universe import ALL_CALENDAR_SYMBOLS, CARRY_SYMBOLS, available_full_pairs
 
 IS_END = "2021-12-31"
 OOS_START = "2022-01-01"
@@ -37,7 +38,7 @@ TARGET_SHARPE = 2.0
 
 
 def _ohlc_frames(panels: Dict[str, pd.DataFrame]) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    panels = _filter_panels({k.upper(): v for k, v in panels.items() if k.upper() != "IF"})
+    panels = _filter_panels({k.upper(): v for k, v in panels.items()}, drop_if=False)
     opens = pd.DataFrame({s: panels[s]["open"].astype(float) for s in panels}).sort_index()
     closes = pd.DataFrame({s: panels[s]["close"].astype(float) for s in panels}).sort_index()
     # align
@@ -85,7 +86,7 @@ def build_xs_overnight_signals(
 
 
 def _run_dir(panels, sig_builder, capital, cost_bps, slip_bps, **kw):
-    panels_u = _filter_panels({k.upper(): v for k, v in panels.items() if k.upper() != "IF"})
+    panels_u = _filter_panels({k.upper(): v for k, v in panels.items()}, drop_if=False)
     closes = _align_closes(panels_u)
     sig = sig_builder(panels_u, **kw).reindex(closes.index).fillna(0.0)
     return simulate_directional(
@@ -163,7 +164,7 @@ def _ols_hedge_pair(
 def _basis_panel(
     panels: Dict[str, pd.DataFrame],
     contract_cache: str,
-    symbols: Tuple[str, ...] = ("RB", "HC", "I", "CU", "M", "Y", "C", "TA", "MA", "AU"),
+    symbols: Tuple[str, ...] = CARRY_SYMBOLS,
 ) -> pd.DataFrame:
     """近远月 log(near/far) 面板（因果选约）。"""
     cfg = CalendarConfig()
@@ -215,9 +216,9 @@ def _carry_xs_from_contracts(
     capital: float,
     cost_bps: float,
     slip_bps: float,
-    symbols: Tuple[str, ...] = ("RB", "HC", "I", "CU", "M", "Y", "C", "TA", "MA", "AU"),
-    n_long: int = 3,
-    n_short: int = 3,
+    symbols: Tuple[str, ...] = CARRY_SYMBOLS,
+    n_long: int = 4,
+    n_short: int = 4,
 ) -> Tuple[pd.Series, pd.Series]:
     """截面期限结构 carry：近远月对数价差，多低 carry / 空高 carry。
 
@@ -290,13 +291,19 @@ def build_edge_sleeves(
     cost_bps: float = 1.5,
     slip_bps: float = 1.5,
 ) -> Dict[str, pd.Series]:
-    panels = {k.upper(): v for k, v in panels.items() if k.upper() != "IF"}
+    """全品种袖层：趋势含 IF；配对/跨期/carry 覆盖全部商品。"""
+    panels_all = {k.upper(): v for k, v in panels.items()}
+    panels_cmd = {k: v for k, v in panels_all.items() if k != "IF"}
     rets: Dict[str, pd.Series] = {}
 
-    # 既有广度袖层
-    rets.update(build_breadth_sleeves(panels, capital, contract_cache, cost_bps, slip_bps))
+    # 广度袖层（全品种）
+    rets.update(
+        build_breadth_sleeves(
+            panels_all, capital, contract_cache, cost_bps, slip_bps, full_universe=True
+        )
+    )
 
-    # OHLC 分解
+    # OHLC 分解（商品+IF）
     for name, builder, kw in [
         ("edge_on_mom5", build_overnight_mom_signals, {"lookback": 5}),
         ("edge_on_mom20", build_overnight_mom_signals, {"lookback": 20}),
@@ -304,31 +311,29 @@ def build_edge_sleeves(
         ("edge_intraday_rev5", build_intraday_rev_signals, {"lookback": 5}),
         ("edge_xs_overnight5", build_xs_overnight_signals, {"lookback": 5}),
     ]:
-        _, r, _ = _run_dir(panels, builder, capital, cost_bps, slip_bps, **kw)
+        _, r, _ = _run_dir(panels_all, builder, capital, cost_bps, slip_bps, **kw)
         rets[name] = r.fillna(0.0)
 
-    # OLS 对冲配对（预注册黑色链）
-    for a, b in (("I", "RB"), ("RB", "HC"), ("I", "HC")):
-        if a in panels and b in panels:
-            _, r = _ols_hedge_pair(panels, a, b, capital, cost_bps, slip_bps)
-            rets[f"edge_ols_{a}_{b}"] = r.fillna(0.0)
-            # 极端 z 版
-            _, r2 = _ols_hedge_pair(
-                panels, a, b, capital, cost_bps, slip_bps, entry_z=3.0, exit_z=0.75, stop_z=4.5
-            )
-            rets[f"edge_olsx_{a}_{b}"] = r2.fillna(0.0)
+    # OLS 对冲：全产业配对
+    for a, b in available_full_pairs(panels_cmd.keys()):
+        _, r = _ols_hedge_pair(panels_cmd, a, b, capital, cost_bps, slip_bps)
+        rets[f"edge_ols_{a}_{b}"] = r.fillna(0.0)
+        _, r2 = _ols_hedge_pair(
+            panels_cmd, a, b, capital, cost_bps, slip_bps, entry_z=3.0, exit_z=0.75, stop_z=4.5
+        )
+        rets[f"edge_olsx_{a}_{b}"] = r2.fillna(0.0)
 
-    # 截面 carry + basis momentum（基差面板只算一次）
+    # 截面 carry + basis momentum（全品种基差）
     try:
-        basis = _basis_panel(panels, contract_cache)
+        basis = _basis_panel(panels_cmd, contract_cache, symbols=tuple(ALL_CALENDAR_SYMBOLS))
         rets["edge_carry_xs"] = _xs_from_score_panel(
-            panels, -basis, capital, cost_bps, slip_bps  # 多低 carry = 高 (-basis)
+            panels_cmd, -basis, capital, cost_bps, slip_bps, n_long=4, n_short=4
         ).fillna(0.0)
         rets["edge_basis_mom60"] = _xs_from_score_panel(
-            panels, basis - basis.shift(60), capital, cost_bps, slip_bps
+            panels_cmd, basis - basis.shift(60), capital, cost_bps, slip_bps, n_long=4, n_short=4
         ).fillna(0.0)
         rets["edge_basis_mom20"] = _xs_from_score_panel(
-            panels, basis - basis.shift(20), capital, cost_bps, slip_bps
+            panels_cmd, basis - basis.shift(20), capital, cost_bps, slip_bps, n_long=4, n_short=4
         ).fillna(0.0)
     except Exception as e:  # noqa: BLE001 — 合约缺失时降级
         print(f"carry/basis skipped: {e}")
@@ -413,10 +418,10 @@ def run_edge_sprint(
     contract_cache: str = "cta_data_contracts",
     plot: bool = True,
 ) -> Dict:
-    panels = {k: v for k, v in load_panels(data_dir).items() if k.upper() != "IF"}
+    panels = load_panels(data_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    print("构建边缘冲刺袖层 (OHLC / carry / OLS)...")
+    print("构建边缘冲刺袖层 (全品种 OHLC / carry / OLS)...")
     rets = build_edge_sleeves(panels, capital=capital, contract_cache=contract_cache)
     score = _score(rets)
     score.to_csv(os.path.join(out_dir, "edge_sleeves.csv"), index=False)

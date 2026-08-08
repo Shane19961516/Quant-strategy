@@ -111,7 +111,7 @@ def run_return_target(
     plot: bool = True,
 ) -> Dict:
     """把 live_v3 缩放到目标波动，争取 OOS CAGR 落在 15–20%。"""
-    panels = {k: v for k, v in load_panels(data_dir).items() if k.upper() != "IF"}
+    panels = load_panels(data_dir)
     os.makedirs(out_dir, exist_ok=True)
     print("构建袖层并合成 live_v3（再做收益目标缩放）...")
     rets = build_edge_sleeves(panels, capital=capital, contract_cache=contract_cache)

@@ -17,16 +17,17 @@ from ..stops import StopConfig, apply_atr_stop
 from .noleverage import _align_closes, simulate_directional
 
 
-LIQUID_TREND = ("RB", "HC", "I", "CU", "AU", "M", "Y", "C", "TA", "MA", "SC", "RU")
+# 全品种趋势池（含 IF）；极低流动性才剔除
+LIQUID_TREND = ("RB", "HC", "I", "CU", "AU", "M", "Y", "C", "TA", "MA", "SC", "RU", "IF")
 
 
-def _filter_panels(panels: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+def _filter_panels(panels: Dict[str, pd.DataFrame], drop_if: bool = False) -> Dict[str, pd.DataFrame]:
     out = {}
     for s, df in panels.items():
         su = s.upper()
-        if su == "IF":
+        if drop_if and su == "IF":
             continue
-        if su in LIQUID_TREND or su in panels:
+        if su in LIQUID_TREND or su in {x.upper() for x in panels}:
             # 流动性：近一年日均成交若可得则过滤
             if "volume" in df.columns and len(df) > 60:
                 vol = pd.to_numeric(df["volume"], errors="coerce").tail(252).mean()
