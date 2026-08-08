@@ -63,3 +63,38 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 将日收益率转换为设定频率的收益率，默认为6个月（披露完整持仓数据的报告期仅为半年报和年报），
 
 详见代码。
+
+
+五.股票多因子策略
+------
+
+新增 `multifactor/` 模块：基于仓库内月度涨跌幅与中信一级行业，构建可回测的 A 股多因子选股框架。
+
+### 1) 因子集（高分=更宜做多）
+| 因子 | 逻辑 | 默认 |
+|------|------|------|
+| `rev_1` | 1 月反转 | ✓ |
+| `vol_12` | 低波动（过去 12 月收益标准差取负） | ✓ |
+| `max_ret` | MAX 因子（过去 12 月最大月收益取负） | ✓ |
+| `skew_12` | 负偏度偏好 | ✓ |
+| `mom_12_1` | 12-1 月动量 | 可选（本样本 IC 偏负） |
+| `ind_resid_mom` | 行业中性残差动量 | 可选 |
+
+处理流程：因子滞后 1 期 → 缩尾 → 行业中性 → 截面 z-score → 等权 / 滚动 ICIR 合成 → 五分位多空或 Top% 多头 → 月度再平衡（含交易成本）。
+
+### 2) 运行
+```bash
+python3 stock_multifactor_strategy.py
+python3 stock_multifactor_strategy.py --portfolio long_only --universe csi300 --combine equal
+python3 stock_multifactor_strategy.py --factors mom_12_1,rev_1,vol_12,max_ret,skew_12,ind_resid_mom
+python3 -m pytest multifactor/tests -q
+```
+
+结果输出至 `multifactor_result/`（净值、IC、分位收益、持仓快照与图）。
+
+### 3) 样本回测摘要（2010-01 ~ 2019-12，成本 20bp 单边）
+| 配置 | 累计 | 年化 | 夏普 | 最大回撤 |
+|------|------|------|------|---------|
+| 默认 ICIR 多空 | +124.7% | 8.4% | 0.72 | -32.8% |
+| 等权多空 | +122.5% | 8.3% | 0.69 | -33.2% |
+| 沪深300内 Top20% 多头 | +207.0% | 11.9% | 0.58 | -40.3%（超额年化 8.8%，IR 0.80） |
