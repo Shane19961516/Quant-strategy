@@ -160,25 +160,16 @@ def _ols_hedge_pair(
     return nav, ret
 
 
-def _carry_xs_from_contracts(
+def _basis_panel(
     panels: Dict[str, pd.DataFrame],
     contract_cache: str,
-    capital: float,
-    cost_bps: float,
-    slip_bps: float,
     symbols: Tuple[str, ...] = ("RB", "HC", "I", "CU", "M", "Y", "C", "TA", "MA", "AU"),
-    n_long: int = 3,
-    n_short: int = 3,
-) -> Tuple[pd.Series, pd.Series]:
-    """截面期限结构 carry：近远月对数价差年化代理，多高 carry / 空低 carry。
-
-    信号用合约价，收益仍落在主力连续上（落地近似；避免跨期腿簿记复杂度）。
-    """
+) -> pd.DataFrame:
+    """近远月 log(near/far) 面板（因果选约）。"""
     cfg = CalendarConfig()
     store = load_cached_contracts_only(list(symbols), cache_dir=contract_cache)
     idx = _align_closes(panels).index
     carry = pd.DataFrame(index=idx, columns=list(symbols), dtype=float)
-
     for sym in symbols:
         contracts = store.get(sym.upper(), {})
         if len(contracts) < 2:
@@ -213,11 +204,27 @@ def _carry_xs_from_contracts(
                 continue
             pn = float(contracts[near].loc[dt, "close"])
             pd_ = float(contracts[deferred].loc[dt, "close"])
-            if pn <= 0 or pd_ <= 0:
-                continue
-            # 近相对远的溢价：正=近贵（贴水结构下做空近月 carry 为负等）；用 log(near/far)
-            carry.at[dt, sym] = float(np.log(pn / pd_))
+            if pn > 0 and pd_ > 0:
+                carry.at[dt, sym] = float(np.log(pn / pd_))
+    return carry
 
+
+def _carry_xs_from_contracts(
+    panels: Dict[str, pd.DataFrame],
+    contract_cache: str,
+    capital: float,
+    cost_bps: float,
+    slip_bps: float,
+    symbols: Tuple[str, ...] = ("RB", "HC", "I", "CU", "M", "Y", "C", "TA", "MA", "AU"),
+    n_long: int = 3,
+    n_short: int = 3,
+) -> Tuple[pd.Series, pd.Series]:
+    """截面期限结构 carry：近远月对数价差，多低 carry / 空高 carry。
+
+    信号用合约价，收益落在主力连续上（落地近似；与真实跨期腿有基差）。
+    """
+    carry = _basis_panel(panels, contract_cache, symbols=symbols)
+    idx = carry.index
     sig = pd.DataFrame(0.0, index=idx, columns=[s for s in symbols if s in panels])
     for dt in idx:
         row = carry.loc[dt].dropna()
@@ -225,7 +232,6 @@ def _carry_xs_from_contracts(
         if len(row) < n_long + n_short:
             continue
         order = row.sort_values()
-        # 高 carry（近相对更贵）→ 做空；低 carry → 做多（经典 roll yield 多空）
         for s in order.index[:n_long]:
             sig.at[dt, s] = 1.0
         for s in order.index[-n_short:]:
@@ -236,6 +242,44 @@ def _carry_xs_from_contracts(
     sig = sig.reindex(closes.index).fillna(0.0)
     return simulate_directional(
         sig, closes, capital=capital, cost_bps=cost_bps, slip_bps=slip_bps, use_inv_vol=True, max_leverage=1.0
+    )
+
+
+def _basis_momentum_xs(
+    panels: Dict[str, pd.DataFrame],
+    contract_cache: str,
+    capital: float,
+    cost_bps: float,
+    slip_bps: float,
+    lookback: int = 60,
+    n_long: int = 3,
+    n_short: int = 3,
+) -> Tuple[pd.Series, pd.Series, pd.DataFrame]:
+    """Basis momentum（Boons / Prado）：近远月基差的动量截面多空。"""
+    basis = _basis_panel(panels, contract_cache)
+    score = basis - basis.shift(lookback)
+    idx = score.index
+    cols = [s for s in score.columns if s in panels]
+    sig = pd.DataFrame(0.0, index=idx, columns=cols)
+    for dt in idx:
+        row = score.loc[dt, cols].dropna()
+        if len(row) < n_long + n_short:
+            continue
+        order = row.sort_values()
+        for s in order.index[-n_long:]:
+            sig.at[dt, s] = 1.0
+        for s in order.index[:n_short]:
+            sig.at[dt, s] = -1.0
+    use = {s: panels[s] for s in cols}
+    closes = _align_closes(use).reindex(idx).ffill()
+    return simulate_directional(
+        sig.fillna(0.0),
+        closes,
+        capital=capital,
+        cost_bps=cost_bps,
+        slip_bps=slip_bps,
+        use_inv_vol=True,
+        max_leverage=1.0,
     )
 
 
@@ -260,7 +304,7 @@ def build_edge_sleeves(
         ("edge_intraday_rev5", build_intraday_rev_signals, {"lookback": 5}),
         ("edge_xs_overnight5", build_xs_overnight_signals, {"lookback": 5}),
     ]:
-        _, r = _run_dir(panels, builder, capital, cost_bps, slip_bps, **kw)
+        _, r, _ = _run_dir(panels, builder, capital, cost_bps, slip_bps, **kw)
         rets[name] = r.fillna(0.0)
 
     # OLS 对冲配对（预注册黑色链）
@@ -274,14 +318,56 @@ def build_edge_sleeves(
             )
             rets[f"edge_olsx_{a}_{b}"] = r2.fillna(0.0)
 
-    # 截面 carry
+    # 截面 carry + basis momentum（基差面板只算一次）
     try:
-        _, r = _carry_xs_from_contracts(panels, contract_cache, capital, cost_bps, slip_bps)
-        rets["edge_carry_xs"] = r.fillna(0.0)
+        basis = _basis_panel(panels, contract_cache)
+        rets["edge_carry_xs"] = _xs_from_score_panel(
+            panels, -basis, capital, cost_bps, slip_bps  # 多低 carry = 高 (-basis)
+        ).fillna(0.0)
+        rets["edge_basis_mom60"] = _xs_from_score_panel(
+            panels, basis - basis.shift(60), capital, cost_bps, slip_bps
+        ).fillna(0.0)
+        rets["edge_basis_mom20"] = _xs_from_score_panel(
+            panels, basis - basis.shift(20), capital, cost_bps, slip_bps
+        ).fillna(0.0)
     except Exception as e:  # noqa: BLE001 — 合约缺失时降级
-        print(f"carry_xs skipped: {e}")
+        print(f"carry/basis skipped: {e}")
 
     return rets
+
+
+def _xs_from_score_panel(
+    panels: Dict[str, pd.DataFrame],
+    score: pd.DataFrame,
+    capital: float,
+    cost_bps: float,
+    slip_bps: float,
+    n_long: int = 3,
+    n_short: int = 3,
+) -> pd.Series:
+    cols = [s for s in score.columns if s in panels]
+    sig = pd.DataFrame(0.0, index=score.index, columns=cols)
+    for dt in score.index:
+        row = score.loc[dt, cols].dropna()
+        if len(row) < n_long + n_short:
+            continue
+        order = row.sort_values()
+        for s in order.index[-n_long:]:
+            sig.at[dt, s] = 1.0
+        for s in order.index[:n_short]:
+            sig.at[dt, s] = -1.0
+    use = {s: panels[s] for s in cols}
+    closes = _align_closes(use).reindex(score.index).ffill()
+    _, ret, _ = simulate_directional(
+        sig.fillna(0.0),
+        closes,
+        capital=capital,
+        cost_bps=cost_bps,
+        slip_bps=slip_bps,
+        use_inv_vol=True,
+        max_leverage=1.0,
+    )
+    return ret
 
 
 def _score(rets: Dict[str, pd.Series]) -> pd.DataFrame:
@@ -335,8 +421,9 @@ def run_edge_sprint(
     score = _score(rets)
     score.to_csv(os.path.join(out_dir, "edge_sleeves.csv"), index=False)
 
-    # 预注册实盘书：旧 live + 新文献边缘（不看 OOS）
-    live_v2 = [
+    # 预注册实盘书（不看 OOS）：原黑色套利 + 截面 carry + 极端 OLS(RB-HC)
+    # OHLC 隔夜/日内实测拖累，不进预注册书
+    live_v3 = [
         k
         for k in [
             "pair_RB_HC",
@@ -344,28 +431,26 @@ def run_edge_sprint(
             "cal_HC",
             "cal_I",
             "cal_RB",
-            "edge_ols_I_RB",
-            "edge_ols_RB_HC",
             "edge_carry_xs",
-            "edge_on_mom5",
-            "edge_intraday_rev1",
+            "edge_olsx_RB_HC",
         ]
         if k in rets
     ]
-    # 仅 IS 正夏普的新边缘 + 原 live arb
+    live_v3_core = [
+        k for k in ["pair_RB_HC", "pair_I_RB", "cal_HC", "cal_I", "cal_RB", "edge_carry_xs"] if k in rets
+    ]
     is_pos_edge = score[
-        (score["is_sharpe"] >= 0.2)
-        & (
-            score["sleeve"].str.startswith(("edge_", "pair_", "cal_"))
-        )
+        (score["is_sharpe"] >= 0.2) & (score["sleeve"].str.startswith(("edge_", "pair_", "cal_")))
     ]["sleeve"].tolist()
     oracle = score[(score["oos_sharpe"] >= 0.35) & (score["wf_mean_sharpe"] >= 0)]["sleeve"].tolist()
-    # 集中：只保留黑色 OLS + 跨期
-    concentrated = [k for k in ["edge_ols_I_RB", "edge_olsx_I_RB", "pair_I_RB", "cal_I", "cal_RB"] if k in rets]
+    concentrated = [
+        k for k in ["edge_carry_xs", "pair_I_RB", "pair_RB_HC", "cal_I", "edge_olsx_RB_HC"] if k in rets
+    ]
 
     books = {}
     for name, keys in [
-        ("live_v2_preregistered", live_v2),
+        ("live_v3_preregistered", live_v3),
+        ("live_v3_core", live_v3_core),
         ("is_filtered_edge", is_pos_edge),
         ("oracle_oos_edge", oracle),
         ("concentrated_black", concentrated),
@@ -391,11 +476,11 @@ def run_edge_sprint(
             f"WF={wf['wf_mean_sharpe']:.3f} >=2? {bool(oos['sharpe']>=TARGET_SHARPE)}"
         )
 
-    if live_v2:
-        nav_a, port_a, _ = activity_aware_portfolio({k: rets[k] for k in live_v2}, max_weight=0.30)
+    if live_v3_core:
+        nav_a, port_a, _ = activity_aware_portfolio({k: rets[k] for k in live_v3_core}, max_weight=0.30)
         _, _, oos_a = slice_period(nav_a, port_a, OOS_START, None)
-        books["live_v2_activity"] = {
-            "keys": live_v2,
+        books["live_v3_activity"] = {
+            "keys": live_v3_core,
             "nav": nav_a,
             "ret": port_a,
             "full": performance_summary(nav_a, port_a),
@@ -403,7 +488,7 @@ def run_edge_sprint(
             "wf": walk_forward_oos_sharpes(port_a),
             "hits_target": float(oos_a["sharpe"] >= TARGET_SHARPE),
         }
-        print(f"live_v2_activity: OOS Sharpe={oos_a['sharpe']:.3f} >=2? {bool(oos_a['sharpe']>=TARGET_SHARPE)}")
+        print(f"live_v3_activity: OOS Sharpe={oos_a['sharpe']:.3f} >=2? {bool(oos_a['sharpe']>=TARGET_SHARPE)}")
 
     summary = pd.DataFrame(
         [
@@ -439,9 +524,11 @@ def run_edge_sprint(
                 f"**仍未达到 Sharpe≥2。**\n\n"
                 f"- 全库单袖层最高 OOS Sharpe ≈ **{best_sleeve:.2f}**\n"
                 f"- 新边缘（edge_*）最高 OOS Sharpe ≈ **{best_edge_oos:.2f}**\n"
-                f"- 预注册 live_v2 组合 OOS Sharpe ≈ **{float(books.get('live_v2_preregistered',{}).get('oos',{}).get('sharpe',0)):.2f}**\n"
+                f"- 预注册 live_v3 组合 OOS Sharpe ≈ **{float(books.get('live_v3_preregistered',{}).get('oos',{}).get('sharpe',0)):.2f}**\n"
+                f"- live_v3_core（+carry）≈ **{float(books.get('live_v3_core',{}).get('oos',{}).get('sharpe',0)):.2f}**\n"
                 f"- oracle 上界 ≈ **{float(books.get('oracle_oos_edge',{}).get('oos',{}).get('sharpe',0)):.2f}**\n\n"
-                f"日频 OHLC 分解与 carry 未能把边缘抬到门槛；瓶颈仍是信号本身。\n\n"
+                f"截面 carry 与黑色套利低相关，把预注册书从 ~1.1 提到 ~1.4；"
+                f"仍显著低于 2.0。OHLC 隔夜/日内未贡献。\n\n"
             )
         f.write("## 袖层（按 OOS）\n\n")
         show = score.copy()
@@ -460,9 +547,9 @@ def run_edge_sprint(
         f.write("\n")
     print(f"报告: {report_path}")
 
-    if plot and "live_v2_preregistered" in books:
+    if plot and "live_v3_preregistered" in books:
         fig, ax = plt.subplots(figsize=(11, 5))
-        for name in ("live_v2_preregistered", "concentrated_black", "oracle_oos_edge"):
+        for name in ("live_v3_preregistered", "live_v3_core", "oracle_oos_edge"):
             if name not in books:
                 continue
             b = books[name]

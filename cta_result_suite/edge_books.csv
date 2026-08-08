@@ -1,0 +1,7 @@
+book,n_sleeves,members,full_sharpe,oos_sharpe,oos_cagr,oos_maxdd,wf_mean_sharpe,hits_sharpe_2
+live_v3_preregistered,7,"pair_RB_HC,pair_I_RB,cal_HC,cal_I,cal_RB,edge_carry_xs,edge_olsx_RB_HC",0.8648111380640519,1.4556694336014988,0.016203833237689036,-0.010399006945079003,1.1557064587772101,0
+live_v3_core,6,"pair_RB_HC,pair_I_RB,cal_HC,cal_I,cal_RB,edge_carry_xs",0.7895490593804397,1.4274060128412216,0.018310920513484596,-0.012170550885389875,1.1488539002593885,0
+is_filtered_edge,10,"edge_carry_xs,pair_RB_HC,cal_I,edge_olsx_RB_HC,cal_HC,edge_on_mom5,edge_ols_RB_HC,pair_MA_TA,cal_CU,edge_on_mom20",0.8780039515001296,0.4541698841956604,0.006271468019912518,-0.024975142596940225,0.6154459714749185,0
+oracle_oos_edge,6,"edge_carry_xs,pair_I_RB,pair_RB_HC,cal_I,edge_olsx_RB_HC,trend_dualma_atr",0.8113930739112348,1.2684030775170028,0.02310721459147258,-0.01864938488445922,0.9619588961706561,0
+concentrated_black,5,"edge_carry_xs,pair_I_RB,pair_RB_HC,cal_I,edge_olsx_RB_HC",0.8003965960206868,1.4006455985470119,0.02126805171327839,-0.01453635694694111,1.0449133403449418,0
+live_v3_activity,6,"pair_RB_HC,pair_I_RB,cal_HC,cal_I,cal_RB,edge_carry_xs",0.6748867996175216,0.8763937952359544,0.03928960862552011,-0.061244749616475413,0.8930256325455973,0

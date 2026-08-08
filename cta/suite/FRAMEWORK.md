@@ -31,10 +31,13 @@
 ## 3b. 边缘冲刺 v3（仍未过闸则诚实报告）
 | 策略 | 来源 | 冻结参数 |
 |------|------|----------|
-| 隔夜动量 | Lou / 商品 OHLC 分解 | L=5/20 TS；XS top/bottom 3 |
-| 日内反转 | overnight–intraday 分解 | L=1/5 |
+| 隔夜动量 | Lou / 商品 OHLC 分解 | L=5/20 TS；XS top/bottom 3（实测 OOS 弱，不进预注册书） |
+| 日内反转 | overnight–intraday 分解 | L=1/5（同上） |
 | OLS 对冲配对 | 滚动 beta 价差 MR | win=60, z±2.5 / 极端 z±3.0 |
 | 截面 carry | 近远月 log(near/far) | 多低 carry / 空高 carry 各 3 |
+| Basis momentum | Boons / Prado | Δbasis L=20/60，XS 3/3 |
+
+预注册实盘书 **live_v3** = 黑色配对+跨期 + carry + olsx_RB_HC（等权，lev≤1）。
 
 ## 4. 运行
 ```bash

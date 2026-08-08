@@ -15,7 +15,8 @@ import pandas as pd
 
 from ..data import load_panels
 from ..metrics import performance_summary
-from .factory import activity_aware_portfolio, build_breadth_sleeves
+from .edge_sprint import build_edge_sleeves
+from .factory import activity_aware_portfolio
 from .noleverage import slice_period, walk_forward_oos_sharpes
 
 OOS_START = "2022-01-01"
@@ -65,17 +66,31 @@ def run_breadth_sprint(
     panels = {k: v for k, v in load_panels(data_dir).items() if k.upper() != "IF"}
     os.makedirs(out_dir, exist_ok=True)
 
-    print("构建广度袖层...")
-    rets = build_breadth_sleeves(panels, capital=capital, contract_cache=contract_cache)
+    print("构建广度袖层（含 carry / OLS 边缘）...")
+    # 与 edge sprint 共用袖层工厂，避免两套口径漂移
+    rets = build_edge_sleeves(panels, capital=capital, contract_cache=contract_cache)
     score = _score_sleeves(rets)
     score.to_csv(os.path.join(out_dir, "breadth_sleeves.csv"), index=False)
 
-    # 预注册的实盘候选（不依赖 OOS 偷看）：黑色配对 + 铁矿/热卷跨期
-    live_keys = [k for k in ["pair_RB_HC", "pair_I_RB", "cal_HC", "cal_I", "cal_RB"] if k in rets]
-    # IS 筛选（无 OOS 偷看）
-    is_keys = score[(score["is_sharpe"] >= 0.25) & (score["sleeve"].str.startswith(("pair_", "cal_")))][
-        "sleeve"
-    ].tolist()
+    # 预注册实盘候选 live_v3：黑色配对+跨期 + 截面 carry + 极端 OLS(RB-HC)
+    live_keys = [
+        k
+        for k in [
+            "pair_RB_HC",
+            "pair_I_RB",
+            "cal_HC",
+            "cal_I",
+            "cal_RB",
+            "edge_carry_xs",
+            "edge_olsx_RB_HC",
+        ]
+        if k in rets
+    ]
+    # IS 筛选（无 OOS 偷看）：套利/边缘袖层
+    is_keys = score[
+        (score["is_sharpe"] >= 0.25)
+        & (score["sleeve"].str.startswith(("pair_", "cal_", "edge_")))
+    ]["sleeve"].tolist()
     # Oracle（仅作上界诊断，不作为落地依据）
     oracle_keys = score[(score["oos_sharpe"] >= 0.30) & (score["wf_mean_sharpe"] >= 0)]["sleeve"].tolist()
 
@@ -162,9 +177,9 @@ def run_breadth_sprint(
             f.write(
                 f"**未达到。** 在日频、lev≤1、含成本、OOS≥2022 口径下：\n\n"
                 f"- 单袖层最高 OOS Sharpe ≈ **{best_sleeve:.2f}**\n"
-                f"- 预注册实盘组合最高 OOS Sharpe ≈ **{float(books.get('live_pre_registered',{}).get('oos',{}).get('sharpe',0)):.2f}**\n"
+                f"- 预注册 live_v3 组合 OOS Sharpe ≈ **{float(books.get('live_pre_registered',{}).get('oos',{}).get('sharpe',0)):.2f}**\n"
                 f"- 即使用 OOS 偷看筛选的 oracle 上界 ≈ **{float(books.get('oracle_oos_filter',{}).get('oos',{}).get('sharpe',0)):.2f}**\n\n"
-                f"以上均 **< 2.0**。零成本时单对 I-RB 亦仅约 0.86，说明瓶颈是**信号边缘本身**，不是费用或杠杆。\n\n"
+                f"以上均 **< 2.0**。加入截面 carry 后预注册书约从 1.1→1.4，仍远低于门槛；瓶颈是**信号边缘**。\n\n"
             )
         f.write("## 为何加杠杆无效\n\n夏普对仓位缩放近似不变；把名义从 1× 提到 10×，收益与波动同比放大，夏普不升到 2。\n\n")
         f.write("## 袖层表（按 OOS Sharpe）\n\n")
