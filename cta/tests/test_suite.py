@@ -62,6 +62,19 @@ class TestSuiteSmoke(unittest.TestCase):
         self.assertTrue(np.isfinite(nav.iloc[-1]))
         self.assertEqual(len(nav), len(ret))
 
+    def test_return_target_scale(self):
+        from cta.suite.return_target import scale_fixed_leverage_is, scale_target_vol
+
+        idx = pd.bdate_range("2018-01-01", periods=800)
+        rng = np.random.default_rng(1)
+        r = pd.Series(rng.normal(0.00005, 0.001, len(idx)), index=idx)
+        nav, sr, L = scale_fixed_leverage_is(r, target_vol=0.12)
+        self.assertGreater(L, 1.0)
+        self.assertTrue(np.isfinite(nav.iloc[-1]))
+        nav2, sr2, lev = scale_target_vol(r, target_vol=0.12)
+        self.assertGreater(float(lev.iloc[-1]), 0.0)
+        self.assertTrue(np.isfinite(nav2.iloc[-1]))
+
 
 if __name__ == "__main__":
     unittest.main()

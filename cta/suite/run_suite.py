@@ -12,6 +12,7 @@ import sys
 from .breadth_sprint import run_breadth_sprint
 from .edge_sprint import run_edge_sprint
 from .evaluate import run_research_suite
+from .return_target import run_return_target
 
 
 def main(argv=None) -> int:
@@ -72,6 +73,21 @@ def main(argv=None) -> int:
             f"\nEdge sprint v3: best_edge_oos={e['best_edge_oos_sharpe']:.3f} "
             f"best_book_oos={e['best_oos_sharpe']:.3f} hits>=2? {e['hits_target']}"
         )
+        rt = run_return_target(
+            data_dir=args.data_dir,
+            out_dir=args.save_dir,
+            capital=args.capital,
+            contract_cache=args.contract_cache,
+            plot=args.plot and not args.no_plot,
+        )
+        rec = rt.get("recommend")
+        if rec:
+            b = rt["books"][rec]
+            print(
+                f"\nReturn-target recommend={rec}: "
+                f"OOS CAGR={b['oos']['cagr']:.2%} Sharpe={b['oos']['sharpe']:.3f} "
+                f"MaxDD={b['oos']['max_drawdown']:.2%}"
+            )
     return 0
 
 

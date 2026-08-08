@@ -39,6 +39,11 @@
 
 预注册实盘书 **live_v3** = 黑色配对+跨期 + carry + olsx_RB_HC（等权，lev≤1）。
 
+## 3c. 收益目标（CAGR 15–20%）
+- 无杠杆 live_v3：OOS Sharpe≈1.46 但 CAGR≈1.6%（波动被压到 ~1%）。
+- 要抬收益：对同一信号书做 **IS 标定固定杠杆** 或 **因果目标波动**（默认目标 vol 10/12/14%）。
+- 夏普近似不变；MaxDD / 保证金占用随名义放大。模块：`cta.suite.return_target`。
+
 ## 4. 运行
 ```bash
 python -m cta.suite.run_suite --data-dir cta_data_akshare --plot
