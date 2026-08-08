@@ -30,13 +30,22 @@ def main(argv=None) -> int:
         plot=args.plot and not args.no_plot,
     )
     sc = out["scorecard"]
-    print("\n=== Scorecard (OOS headline) ===")
-    cols = ["category", "name", "oos_sharpe", "oos_cagr", "oos_maxdd", "avg_corr_others", "stability_0_1"]
+    print("\n=== Scorecard (OOS / WF / stress) ===")
+    cols = [
+        "category",
+        "name",
+        "oos_sharpe",
+        "oos_maxdd",
+        "wf_mean_sharpe",
+        "stress_oos_sharpe",
+        "deployable",
+    ]
     print(sc[cols].to_string(index=False))
-    ps = out["portfolio_summary"]
+    print(f"\nDeployable: {out.get('deploy_keys')}")
+    de = out.get("deploy_invvol") or out["portfolio_summary"]
     print(
-        f"\nPortfolio: ret={ps['total_return']:.2%} CAGR={ps['cagr']:.2%} "
-        f"Sharpe={ps['sharpe']:.3f} MaxDD={ps['max_drawdown']:.2%}"
+        f"Deploy inv-vol: ret={de['total_return']:.2%} CAGR={de['cagr']:.2%} "
+        f"Sharpe={de['sharpe']:.3f} MaxDD={de['max_drawdown']:.2%}"
     )
     return 0
 
