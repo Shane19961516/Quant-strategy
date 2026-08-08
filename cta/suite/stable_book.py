@@ -136,20 +136,49 @@ def run_stable_book(
         for k in ["pair_RB_HC", "cal_HC", "cal_I", "edge_carry_xs", "edge_olsx_RB_HC"]
         if k in rets
     ]
-    # 全套利等权（不过滤）
-    all_arb = [
+    # 全品种结构化书（非 IS 海选）：全市场 carry/趋势 + 全跨期等权元袖层 + 合格配对
+    cal_all = [k for k in rets if k.startswith("cal_") and float(score.set_index("sleeve").loc[k, "active_frac"]) >= 0.02]
+    pair_all = [
         k
         for k in rets
-        if k.startswith(("pair_", "cal_", "edge_carry")) and k not in SLEEVE_BLACKLIST
+        if k.startswith("pair_") and k not in SLEEVE_BLACKLIST
+        and float(score.set_index("sleeve").loc[k, "active_frac"]) >= 0.02
     ]
+    # 预注册全品种核心：文献结构，不用 OOS 挑袖层
+    univ_core = [
+        k
+        for k in [
+            "edge_carry_xs",  # 全品种截面 carry
+            "trend_dualma_atr",  # 全品种趋势（含 IF）
+            "trend_tsmom60",
+            "pair_RB_HC",
+            "pair_I_HC",
+            "pair_Y_M",
+            "pair_C_M",
+            "pair_MA_TA",
+            "edge_olsx_RB_HC",
+        ]
+        if k in rets
+    ] + [k for k in ("cal_RB", "cal_HC", "cal_I", "cal_CU", "cal_AU", "cal_M", "cal_Y", "cal_C", "cal_TA", "cal_MA", "cal_RU", "cal_SC") if k in rets]
 
     books = {}
+    # 元袖层：全跨期等权合成一只
+    if cal_all:
+        _, cal_meta = equal_weight_book(rets, cal_all)
+        rets = {**rets, "meta_cal_all": cal_meta.fillna(0.0)}
+    if pair_all:
+        _, pair_meta = equal_weight_book(rets, pair_all)
+        rets = {**rets, "meta_pair_all": pair_meta.fillna(0.0)}
+
     candidates = {
+        "v5_univ_core": univ_core,
+        "v5_univ_meta": [k for k in ["edge_carry_xs", "trend_dualma_atr", "meta_cal_all", "meta_pair_all", "edge_olsx_RB_HC"] if k in rets],
         "v5_full_is025": is_keys,
         "v5_full_is040": is_keys_strict,
         "v5_full_is025_dualma": list(dict.fromkeys(is_keys + ["trend_dualma_atr"])),
         "v4_legacy_core": legacy,
-        "v5_all_arb_eq": all_arb,
+        "v5_cal_all_tv": cal_all,
+        "v5_pair_all_tv": pair_all,
     }
 
     for name, keys in candidates.items():
