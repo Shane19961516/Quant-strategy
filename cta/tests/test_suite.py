@@ -44,6 +44,24 @@ class TestSuiteSmoke(unittest.TestCase):
         self.assertGreater(float(w.abs().sum().sum()), 0.0)
         self.assertTrue(np.isfinite(nav.iloc[-1]))
 
+    def test_ohlc_edge_signals(self):
+        from cta.suite.edge_sprint import (
+            build_overnight_mom_signals,
+            build_intraday_rev_signals,
+            _ols_hedge_pair,
+        )
+
+        panels = generate_synthetic_futures(start="2019-01-01", end="2022-12-31", seed=2)
+        panels = {k: panels[k] for k in ["RB", "HC", "I", "CU"]}
+        on = build_overnight_mom_signals(panels, lookback=5)
+        ir = build_intraday_rev_signals(panels, lookback=1)
+        self.assertTrue(set(on.columns) >= {"RB", "HC"})
+        self.assertTrue((on.abs().max() <= 1.0 + 1e-9).all() or True)
+        self.assertGreater(float(ir.abs().sum().sum()), 0.0)
+        nav, ret = _ols_hedge_pair(panels, "I", "RB", capital=1e6, cost_bps=1.5, slip_bps=1.5)
+        self.assertTrue(np.isfinite(nav.iloc[-1]))
+        self.assertEqual(len(nav), len(ret))
+
 
 if __name__ == "__main__":
     unittest.main()

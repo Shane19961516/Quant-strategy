@@ -28,7 +28,17 @@
 - 仅合成通过门槛袖层
 - 等权 + 逆波动两种；实盘优先逆波动
 
+## 3b. 边缘冲刺 v3（仍未过闸则诚实报告）
+| 策略 | 来源 | 冻结参数 |
+|------|------|----------|
+| 隔夜动量 | Lou / 商品 OHLC 分解 | L=5/20 TS；XS top/bottom 3 |
+| 日内反转 | overnight–intraday 分解 | L=1/5 |
+| OLS 对冲配对 | 滚动 beta 价差 MR | win=60, z±2.5 / 极端 z±3.0 |
+| 截面 carry | 近远月 log(near/far) | 多低 carry / 空高 carry 各 3 |
+
 ## 4. 运行
 ```bash
 python -m cta.suite.run_suite --data-dir cta_data_akshare --plot
+# 仅冲刺：
+python -m cta.suite.run_suite --skip-core --data-dir cta_data_akshare --plot
 ```
