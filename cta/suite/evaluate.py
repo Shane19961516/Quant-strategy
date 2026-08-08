@@ -193,19 +193,23 @@ def _invvol_portfolio(
     return nav, port, performance_summary(nav, port)
 
 
+# 用户硬门槛：不考虑 Sharpe < 2 的策略（以 OOS 为准；夏普对杠杆近似不变）
+MIN_OOS_SHARPE = 2.0
+
+
 def _is_deployable(r: StrategyResult) -> bool:
-    """严格落地门槛（预先固定，避免事后放宽）。"""
+    """严格落地门槛：OOS Sharpe≥2 + WF/成本压力仍成立。"""
     oos_sh = float(r.summary_oos.get("sharpe", 0.0))
     oos_dd = float(r.summary_oos.get("max_drawdown", -1.0))
     wf_mean = float(r.wf.get("wf_mean_sharpe", 0.0))
     wf_pos = float(r.wf.get("wf_pos_frac", 0.0))
     stress = float(r.stress_oos_sharpe)
     return (
-        oos_sh >= 0.10
+        oos_sh >= MIN_OOS_SHARPE
+        and wf_mean >= MIN_OOS_SHARPE * 0.5  # WF 均值至少到门槛一半，防单段运气
         and oos_dd > -0.30
-        and wf_mean >= 0.0
         and wf_pos >= 0.5
-        and stress >= 0.0
+        and stress >= MIN_OOS_SHARPE * 0.5
     )
 
 
@@ -312,7 +316,13 @@ def _write_report(
         f.write(f"- IS≤{IS_END} / OOS≥{OOS_START}；另报滚动 3y→1y WF 夏普\n")
         f.write("- 逆波动配权 + 杠杆上限 1；成本压力=佣金/滑点各 3bp\n")
         f.write(
-            "- **落地门槛**：OOS Sharpe≥0.10 且 MaxDD>-30% 且 WF均值≥0 且 WF正比例≥50% 且压力OOS Sharpe≥0\n\n"
+            f"- **落地硬门槛（用户）**：OOS Sharpe≥{MIN_OOS_SHARPE:.0f}；"
+            f"且 WF均值≥{MIN_OOS_SHARPE*0.5:.1f}、压力OOS Sharpe≥{MIN_OOS_SHARPE*0.5:.1f}、"
+            "MaxDD>-30%、WF正比例≥50%\n"
+        )
+        f.write(
+            "- 说明：夏普对仓位缩放近似不变，**加杠杆不能把 0.5 变成 2.0**；"
+            "若全市场日频商品 CTA 在 lev≤1、含成本、真正 OOS 下宣称 Sharpe≥2，需高度怀疑过拟合或口径问题\n\n"
         )
         f.write("## 业绩总表\n\n")
         cols = [
