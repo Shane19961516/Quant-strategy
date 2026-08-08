@@ -27,14 +27,29 @@ from .noleverage import slice_period, walk_forward_oos_sharpes
 IS_END = "2021-12-31"
 OOS_START = "2022-01-01"
 
+# 与 live_v5 全品种核心对齐（不再使用拖累 IS 的 pair_I_RB）
 LIVE_V3 = [
+    "edge_carry_xs",
+    "trend_dualma_atr",
+    "trend_tsmom60",
     "pair_RB_HC",
-    "pair_I_RB",
+    "pair_I_HC",
+    "pair_Y_M",
+    "pair_C_M",
+    "pair_MA_TA",
+    "edge_olsx_RB_HC",
+    "cal_RB",
     "cal_HC",
     "cal_I",
-    "cal_RB",
-    "edge_carry_xs",
-    "edge_olsx_RB_HC",
+    "cal_CU",
+    "cal_AU",
+    "cal_M",
+    "cal_Y",
+    "cal_C",
+    "cal_TA",
+    "cal_MA",
+    "cal_RU",
+    "cal_SC",
 ]
 
 
