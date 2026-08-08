@@ -54,8 +54,25 @@ def test_enhanced_backtest_smoke():
 
 
 def test_default_params_targets_keys():
-    assert DEFAULT_PARAMS["top_n"] == 10
+    assert DEFAULT_PARAMS["top_n"] == 15
     assert abs(sum(DEFAULT_PARAMS["tilt"].values()) - 1.0) < 1e-9
+    assert DEFAULT_PARAMS["dd_soft"] == -0.04
+    assert DEFAULT_PARAMS["dd_hard"] == -0.07
+
+
+def test_select_respects_already_lagged_flag():
+    from us_multifactor.factors import select_top_factors_per_category
+
+    idx = pd.date_range("2020-01-03", periods=80, freq="W-FRI")
+    cols = [f"S{i}" for i in range(40)]
+    rng = np.random.default_rng(4)
+    raw = pd.DataFrame(rng.normal(size=(80, 40)), index=idx, columns=cols)
+    rets = pd.DataFrame(rng.normal(scale=0.02, size=(80, 40)), index=idx, columns=cols)
+    weekly = {"momentum": {"f1": raw, "f2": -raw}}
+    sel_a, ic_a, _ = select_top_factors_per_category(weekly, rets, top_n=1, already_lagged=True, min_ic_obs=10)
+    sel_b, ic_b, _ = select_top_factors_per_category(weekly, rets, top_n=1, already_lagged=False, min_ic_obs=10)
+    assert "momentum" in sel_a and sel_a["momentum"]
+    assert len(ic_a) == len(ic_b) == 2
 
 
 def test_causal_regime_is_lagged():

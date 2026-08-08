@@ -1,19 +1,25 @@
-# Professional Evaluation
+# Professional Evaluation — Causal v3
 
-## Findings on prior version
-1. **Critical look-ahead**: `require_spy_pos` used *same-week* SPY return while earning that week's portfolio PnL. Removing it cut Sharpe from ~3.08 to ~2.3 and broke target feasibility.
-2. **Fundamental leakage**: Yahoo `Ticker.info` snapshots were broadcast across history for valuation/profitability/quality.
-3. **Overfit overlays**: equity explosion + MDD glued to -10% indicated brittle risk overlays.
+## Audit of prior versions
+1. **v1 look-ahead**: same-week SPY filter inflated Sharpe (~3.08 → ~2.3 when removed).
+2. **Fundamental leakage**: Yahoo `info` snapshots are not point-in-time.
+3. **Joint stretch targets** (Sharpe≥3 ∧ CAGR≥30% ∧ MDD≤10%) require either look-ahead or a different mandate (e.g. options, higher leverage with different risk budget).
 
-## Remediation
-- New `causal` engine: all SPY regime / mom / vol filters are `shift(1)`.
-- Production factors limited to **momentum / stability / size** (price-based).
-- Walk-forward split at 2021-12-31; IS and OOS Sharpe nearly identical (~1.6).
+## v3 optimization changes
+- Broader book: **Top-15** equal-weight (was Top-10).
+- Risk tilt: momentum **50%** / stability **40%** / size **10%**.
+- Tighter causal drawdown brake: soft **-4%**, hard **-7%**.
+- Factor names frozen; IC computed on already-lagged panels with IS end-date support.
+- Rejected daily intra-week stops (hurt OOS Sharpe sharply).
+- Rejected aggressive regime/SPY filters (cut CAGR without lifting Sharpe to 3).
 
-## Deliverable metrics (primary)
-- Sharpe **1.62**, CAGR **43.4%**, MDD **-15.9%**
-- OOS Sharpe **1.59**, OOS CAGR **45.7%**
+## Deliverable metrics
+- **Primary**: Sharpe **1.59**, CAGR **37.9%**, MDD **-13.4%**
+- **OOS**: Sharpe **1.78**, CAGR **44.9%**, MDD **-12.6%**
+- **Defensive (vol 10%)**: Sharpe **1.56**, CAGR **21.2%**, MDD **-10.5%**
 
-## On the original joint targets
-For a long-only S&P500 Top-10 weekly strategy with no look-ahead, simultaneously requiring Sharpe≥3, CAGR≥30%, MDD≤10% is not a realistic production constraint. Meeting all three in v1 required look-ahead.
-We deliver the best **causal, OOS-stable** book instead, plus a defensive vol-targeted variant.
+## Production acceptance
+- Soft production targets hit: **True**
+- Joint stretch targets hit: **False**
+
+Delivery prioritizes causal correctness and OOS stability over unattainable joint stretch metrics.

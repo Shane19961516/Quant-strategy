@@ -270,25 +270,36 @@ def select_top_factors_per_category(
     weekly_returns: pd.DataFrame,
     top_n: int = 5,
     min_ic_obs: int = 52,
-) -> Tuple[Dict[str, List[str]], pd.DataFrame]:
+    end_date: Optional[str] = None,
+    already_lagged: bool = True,
+) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, Dict[str, pd.DataFrame]]]:
     """Keep top_n factors per category by |ICIR| with sign aligned to positive IC.
 
-    Returns selected names and IC summary table.
+    Parameters
+    ----------
+    end_date:
+        If set, IC/ICIR for ranking uses only observations ``<= end_date``
+        (walk-forward hygiene). Signed panels are still built on the full sample.
+    already_lagged:
+        If True (default), factors are assumed shifted by 1 week already, so IC
+        uses same-week forward returns. If False, uses ``returns.shift(-1)``.
     """
-    fwd = weekly_returns.shift(-1)  # factor_t predicts ret_{t+1}; after lag, factor already lagged
+    fwd = weekly_returns if already_lagged else weekly_returns.shift(-1)
     rows = []
     selected: Dict[str, List[str]] = {}
     signed_panels: Dict[str, Dict[str, pd.DataFrame]] = {c: {} for c in weekly_factors}
+    ic_cut = pd.Timestamp(end_date) if end_date else None
 
     for cat, fmap in weekly_factors.items():
         cat_rows = []
         for name, raw in fmap.items():
             proc = process_factor(raw)
             ic = rank_ic_series(proc, fwd)
-            mu = float(ic.mean())
-            sd = float(ic.std(ddof=0)) if ic.notna().sum() else np.nan
+            ic_rank = ic[ic.index <= ic_cut] if ic_cut is not None else ic
+            mu = float(ic_rank.mean())
+            sd = float(ic_rank.std(ddof=0)) if ic_rank.notna().sum() else np.nan
             icir = mu / sd if sd and sd > 0 else np.nan
-            n = float(ic.notna().sum())
+            n = float(ic_rank.notna().sum())
             # flip sign if mean IC negative so higher score = higher expected return
             sign = 1.0 if (mu is not None and mu >= 0) else -1.0
             cat_rows.append(
@@ -319,5 +330,4 @@ def select_top_factors_per_category(
             )
 
     summary = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
-    # stash signed panels on summary attrs via return separate
-    return selected, summary, signed_panels  # type: ignore[return-value]
+    return selected, summary, signed_panels
