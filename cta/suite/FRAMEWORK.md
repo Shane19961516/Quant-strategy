@@ -44,6 +44,12 @@
 - 要抬收益：对同一信号书做 **IS 标定固定杠杆** 或 **因果目标波动**（默认目标 vol 10/12/14%）。
 - 夏普近似不变；MaxDD / 保证金占用随名义放大。模块：`cta.suite.return_target`。
 
+## 3d. 稳定书 live_v4（修复前半段无收益）
+- 剔除 IS 不合格袖层（尤其 `pair_I_RB`）。
+- 预注册：RB-HC / cal_HC / cal_I / carry / olsx_RB_HC（± DualMA 压舱）。
+- 活动感知配资，避免 2018 carry/跨期未激活时被空袖层稀释。
+- 再套目标波动；验收同时看 **2018–2020 / IS / OOS**。模块：`cta.suite.stable_book`。
+
 ## 4. 运行
 ```bash
 python -m cta.suite.run_suite --data-dir cta_data_akshare --plot

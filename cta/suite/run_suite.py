@@ -13,6 +13,7 @@ from .breadth_sprint import run_breadth_sprint
 from .edge_sprint import run_edge_sprint
 from .evaluate import run_research_suite
 from .return_target import run_return_target
+from .stable_book import run_stable_book
 
 
 def main(argv=None) -> int:
@@ -87,6 +88,21 @@ def main(argv=None) -> int:
                 f"\nReturn-target recommend={rec}: "
                 f"OOS CAGR={b['oos']['cagr']:.2%} Sharpe={b['oos']['sharpe']:.3f} "
                 f"MaxDD={b['oos']['max_drawdown']:.2%}"
+            )
+        st = run_stable_book(
+            data_dir=args.data_dir,
+            out_dir=args.save_dir,
+            capital=args.capital,
+            contract_cache=args.contract_cache,
+            plot=args.plot and not args.no_plot,
+        )
+        srec = st.get("recommend")
+        if srec:
+            b = st["books"][srec]
+            print(
+                f"\nStable live_v4 recommend={srec}: "
+                f"early CAGR={b['early']['cagr']:.2%} | "
+                f"OOS CAGR={b['oos']['cagr']:.2%} Sharpe={b['oos']['sharpe']:.3f}"
             )
     return 0
 

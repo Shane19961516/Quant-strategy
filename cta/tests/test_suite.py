@@ -75,6 +75,16 @@ class TestSuiteSmoke(unittest.TestCase):
         self.assertGreater(float(lev.iloc[-1]), 0.0)
         self.assertTrue(np.isfinite(nav2.iloc[-1]))
 
+    def test_stable_yearly_helper(self):
+        from cta.suite.stable_book import _yearly_table, LIVE_V4_CORE
+
+        self.assertIn("pair_RB_HC", LIVE_V4_CORE)
+        self.assertNotIn("pair_I_RB", LIVE_V4_CORE)
+        idx = pd.bdate_range("2020-01-01", periods=300)
+        r = pd.Series(0.001, index=idx)
+        y = _yearly_table(r)
+        self.assertGreater(len(y), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
