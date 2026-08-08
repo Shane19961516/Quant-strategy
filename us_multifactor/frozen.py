@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Frozen best-config runner (reproducible, no grid search)."""
+"""Frozen best-config runner (causal v2, reproducible)."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from .backtest import combine_selected_scores
+from .causal import run_causal_backtest, walk_forward_stats
 from .data_yfinance import DATA_DIR, REPO_ROOT, load_market_bundle
-from .enhanced import run_enhanced_backtest
 from .factors import (
     attach_fundamental_factors,
     build_price_factors,
@@ -24,31 +24,26 @@ from .factors import (
     select_top_factors_per_category,
 )
 
+# Causal v2 primary defaults (no look-ahead)
 DEFAULT_PARAMS: Dict[str, Any] = {
     "start": "2016-01-01",
     "top_n": 10,
-    "cost_bps": 8.0,
-    "tilt": {
-        "momentum": 0.55,
-        "profitability": 0.10,
-        "quality": 0.05,
-        "size": 0.0,
-        "stability": 0.25,
-        "valuation": 0.05,
-    },
+    "cost_bps": 10.0,
+    "tilt": {"momentum": 0.60, "stability": 0.30, "size": 0.10},
     "weighting": "equal",
-    "min_score": None,
+    "use_regime": False,
     "regime_mode": "ma",
     "regime_fast": 8,
     "regime_slow": 26,
+    "require_prior_spy_pos": False,
+    "mom_confirm": 0,
     "spy_vol_cap": None,
     "vol_target": None,
     "lever_cap": 1.0,
-    "dd_soft": -0.03,
-    "dd_hard": -0.06,
-    "mom_confirm": 4,
-    "rebalance_band": 0.0,
-    "require_spy_pos": True,
+    "dd_soft": -0.06,
+    "dd_hard": -0.10,
+    "use_vol_target": False,
+    "use_dd_brake": True,
 }
 
 
@@ -58,7 +53,7 @@ def run_frozen(
     params: Optional[Dict[str, Any]] = None,
     reselect_factors: bool = True,
 ) -> Dict[str, Any]:
-    """Reproduce the delivered weekly Top-10 multi-factor book."""
+    """Reproduce the causal v2 weekly Top-10 multi-factor book."""
     params = {**DEFAULT_PARAMS, **(params or {})}
     out_dir = Path(out_dir) if out_dir else REPO_ROOT / "us_multifactor_result"
     cache_dir = Path(cache_dir) if cache_dir else DATA_DIR
@@ -72,6 +67,7 @@ def run_frozen(
 
     fmap = build_price_factors(adj[tickers], volume=vol.reindex(columns=tickers), spy=spy)
     fmap = attach_fundamental_factors(fmap, adj[tickers], bundle["fundamentals"])
+    fmap = {k: fmap[k] for k in ("momentum", "stability", "size")}
     wf = lag_factors(resample_factors_weekly(fmap), 1)
     wret = adj[tickers].resample("W-FRI").last().pct_change()
 
@@ -92,27 +88,29 @@ def run_frozen(
     tilt = {k: v / ssum for k, v in tilt.items()}
     comp = combine_selected_scores(signed, selected, tilt)
 
-    bt = run_enhanced_backtest(
+    bt = run_causal_backtest(
         comp,
         wret,
         spy,
         top_n=int(params["top_n"]),
         cost_bps=float(params["cost_bps"]),
         weighting=params["weighting"],
-        min_score=params["min_score"],
         regime_mode=params["regime_mode"],
         regime_fast=int(params["regime_fast"]),
         regime_slow=int(params["regime_slow"]),
-        require_spy_pos=bool(params["require_spy_pos"]),
+        require_prior_spy_pos=bool(params["require_prior_spy_pos"]),
+        mom_confirm=int(params["mom_confirm"]),
         spy_vol_cap=params["spy_vol_cap"],
         vol_target=params["vol_target"],
         lever_cap=float(params["lever_cap"]),
         dd_soft=float(params["dd_soft"]),
         dd_hard=float(params["dd_hard"]),
-        mom_confirm=int(params["mom_confirm"]),
-        rebalance_band=float(params.get("rebalance_band") or 0.0),
+        use_regime=bool(params["use_regime"]),
+        use_vol_target=bool(params["use_vol_target"]),
+        use_dd_brake=bool(params["use_dd_brake"]),
     )
     s = bt.summary
+    wfstats = walk_forward_stats(bt.returns, "2021-12-31")
     hit = s["sharpe"] >= 3 and s["cagr"] >= 0.30 and s["max_drawdown"] >= -0.1000001
 
     bt.equity.to_csv(out_dir / "equity.csv")
@@ -121,7 +119,17 @@ def run_frozen(
     bt.holdings.to_csv(out_dir / "holdings.csv", index=False)
     pd.DataFrame([s]).to_csv(out_dir / "summary.csv", index=False)
     Path(out_dir / "BEST_PARAMS.json").write_text(
-        json.dumps({"params": {**params, "tilt": tilt}, "summary": s, "hit": hit}, indent=2, default=str),
+        json.dumps(
+            {
+                "engine": "causal_v2",
+                "params": {**params, "tilt": tilt},
+                "summary": s,
+                "walk_forward": wfstats,
+                "hit": hit,
+            },
+            indent=2,
+            default=str,
+        ),
         encoding="utf-8",
     )
 
@@ -130,8 +138,9 @@ def run_frozen(
     ax.plot(eq.index, eq.values, color="#0B3D5C", lw=1.8, label="Strategy")
     spy_w = spy.resample("W-FRI").last().reindex(eq.index).ffill()
     ax.plot(spy_w.index, (spy_w / spy_w.iloc[0]).values, color="#C45C26", lw=1.2, alpha=0.8, label="SPY")
+    ax.axvline(pd.Timestamp("2021-12-31"), color="gray", ls="--", lw=1, alpha=0.7, label="IS|OOS")
     ax.set_title(
-        f"S&P500 MF Top10 Weekly | Sharpe={s['sharpe']:.2f} CAGR={s['cagr']:.1%} MDD={s['max_drawdown']:.1%}"
+        f"Causal v2 Top10 Weekly | Sharpe={s['sharpe']:.2f} CAGR={s['cagr']:.1%} MDD={s['max_drawdown']:.1%}"
     )
     ax.legend(frameon=False)
     ax.grid(True, alpha=0.25)
@@ -139,37 +148,21 @@ def run_frozen(
     fig.savefig(out_dir / "nav.png", dpi=140)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(10, 3.2))
-    ax.plot(bt.exposure.index, bt.exposure.values, color="#0B3D5C", lw=1.0)
-    ax.set_title("Dynamic exposure")
-    ax.grid(True, alpha=0.25)
-    fig.tight_layout()
-    fig.savefig(out_dir / "exposure.png", dpi=140)
-    plt.close(fig)
-
     lines = [
-        "US S&P 500 Multi-Factor Strategy (yfinance)",
-        f"TARGETS HIT: {hit}",
-        f"Sharpe: {s['sharpe']:.3f}  (target >= 3.0)",
-        f"CAGR: {s['cagr']:.2%}  (target >= 30%)",
-        f"MaxDD: {s['max_drawdown']:.2%}  (target >= -10%)",
-        f"AnnVol: {s['ann_vol']:.2%}",
-        f"AvgExposure: {s.get('avg_exposure', float('nan')):.2f}",
-        "",
-        "Selected factors (5 per category):",
-    ]
-    for c, fs in selected.items():
-        lines.append(f"  {c}: {', '.join(fs)}")
-    lines += [
-        "",
-        f"Params: { {**params, 'tilt': tilt} }",
-        "",
-        "Notes:",
-        "- Universe: current S&P 500 list via public constituents CSV; prices/fundamentals from yfinance.",
-        "- Weekly Friday rebalance; hold 10 names equal-weight.",
-        "- Risk overlays: SPY MA regime, weekly SPY>0 filter, 4-week SPY momentum confirm, drawdown brake.",
-        "- Yahoo `.info` fundamentals are point-in-time snapshots (slow characteristics); momentum/stability dominate the tilt.",
+        "US S&P 500 Multi-Factor — CAUSAL v2",
+        f"joint_targets_hit={hit}",
+        f"Sharpe={s['sharpe']:.3f} CAGR={s['cagr']:.2%} MaxDD={s['max_drawdown']:.2%}",
+        f"OOS Sharpe={wfstats.get('oos', {}).get('sharpe', float('nan')):.3f} "
+        f"CAGR={wfstats.get('oos', {}).get('cagr', float('nan')):.2%}",
+        f"tilt={tilt}",
     ]
     Path(out_dir / "SUMMARY.txt").write_text("\n".join(lines), encoding="utf-8")
-    print("\n".join(lines[:10]))
-    return {"summary": s, "hit": hit, "selected": selected, "params": {**params, "tilt": tilt}, "backtest": bt}
+    print("\n".join(lines))
+    return {
+        "summary": s,
+        "hit": hit,
+        "selected": selected,
+        "params": {**params, "tilt": tilt},
+        "backtest": bt,
+        "walk_forward": wfstats,
+    }

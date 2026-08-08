@@ -58,6 +58,28 @@ def test_default_params_targets_keys():
     assert abs(sum(DEFAULT_PARAMS["tilt"].values()) - 1.0) < 1e-9
 
 
+def test_causal_regime_is_lagged():
+    from us_multifactor.causal import causal_regime_exposure
+
+    idx = pd.date_range("2020-01-03", periods=40, freq="W-FRI")
+    spy = pd.Series(np.linspace(100, 140, 200), index=pd.date_range("2019-01-01", periods=200, freq="B"))
+    exp = causal_regime_exposure(idx, spy, fast=5, slow=10, mode="ma")
+    # first observation after shift must be 0 / unknown
+    assert float(exp.iloc[0]) == 0.0
+
+
+def test_enhanced_spy_pos_uses_prior_week():
+    """Guard against regressing same-week SPY look-ahead."""
+    import inspect
+    from us_multifactor import enhanced
+
+    src = inspect.getsource(enhanced.run_enhanced_backtest)
+    assert "shift(1)" in src
+    assert "pct_change().shift(1)" in src or "pct_change().fillna(0) > 0).astype(float)" not in src.replace(
+        "shift(1)", ""
+    )
+
+
 @pytest.mark.slow
 def test_frozen_against_cache_if_present():
     from pathlib import Path

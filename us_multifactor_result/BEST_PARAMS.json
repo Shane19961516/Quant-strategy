@@ -1,42 +1,73 @@
 {
+  "engine": "causal_v2",
   "params": {
     "start": "2016-01-01",
     "top_n": 10,
-    "cost_bps": 8.0,
+    "cost_bps": 10.0,
     "tilt": {
-      "momentum": 0.55,
-      "profitability": 0.1,
-      "quality": 0.05,
-      "size": 0.0,
-      "stability": 0.25,
-      "valuation": 0.05
+      "momentum": 0.6,
+      "stability": 0.3,
+      "size": 0.1
     },
     "weighting": "equal",
-    "min_score": null,
+    "use_regime": false,
     "regime_mode": "ma",
     "regime_fast": 8,
     "regime_slow": 26,
+    "require_prior_spy_pos": false,
+    "mom_confirm": 0,
     "spy_vol_cap": null,
     "vol_target": null,
     "lever_cap": 1.0,
-    "dd_soft": -0.03,
-    "dd_hard": -0.06,
-    "mom_confirm": 4,
-    "rebalance_band": 0.0,
-    "require_spy_pos": true
+    "dd_soft": -0.06,
+    "dd_hard": -0.1,
+    "use_vol_target": false,
+    "use_dd_brake": true
   },
   "summary": {
-    "total_return": 452.7848040480656,
-    "cagr": 0.7775849920204079,
-    "ann_vol": 0.19387951397042802,
-    "sharpe": 3.0761496734636005,
-    "max_drawdown": -0.09997062248541067,
-    "calmar": 7.778134942931716,
-    "win_rate": 0.3562386980108499,
+    "total_return": 45.3570701512662,
+    "cagr": 0.4343962254909406,
+    "ann_vol": 0.24089283151859495,
+    "sharpe": 1.6215996080698647,
+    "max_drawdown": -0.15924217638553484,
+    "calmar": 2.7278968132113524,
+    "win_rate": 0.4231464737793852,
     "n_obs": 553.0,
-    "avg_turnover": 0.2332730560578662,
-    "avg_exposure": 0.4294755877034358,
+    "avg_turnover": 0.2902350813743219,
+    "avg_exposure": 0.6537070524412296,
     "max_leverage": 1.0
   },
-  "hit": true
+  "walk_forward": {
+    "is": {
+      "total_return": 7.155430461647054,
+      "cagr": 0.41717174954648106,
+      "ann_vol": 0.22674667410439897,
+      "sharpe": 1.6553954841095264,
+      "max_drawdown": -0.14953390330120175,
+      "calmar": 2.789813817045786,
+      "win_rate": 0.45686900958466453,
+      "n_obs": 313.0
+    },
+    "oos": {
+      "total_return": 4.684196606086202,
+      "cagr": 0.45717474738471187,
+      "ann_vol": 0.2581536883519421,
+      "sharpe": 1.5903494005000818,
+      "max_drawdown": -0.15924217638553495,
+      "calmar": 2.870940084854556,
+      "win_rate": 0.37916666666666665,
+      "n_obs": 240.0
+    },
+    "full": {
+      "total_return": 45.3570701512662,
+      "cagr": 0.4343962254909406,
+      "ann_vol": 0.24089283151859495,
+      "sharpe": 1.6215996080698647,
+      "max_drawdown": -0.15924217638553484,
+      "calmar": 2.7278968132113524,
+      "win_rate": 0.4231464737793852,
+      "n_obs": 553.0
+    }
+  },
+  "hit": false
 }

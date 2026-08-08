@@ -133,7 +133,7 @@ def apply_regime_exposure(
     slow: int = 40,
     mode: str = "ma",
 ) -> pd.Series:
-    """Weekly SPY regime: 1 risk-on, 0 cash."""
+    """Weekly SPY regime known at prior close (shifted)."""
     spy_w = spy.resample("W-FRI").last().reindex(dates).ffill()
     if mode == "ma":
         on = (spy_w > spy_w.rolling(slow).mean()) & (
@@ -143,7 +143,7 @@ def apply_regime_exposure(
         on = spy_w.pct_change(slow) > 0
     else:
         on = pd.Series(True, index=dates)
-    return on.astype(float).fillna(0.0)
+    return on.astype(float).shift(1).fillna(0.0)
 
 
 def apply_vol_target(

@@ -100,45 +100,34 @@ python3 -m pytest multifactor/tests -q
 | 沪深300内 Top20% 多头 | +207.0% | 11.9% | 0.58 | -40.3%（超额年化 8.8%，IR 0.80） |
 
 
-六.美股标普500多因子策略（yfinance）
+六.美股标普500多因子策略（yfinance, causal v2）
 ------
 
-新增 `us_multifactor/`：以 **yfinance** 为数据源，标普500成分为股票池，**周频换仓、每次持有10只**。
+新增 `us_multifactor/`：yfinance 数据，标普500，**周频换仓、持有10只**。
 
-### 1) 六大类因子（每类 ICIR 筛选保留 5 个）
-| 大类 | 入选因子 |
-|------|----------|
-| 动量 | `mom_1m`, `mom_accel`, `mom_12_1`, `mom_12m`, `mom_1w` |
-| 盈利 | `roe`, `profit_margin`, `rev_growth`, `earn_growth`, `roa` |
-| 质量 | `roe_margin_blend`, `inv_short_ratio`, `inv_debt_equity`, `quick_ratio`, `current_ratio` |
-| 规模 | `neg_log_mcap`, `neg_mcap_rank`, `inv_price_rank`, `neg_log_price`, `neg_log_dollar_vol` |
-| 稳定性 | `inv_downside_vol`, `inv_vol_6m`, `inv_vol_1m`, `inv_vol_3m`, `inv_beta` |
-| 估值 | `fcf_yield`, `inv_ev_ebitda`, `inv_pb`, `book_yield`, `sales_yield` |
+### 审计结论（v1 → v2）
+v1 中 Sharpe≈3.08 不可交付：存在**同周 SPY 收益过滤前视**，以及 Yahoo `info` 基本面截面回灌。v2 全部信号 `shift(1)`，生产因子仅用价量（动量/稳定性/规模）。
 
-默认合成权重：动量 55% / 稳定性 25% / 盈利 10% / 质量 5% / 估值 5%（规模 0）。
+### 1) 生产因子与权重
+| 大类 | 权重 | 因子（各类 Top5，类内等权） |
+|------|------|---------------------------|
+| 动量 | **60%** | `mom_1m`, `mom_accel`, `mom_12_1`, `mom_12m`, `mom_1w` |
+| 稳定性 | **30%** | `inv_downside_vol`, `inv_vol_6m`, `inv_vol_1m`, `inv_vol_3m`, `inv_beta` |
+| 规模 | **10%** | `neg_log_mcap`, `neg_mcap_rank`, `inv_price_rank`, `neg_log_price`, `neg_log_dollar_vol` |
 
-### 2) 风险叠加（冲夏普与控回撤）
-- SPY 双均线制度过滤 + 当周 SPY>0
-- SPY 4 周动量确认
-- 净值回撤刹车（软/硬阈值）
-- 单边交易成本默认 8bp
-
-### 3) 运行
+### 2) 运行
 ```bash
 pip install -r us_multifactor/requirements.txt
-python3 us_spx_multifactor_strategy.py          # 冻结参数复现
-python3 us_spx_multifactor_strategy.py --search # 重新寻优
+python3 us_spx_multifactor_strategy.py              # causal v2 主策略
+python3 us_spx_multifactor_strategy.py --defensive  # 波动目标防守版
+python3 us_spx_multifactor_strategy.py --search     # 重建交付产物
 python3 -m pytest us_multifactor/tests -q
 ```
 
-结果：`us_multifactor_result/`（净值、持仓、暴露、IC、参数 JSON）。
+### 3) 交付指标（2016→2026，因果、无前视）
+| 版本 | Sharpe | CAGR | MaxDD | OOS Sharpe |
+|------|--------|------|-------|------------|
+| Primary | **1.62** | **43.4%** | -15.9% | **1.59** |
+| Defensive | 1.57 | 24.3% | -11.6% | ~1.6 |
 
-### 4) 交付回测（2016-01 → 2026-08，周频 Top10）
-| 指标 | 结果 | 目标 |
-|------|------|------|
-| 夏普 | **3.08** | ≥ 3 |
-| 年化 | **77.8%** | ≥ 30% |
-| 最大回撤 | **-10.0%** | ≤ 10% |
-| 平均仓位 | ~0.43 | （制度过滤下常持现金） |
-
-说明：Yahoo `info` 基本面为最新截面快照（慢变量），价量动量/稳定性占合成权重约 80%。实盘需替换为点-in-time 基本面并做样本外验证。
+说明：在无前视的多头 Top10 周频约束下，**无法同时**稳定达到 Sharpe≥3、CAGR≥30%、MDD≤10%。可交付版本优先正确性与样本外一致性（详见 `us_multifactor_result/EVALUATION.md`）。

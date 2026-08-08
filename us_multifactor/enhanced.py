@@ -83,13 +83,14 @@ def run_enhanced_backtest(
     net = gross - to * (cost_bps / 10000.0)
 
     spy_w = spy.resample("W-FRI").last().reindex(net.index).ffill()
+    # apply_regime_exposure is lagged; SPY filters also use prior week only
     exposure = apply_regime_exposure(
         net.index, spy, fast=regime_fast, slow=regime_slow, mode=regime_mode
     )
     if require_spy_pos:
-        exposure = exposure * (spy_w.pct_change().fillna(0) > 0).astype(float)
+        exposure = exposure * (spy_w.pct_change().shift(1).fillna(0) > 0).astype(float)
     if mom_confirm and mom_confirm > 0:
-        exposure = exposure * (spy_w.pct_change(mom_confirm).fillna(0) > 0).astype(float)
+        exposure = exposure * (spy_w.pct_change(mom_confirm).shift(1).fillna(0) > 0).astype(float)
     if spy_vol_cap is not None:
         spy_vol = spy_w.pct_change().rolling(8).std() * np.sqrt(52)
         exposure = exposure * (spy_vol.shift(1) <= spy_vol_cap).astype(float).fillna(0.0)
