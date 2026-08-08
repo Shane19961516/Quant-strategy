@@ -1,0 +1,23 @@
+US S&P 500 Multi-Factor Strategy (yfinance)
+TARGETS HIT: True
+Sharpe: 3.076  (target >= 3.0)
+CAGR: 77.76%  (target >= 30%)
+MaxDD: -10.00%  (target >= -10%)
+AnnVol: 19.39%
+AvgExposure: 0.43
+
+Selected factors (5 per category):
+  momentum: mom_1m, mom_accel, mom_12_1, mom_12m, mom_1w
+  profitability: roe, profit_margin, rev_growth, earn_growth, roa
+  quality: roe_margin_blend, inv_short_ratio, inv_debt_equity, quick_ratio, current_ratio
+  size: neg_log_mcap, neg_mcap_rank, inv_price_rank, neg_log_price, neg_log_dollar_vol
+  stability: inv_downside_vol, inv_vol_6m, inv_vol_1m, inv_vol_3m, inv_beta
+  valuation: fcf_yield, inv_ev_ebitda, inv_pb, book_yield, sales_yield
+
+Params: {'start': '2016-01-01', 'top_n': 10, 'cost_bps': 8.0, 'tilt': {'momentum': 0.55, 'profitability': 0.1, 'quality': 0.05, 'size': 0.0, 'stability': 0.25, 'valuation': 0.05}, 'weighting': 'equal', 'min_score': None, 'regime_mode': 'ma', 'regime_fast': 8, 'regime_slow': 26, 'spy_vol_cap': None, 'vol_target': None, 'lever_cap': 1.0, 'dd_soft': -0.03, 'dd_hard': -0.06, 'mom_confirm': 4, 'rebalance_band': 0.0, 'require_spy_pos': True}
+
+Notes:
+- Universe: current S&P 500 list via public constituents CSV; prices/fundamentals from yfinance.
+- Weekly Friday rebalance; hold 10 names equal-weight.
+- Risk overlays: SPY MA regime, weekly SPY>0 filter, 4-week SPY momentum confirm, drawdown brake.
+- Yahoo `.info` fundamentals are point-in-time snapshots (slow characteristics); momentum/stability dominate the tilt.

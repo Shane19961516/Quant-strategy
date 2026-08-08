@@ -1,0 +1,44 @@
+{
+  "momentum": [
+    "mom_1m",
+    "mom_accel",
+    "mom_12_1",
+    "mom_12m",
+    "mom_1w"
+  ],
+  "profitability": [
+    "roe",
+    "profit_margin",
+    "rev_growth",
+    "earn_growth",
+    "roa"
+  ],
+  "quality": [
+    "roe_margin_blend",
+    "inv_short_ratio",
+    "inv_debt_equity",
+    "quick_ratio",
+    "current_ratio"
+  ],
+  "size": [
+    "neg_log_mcap",
+    "neg_mcap_rank",
+    "inv_price_rank",
+    "neg_log_price",
+    "neg_log_dollar_vol"
+  ],
+  "stability": [
+    "inv_downside_vol",
+    "inv_vol_6m",
+    "inv_vol_1m",
+    "inv_vol_3m",
+    "inv_beta"
+  ],
+  "valuation": [
+    "fcf_yield",
+    "inv_ev_ebitda",
+    "inv_pb",
+    "book_yield",
+    "sales_yield"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "params": {
+    "start": "2016-01-01",
+    "top_n": 10,
+    "cost_bps": 8.0,
+    "tilt": {
+      "momentum": 0.55,
+      "profitability": 0.1,
+      "quality": 0.05,
+      "size": 0.0,
+      "stability": 0.25,
+      "valuation": 0.05
+    },
+    "weighting": "equal",
+    "min_score": null,
+    "regime_mode": "ma",
+    "regime_fast": 8,
+    "regime_slow": 26,
+    "spy_vol_cap": null,
+    "vol_target": null,
+    "lever_cap": 1.0,
+    "dd_soft": -0.03,
+    "dd_hard": -0.06,
+    "mom_confirm": 4,
+    "rebalance_band": 0.0,
+    "require_spy_pos": true
+  },
+  "summary": {
+    "total_return": 452.7848040480656,
+    "cagr": 0.7775849920204079,
+    "ann_vol": 0.19387951397042802,
+    "sharpe": 3.0761496734636005,
+    "max_drawdown": -0.09997062248541067,
+    "calmar": 7.778134942931716,
+    "win_rate": 0.3562386980108499,
+    "n_obs": 553.0,
+    "avg_turnover": 0.2332730560578662,
+    "avg_exposure": 0.4294755877034358,
+    "max_leverage": 1.0
+  },
+  "hit": true
+}
