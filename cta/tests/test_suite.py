@@ -2,6 +2,7 @@
 import unittest
 
 import numpy as np
+import pandas as pd
 
 from cta.data import generate_synthetic_futures
 from cta.suite.trend import run_trend_strategy
@@ -28,6 +29,19 @@ class TestSuiteSmoke(unittest.TestCase):
         panels = generate_synthetic_futures(start="2019-01-01", end="2022-12-31", seed=1)
         panels = {k: panels[k] for k in ["RB", "HC", "CU", "M"]}
         nav, _, _ = run_trend_strategy(panels, "trend_donchian", capital=1e6)
+        self.assertTrue(np.isfinite(nav.iloc[-1]))
+
+    def test_activity_portfolio_nonzero(self):
+        from cta.suite.factory import activity_aware_portfolio
+
+        idx = pd.bdate_range("2020-01-01", periods=200)
+        rng = np.random.default_rng(0)
+        rets = {
+            "a": pd.Series(rng.normal(0.0005, 0.01, len(idx)), index=idx),
+            "b": pd.Series(rng.normal(0.0002, 0.008, len(idx)), index=idx),
+        }
+        nav, port, w = activity_aware_portfolio(rets, min_hist=30)
+        self.assertGreater(float(w.abs().sum().sum()), 0.0)
         self.assertTrue(np.isfinite(nav.iloc[-1]))
 
 

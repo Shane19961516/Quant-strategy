@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .breadth_sprint import run_breadth_sprint
 from .evaluate import run_research_suite
 
 
@@ -20,6 +21,7 @@ def main(argv=None) -> int:
     p.add_argument("--capital", type=float, default=1_000_000.0)
     p.add_argument("--plot", action="store_true", default=True)
     p.add_argument("--no-plot", action="store_true")
+    p.add_argument("--breadth", action="store_true", help="额外跑广度冲刺（拆袖层冲 Sharpe≥2）")
     args = p.parse_args(argv)
 
     out = run_research_suite(
@@ -41,12 +43,21 @@ def main(argv=None) -> int:
         "deployable",
     ]
     print(sc[cols].to_string(index=False))
-    print(f"\nDeployable: {out.get('deploy_keys')}")
-    de = out.get("deploy_invvol") or out["portfolio_summary"]
-    print(
-        f"Deploy inv-vol: ret={de['total_return']:.2%} CAGR={de['cagr']:.2%} "
-        f"Sharpe={de['sharpe']:.3f} MaxDD={de['max_drawdown']:.2%}"
-    )
+    print(f"\nDeployable (Sharpe>=2 gate): {out.get('deploy_keys')}")
+
+    if args.breadth or True:
+        # 默认一并跑广度冲刺，回答 Sharpe≥2 是否可达
+        b = run_breadth_sprint(
+            data_dir=args.data_dir,
+            out_dir=args.save_dir,
+            capital=args.capital,
+            contract_cache=args.contract_cache,
+            plot=args.plot and not args.no_plot,
+        )
+        print(
+            f"\nBreadth sprint: best_sleeve_oos={b['best_sleeve_oos_sharpe']:.3f} "
+            f"best_book_oos={b['best_oos_sharpe']:.3f} hits>=2? {b['hits_target']}"
+        )
     return 0
 
 
