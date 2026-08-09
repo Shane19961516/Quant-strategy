@@ -45,6 +45,18 @@ def yearly_returns(nav: pd.Series) -> pd.Series:
     return ret.groupby(ret.index.year).apply(lambda x: (1 + x).prod() - 1)
 
 
+def asset_yearly_returns(close: pd.DataFrame) -> pd.DataFrame:
+    """各资产同年收益对比（按自然年，缺数年份为 NaN）。"""
+    cols = {}
+    for c in close.columns:
+        s = close[c].dropna()
+        if len(s) < 5:
+            continue
+        ret = s.pct_change().fillna(0.0)
+        cols[c] = ret.groupby(ret.index.year).apply(lambda x: (1 + x).prod() - 1)
+    return pd.DataFrame(cols).sort_index()
+
+
 def contribution_attribution(
     close: pd.DataFrame, weights_daily: pd.DataFrame
 ) -> pd.DataFrame:

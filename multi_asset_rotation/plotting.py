@@ -206,3 +206,70 @@ def plot_yearly_compare(yearly_map: dict, out: Path):
     fig.tight_layout()
     fig.savefig(out, dpi=150)
     plt.close(fig)
+
+
+ASSET_LABELS = {
+    "159816": "Bond",
+    "159934": "Gold",
+    "515450": "CN DivLowVol",
+    "513500": "S&P500",
+    "513110": "Nasdaq100",
+    "513400": "Dow",
+}
+
+
+def plot_asset_yearly_bars(asset_yearly: pd.DataFrame, out: Path, strategy_yearly: pd.Series | None = None):
+    """同年各资产收益分组柱状图。"""
+    _setup_font()
+    df = asset_yearly.copy()
+    if strategy_yearly is not None:
+        df = df.copy()
+        df["Strategy"] = strategy_yearly.reindex(df.index)
+    labels = [ASSET_LABELS.get(c, c) if c != "Strategy" else "Strategy" for c in df.columns]
+    years = list(df.index)
+    x = np.arange(len(years))
+    n = len(df.columns)
+    width = 0.8 / max(n, 1)
+    colors = ["#7f7f7f", "#ffbf00", "#2ca02c", "#1f77b4", "#9467bd", "#8c564b", "#d62728"]
+    fig, ax = plt.subplots(figsize=(14, 5.2))
+    for i, (col, lab) in enumerate(zip(df.columns, labels)):
+        vals = df[col].values * 100
+        ax.bar(x + i * width, vals, width=width, label=lab, color=colors[i % len(colors)], alpha=0.9)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_xticks(x + width * (n - 1) / 2)
+    ax.set_xticklabels([str(y) for y in years])
+    ax.set_ylabel("%")
+    ax.set_title("Same-Year Return Comparison by Asset")
+    ax.legend(ncol=min(n, 4), loc="upper left")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def plot_asset_yearly_heatmap(asset_yearly: pd.DataFrame, out: Path, strategy_yearly: pd.Series | None = None):
+    """同年各资产收益热力图（行=年份，列=资产）。"""
+    _setup_font()
+    df = asset_yearly.copy()
+    if strategy_yearly is not None:
+        df["Strategy"] = strategy_yearly.reindex(df.index)
+    labels = [ASSET_LABELS.get(c, c) if c != "Strategy" else "Strategy" for c in df.columns]
+    data = df.values * 100
+    fig, ax = plt.subplots(figsize=(12, 4.8))
+    finite = data[np.isfinite(data)]
+    vmax = float(np.nanmax(np.abs(finite))) if len(finite) else 1.0
+    im = ax.imshow(data, cmap="RdYlGn", aspect="auto", vmin=-vmax, vmax=vmax)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.set_yticks(range(len(df.index)))
+    ax.set_yticklabels([str(y) for y in df.index])
+    ax.set_title("Same-Year Asset Return Heatmap (%)")
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            val = data[i, j]
+            if np.isfinite(val):
+                ax.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=8)
+    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)

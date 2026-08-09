@@ -13,12 +13,15 @@ from backtest import buy_hold_asset, equal_weight_benchmark, run_backtest
 from config import PARAMS, SAFE, UNIVERSE
 from data import build_panels, load_universe
 from metrics import (
+    asset_yearly_returns,
     contribution_attribution,
     perf_stats,
     sleeve_attribution,
     yearly_returns,
 )
 from plotting import (
+    plot_asset_yearly_bars,
+    plot_asset_yearly_heatmap,
     plot_contribution,
     plot_drawdown,
     plot_month_seasonality,
@@ -73,6 +76,7 @@ def main(force_download: bool = False):
     contrib = contribution_attribution(close, weights_daily)
     sleeve = sleeve_attribution(weights_daily, close)
     yearly = yearly_returns(nav)
+    asset_yearly = asset_yearly_returns(close)
 
     # 月度
     daily = nav.pct_change().fillna(0.0)
@@ -101,6 +105,14 @@ def main(force_download: bool = False):
     yearly_detail.to_csv(OUT / "yearly_returns_detail.csv")
     yearly_analysis.to_csv(OUT / "yearly_analysis.csv")
     monthly_detail.to_csv(OUT / "monthly_returns_detail.csv")
+    asset_yearly.to_csv(OUT / "asset_yearly_returns.csv")
+    asset_yearly_pct = asset_yearly * 100
+    asset_yearly_pct.to_csv(OUT / "asset_yearly_returns_pct.csv")
+    # 附带策略列，便于同年对比
+    asset_vs_strategy = asset_yearly.copy()
+    asset_vs_strategy["Strategy"] = yearly.reindex(asset_vs_strategy.index)
+    asset_vs_strategy.to_csv(OUT / "asset_vs_strategy_yearly.csv")
+    (asset_vs_strategy * 100).to_csv(OUT / "asset_vs_strategy_yearly_pct.csv")
 
     summary = {
         "strategy": stats,
@@ -140,6 +152,8 @@ def main(force_download: bool = False):
     plot_weights(weights_daily, OUT / "weights.png")
     plot_contribution(contrib, OUT / "attribution.png")
     plot_yearly_bars(yearly, OUT / "yearly_returns_bar.png")
+    plot_asset_yearly_bars(asset_yearly, OUT / "asset_yearly_compare.png", strategy_yearly=yearly)
+    plot_asset_yearly_heatmap(asset_yearly, OUT / "asset_yearly_heatmap.png", strategy_yearly=yearly)
     heat = plot_monthly_heatmap(nav, OUT / "monthly_heatmap.png")
     heat.to_csv(OUT / "monthly_heatmap_matrix.csv")
     (heat * 100).to_csv(OUT / "monthly_return_matrix_pct.csv")
@@ -190,6 +204,10 @@ def main(force_download: bool = False):
     )
     print("\n----- 分年收益 -----")
     print(yearly.apply(lambda x: f"{x:.2%}").to_string())
+    print("\n----- 同年各资产收益对比 -----")
+    name_map = {c: f"{c}:{UNIVERSE[c]['name']}" for c in asset_yearly.columns}
+    show = asset_vs_strategy.rename(columns={**name_map, "Strategy": "Strategy"})
+    print(show.map(lambda x: f"{x:.2%}" if pd.notna(x) else "").to_string())
     print("\n----- Sleeve归因 -----")
     print(sleeve.to_string(index=False))
     print("\n----- 资产贡献 -----")
