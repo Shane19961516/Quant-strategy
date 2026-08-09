@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}本周期持仓收益预计{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>本周期持仓收益率预计</h1>
+  <p>
+    数据截至 {{ asof }} ｜ 信号日 {{ signal_date }} ｜ 预测horizon：{{ horizon }}
+  </p>
+</div>
+
+<div class="grid">
+  <div class="card span-3">
+    <h3>综合预计</h3>
+    <div class="metric {{ 'good' if expected.blended >= 0 else 'bad' }}">{{ pct(expected.blended) }}</div>
+    <div class="sub">0.2×1周动量 + 0.5×4周均 + 0.3×8周均</div>
+  </div>
+  <div class="card span-3">
+    <h3>预计区间</h3>
+    <div class="metric small">{{ pct(expected.range_low) }} ~ {{ pct(expected.range_high) }}</div>
+    <div class="sub">综合预计 ± 近一年周波动</div>
+  </div>
+  <div class="card span-3">
+    <h3>历史分位（同权重回放）</h3>
+    <div class="sub" style="margin-top:8px;line-height:1.8;">
+      P25：{{ pct(expected.hist_p25) }}<br/>
+      P50：{{ pct(expected.hist_p50) }}<br/>
+      P75：{{ pct(expected.hist_p75) }}
+    </div>
+  </div>
+  <div class="card span-3">
+    <h3>组合周波动</h3>
+    <div class="metric small">{{ pct(expected.port_week_vol) }}</div>
+    <div class="sub">当前权重近一年周收益标准差</div>
+  </div>
+
+  <div class="card span-8">
+    <h3>分项预计对比</h3>
+    <div class="chart-box"><canvas id="expChart"></canvas></div>
+  </div>
+  <div class="card span-4">
+    <h3>方法说明</h3>
+    <p class="muted" style="line-height:1.7;margin:0;">{{ method_note }}</p>
+    <ul class="list" style="margin-top:12px;">
+      <li>近1周动量：短期惯性</li>
+      <li>近4/8周均值：更稳健的周度漂移</li>
+      <li>分位区间：同权重历史周收益分布</li>
+    </ul>
+  </div>
+
+  <div class="card span-12">
+    <h2 class="section-title">持仓贡献拆解</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>代码</th><th>名称</th><th class="num">权重</th>
+          <th class="num">近1周</th><th class="num">近4周均</th><th class="num">近8周均</th>
+          <th class="num">贡献(1周)</th><th class="num">贡献(4周)</th><th class="num">贡献(8周)</th>
+          <th class="num">历史P50</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in weights %}
+        <tr>
+          <td>{{ r.code }}</td>
+          <td>{{ r.name }}</td>
+          <td class="num">{{ pct(r.weight) }}</td>
+          <td class="num {{ 'good' if r.last_1w >= 0 else 'bad' }}">{{ pct(r.last_1w) }}</td>
+          <td class="num {{ 'good' if r.mean_4w >= 0 else 'bad' }}">{{ pct(r.mean_4w) }}</td>
+          <td class="num {{ 'good' if r.mean_8w >= 0 else 'bad' }}">{{ pct(r.mean_8w) }}</td>
+          <td class="num">{{ pct(r.contrib_mom1) }}</td>
+          <td class="num">{{ pct(r.contrib_mean4) }}</td>
+          <td class="num">{{ pct(r.contrib_mean8) }}</td>
+          <td class="num">{{ pct(r.p50) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3">组合合计</th>
+          <th class="num">{{ pct(expected.momentum_1w) }}</th>
+          <th class="num">{{ pct(expected.mean_4w) }}</th>
+          <th class="num">{{ pct(expected.mean_8w) }}</th>
+          <th class="num">{{ pct(expected.momentum_1w) }}</th>
+          <th class="num">{{ pct(expected.mean_4w) }}</th>
+          <th class="num">{{ pct(expected.mean_8w) }}</th>
+          <th class="num">{{ pct(expected.hist_p50) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="card span-12">
+    <h3>风险提示</h3>
+    <ul class="list">
+      <li>以上为统计外推，不是收益承诺；突发事件、QDII 溢价、隔夜外盘都可能导致偏差。</li>
+      <li>若本周触发金丝雀或换手迟滞，实际持仓可能与上述目标权重不同。</li>
+      <li>建议与“指标监控”页的调仓建议一并使用：先确定最终执行权重，再解读预计收益。</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const exp = {{ expected|tojson }};
+  new Chart(document.getElementById('expChart'), {
+    type: 'bar',
+    data: {
+      labels: ['近1周动量', '近4周均', '近8周均', '综合预计', '历史P25', '历史P50', '历史P75'],
+      datasets: [{
+        label: '本周预计收益',
+        data: [exp.momentum_1w, exp.mean_4w, exp.mean_8w, exp.blended, exp.hist_p25, exp.hist_p50, exp.hist_p75].map(x => x*100),
+        backgroundColor: ['#9467bd','#1f77b4','#2ca02c','#4f8cff','#ff6b6b','#ffd166','#3dd68c']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { color: '#9aa8c7', callback: v => v.toFixed(2)+'%' }, grid: { color: '#24314d' } },
+        x: { ticks: { color: '#9aa8c7' }, grid: { color: '#1a243a' } }
+      }
+    }
+  });
+</script>
+{% endblock %}

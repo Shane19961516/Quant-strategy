@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}多资产轮动控制台{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Multi-Asset <span>Rotation</span> Console</div>
+    <div class="nav">
+      <a href="{{ url_for('index') }}" class="{% if request.path == '/' %}active{% endif %}">首页</a>
+      <a href="{{ url_for('research') }}" class="{% if request.path == '/research' %}active{% endif %}">可行性研究</a>
+      <a href="{{ url_for('monitor') }}" class="{% if request.path == '/monitor' %}active{% endif %}">指标监控</a>
+      <a href="{{ url_for('forecast') }}" class="{% if request.path == '/forecast' %}active{% endif %}">收益预计</a>
+    </div>
+  </div>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

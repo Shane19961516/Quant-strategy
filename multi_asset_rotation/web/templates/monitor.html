@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}指标监控与调仓建议{% endblock %}
+{% block content %}
+<div class="hero" style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+  <div>
+    <h1>指标监控与调仓建议</h1>
+    <p>最新信号日：{{ last_meta.signal_date }} ｜ 状态：<b>{{ last_meta.regime }}</b> ｜ 美股选中：{{ last_meta.us_pick_name or '—' }} ({{ last_meta.us_pick or '—' }})</p>
+  </div>
+  <div>
+    <button class="btn primary" id="btn-refresh">刷新数据</button>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card span-3"><h3>净值</h3><div class="metric">{{ '%.3f'|format(panel.nav) }}</div><div class="sub">累计净值</div></div>
+  <div class="card span-3"><h3>当前回撤</h3><div class="metric {{ 'bad' if panel.drawdown < 0 else 'good' }}">{{ pct(panel.drawdown) }}</div><div class="sub">相对历史高点</div></div>
+  <div class="card span-3"><h3>近5日收益</h3><div class="metric small {{ 'good' if panel.ret_5d and panel.ret_5d>=0 else 'bad' }}">{{ pct(panel.ret_5d) }}</div></div>
+  <div class="card span-3"><h3>近20日年化波动</h3><div class="metric small">{{ pct(panel.vol_20d_ann) }}</div></div>
+
+  <div class="card span-3"><h3>年化收益</h3><div class="metric small good">{{ pct(stats.ann_return) }}</div></div>
+  <div class="card span-3"><h3>Sharpe</h3><div class="metric small">{{ '%.3f'|format(stats.sharpe_rf0) }}</div></div>
+  <div class="card span-3"><h3>最大回撤</h3><div class="metric small">{{ pct(stats.max_drawdown) }}</div></div>
+  <div class="card span-3"><h3>历史调仓次数</h3><div class="metric small">{{ panel.n_trades }}</div></div>
+
+  <div class="card span-8">
+    <h3>净值与回撤（近1年）</h3>
+    <div class="chart-box"><canvas id="navChart"></canvas></div>
+  </div>
+  <div class="card span-4">
+    <h3>金丝雀监控（1周）</h3>
+    <div class="sub">走弱个数：{{ last_meta.breadth_weak }} / 阈值 {{ params.canary_k }}</div>
+    <table style="margin-top:8px;">
+      <thead><tr><th>资产</th><th class="num">1周收益</th><th>状态</th></tr></thead>
+      <tbody>
+      {% for r in canary_rows %}
+        <tr>
+          <td>{{ r.name }}</td>
+          <td class="num {{ 'bad' if r.weak else 'good' }}">{{ pct(r.week_return) }}</td>
+          <td>{% if r.weak %}<span class="badge sell">走弱</span>{% else %}<span class="badge buy">未走弱</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="sub" style="margin-top:8px;">合格资产：{{ last_meta.eligible or '—' }}</div>
+  </div>
+
+  <div class="card span-12">
+    <h2 class="section-title">调仓建议（周五信号 → 下周一执行）</h2>
+    <div class="sub">
+      信号日 {{ order.signal_date }} ｜ 执行日 {{ order.exec_date }} ｜ 预计换手 {{ pct(order.turnover) }}
+      ｜ 阈值 {{ pct(params.rebalance_thresh) }}（低于阈值则实盘可不交易）
+    </div>
+    <table style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th>操作</th><th>代码</th><th>名称</th>
+          <th class="num">当前权重</th><th class="num">目标权重</th><th class="num">差额</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in order.orders %}
+        {% if r.target_weight|abs > 0.000001 or r.delta_weight|abs > 0.000001 %}
+        <tr>
+          <td>
+            {% if r.action == 'BUY' %}<span class="badge buy">BUY</span>
+            {% elif r.action == 'SELL' %}<span class="badge sell">SELL</span>
+            {% else %}<span class="badge hold">HOLD</span>{% endif %}
+          </td>
+          <td>{{ r.code }}</td>
+          <td>{{ r.name }}</td>
+          <td class="num">{{ pct(r.current_weight) }}</td>
+          <td class="num">{{ pct(r.target_weight) }}</td>
+          <td class="num {{ 'good' if r.delta_weight > 0 else ('bad' if r.delta_weight < 0 else '') }}">{{ pct(r.delta_weight) }}</td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card span-6">
+    <h3>Sleeve 目标权重（最新信号）</h3>
+    <table>
+      <tbody>
+        <tr><td>债券</td><td class="num">{{ pct(last_meta.safe_w) }}</td></tr>
+        <tr><td>黄金</td><td class="num">{{ pct(last_meta.gold_w) }}</td></tr>
+        <tr><td>A股红利低波</td><td class="num">{{ pct(last_meta.cn_w) }}</td></tr>
+        <tr><td>美股</td><td class="num">{{ pct(last_meta.us_w) }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card span-6">
+    <h3>执行提示</h3>
+    <ul class="list">
+      <li>按差额调仓，不必清仓重买。</li>
+      <li>美股/黄金 QDII 建议限价单，留意溢价。</li>
+      <li>若换手低于 {{ pct(params.rebalance_thresh) }}，策略逻辑上应维持旧仓。</li>
+      <li>金丝雀触发时优先生效，忽略进攻信号。</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const navData = {{ nav_chart|tojson }};
+  const ctx = document.getElementById('navChart');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: navData.dates,
+      datasets: [
+        {
+          label: 'NAV',
+          data: navData.nav,
+          borderColor: '#4f8cff',
+          backgroundColor: 'rgba(79,140,255,0.15)',
+          tension: 0.2,
+          yAxisID: 'y',
+          pointRadius: 0,
+        },
+        {
+          label: 'Drawdown',
+          data: navData.dd,
+          borderColor: '#ff6b6b',
+          backgroundColor: 'rgba(255,107,107,0.08)',
+          tension: 0.2,
+          yAxisID: 'y1',
+          pointRadius: 0,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { position: 'left', grid: { color: '#24314d' }, ticks: { color: '#9aa8c7' } },
+        y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#9aa8c7', callback: v => (v*100).toFixed(1)+'%' } },
+        x: { ticks: { color: '#9aa8c7', maxTicksLimit: 8 }, grid: { color: '#1a243a' } }
+      },
+      plugins: { legend: { labels: { color: '#e8eefc' } } }
+    }
+  });
+
+  document.getElementById('btn-refresh').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-refresh');
+    btn.disabled = true; btn.textContent = '刷新中...';
+    try {
+      await fetch('/api/refresh', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force_download:false}) });
+      location.reload();
+    } catch (e) {
+      alert('刷新失败: ' + e);
+      btn.disabled = false; btn.textContent = '刷新数据';
+    }
+  });
+</script>
+{% endblock %}

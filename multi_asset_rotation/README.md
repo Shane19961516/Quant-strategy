@@ -27,7 +27,22 @@
 
 > 历史回测不代表未来收益；美股 ETF 有溢价/折价与隔夜跳空，实盘请用限价/分批。
 
-## 快速运行
+## Web 控制台
+
+```bash
+cd multi_asset_rotation
+pip install -r requirements.txt
+python web_app.py                  # 默认 http://0.0.0.0:8080
+python web_app.py --port 8080
+```
+
+功能页：
+
+1. `/research` 策略可行性研究报告（逻辑 / 决策方法 / 风控细则）
+2. `/monitor` 指标监控与调仓建议（净值、金丝雀、差额指令）
+3. `/forecast` 本周期持仓收益率预计（动量/历史外推与区间）
+
+## 快速运行（命令行回测）
 
 ```bash
 cd multi_asset_rotation
