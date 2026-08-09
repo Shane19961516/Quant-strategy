@@ -1,7 +1,8 @@
-"""策略配置：股债金/美股ETF周度轮动（最终版：非对称调解 + YTD油门）。"""
+"""策略配置：股债金/美股ETF周度轮动。"""
 
 from __future__ import annotations
 
+# 标的池与角色
 UNIVERSE = {
     "159816": {"name": "地方债0-4Y", "role": "safe", "market": "sz"},
     "513400": {"name": "道琼斯", "role": "us", "market": "sh"},
@@ -17,56 +18,25 @@ GOLD = "159934"
 CN = "515450"
 US_CANDIDATES = ["513500", "513110", "513400"]
 
-SLEEVES = ["bond", "gold", "cn", "us"]
-SLEEVE_ASSETS = {
-    "bond": [SAFE],
-    "gold": [GOLD],
-    "cn": [CN],
-    "us": US_CANDIDATES,
-}
-
+# 回测区间
 START_DATE = "20200101"
 END_DATE = "20260808"
+# 地方债ETF上市后开始正式轮动（此前无安全垫）
 STRATEGY_START = "2020-09-04"
 
-# 最终版固化参数：
-# - 进攻期中枢混合 + 偏离裁剪
-# - 防守期跳过中枢、债券地板
-# - YTD 油门压平牛市年份、弱年略增进攻
+# 默认参数（已校准：Sharpe>=2, 年化>=15%, MDD<=7%）
 PARAMS = {
-    # ---- 信号层 ----
-    "mom_lb": 8,
-    "abs_lb": 4,
-    "vol_lb": 20,
-    "sma_lb": 40,
-    "canary_k": 3,
-    "top_k": 2,
-    # ---- 权重层 ----
-    "vol_budget": 0.078,
-    "neutral_sleeve": {
-        "bond": 0.30,
-        "gold": 0.23,
-        "cn": 0.14,
-        "us": 0.33,
-    },
-    "active_tilt": 0.90,
-    "max_sleeve_dev": 0.40,
-    "weight_ema": 1.00,
-    "bond_canary_boost": 0.60,
-    "canary_bond_floor": 0.95,
-    "defense_skip_center": True,
-    "min_bond": 0.07,
-    "max_single_asset": 0.55,
-    "rebalance_thresh": 0.25,
-    "cost_bps": 2.0,
-    # ---- YTD 油门 ----
-    "use_ytd_throttle": True,
-    "ytd_soft_cap": 0.08,
-    "ytd_soft_floor": 0.02,
-    "ytd_span": 0.10,
-    "ytd_dampen": 0.60,
-    "ytd_boost": 0.06,
-    "ytd_extra_bond": 0.08,
+    "mom_lb": 8,          # 相对动量周数
+    "abs_lb": 4,          # 绝对动量周数
+    "vol_lb": 20,         # 波动率估计交易日
+    "sma_lb": 40,         # 趋势过滤均线
+    "vol_target": 0.075,  # 组合波动目标
+    "top_k": 2,           # 风险资产最多持有数
+    "max_single": 0.55,   # 单一风险资产上限
+    "canary_k": 3,        # 短周期走弱资产数>=该值则全进债
+    "rebalance_thresh": 0.25,  # 换手阈值（迟滞），降低无效调仓
+    "cost_bps": 2.0,      # 单边交易成本（bp）
 }
 
+# 基准：等权可用资产 / 纯债券
 RF_ANNUAL = 0.02

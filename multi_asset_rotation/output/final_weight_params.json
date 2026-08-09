@@ -1,40 +1,21 @@
 {
-  "version": "final_asymmetric_mediation_ytd_throttle",
-  "note": "进攻期中枢混合+偏离裁剪；防守期跳过中枢；YTD油门平滑分年收益",
+  "version": "v1_dual_momentum_vol_target_canary",
+  "note": "用户指定回退到年化15.86%校准版：双动量+波动目标+金丝雀100%债券",
   "params": {
-    "vol_budget": 0.078,
-    "neutral_sleeve": {"bond": 0.30, "gold": 0.23, "cn": 0.14, "us": 0.33},
-    "active_tilt": 0.90,
-    "max_sleeve_dev": 0.40,
-    "weight_ema": 1.0,
-    "bond_canary_boost": 0.6,
-    "canary_bond_floor": 0.95,
-    "defense_skip_center": true,
-    "min_bond": 0.07,
-    "max_single_asset": 0.55,
+    "mom_lb": 8,
+    "abs_lb": 4,
+    "vol_lb": 20,
+    "sma_lb": 40,
+    "vol_target": 0.075,
+    "top_k": 2,
+    "max_single": 0.55,
+    "canary_k": 3,
     "rebalance_thresh": 0.25,
-    "cost_bps": 2.0,
-    "use_ytd_throttle": true,
-    "ytd_soft_cap": 0.08,
-    "ytd_soft_floor": 0.02,
-    "ytd_span": 0.10,
-    "ytd_dampen": 0.60,
-    "ytd_boost": 0.06,
-    "ytd_extra_bond": 0.08
+    "cost_bps": 2.0
   },
   "metrics": {
-    "ann_return": 0.1510,
-    "sharpe_rf0": 2.032,
-    "max_drawdown": -0.0539,
-    "yearly_std": 0.0945,
-    "yearly_min": 0.0123,
-    "yearly_max": 0.2370
-  },
-  "vs_v1": {
-    "v1_yearly_std": 0.1093,
-    "final_yearly_std": 0.0945,
-    "yearly_std_improvement": -0.0148,
-    "ann_tradeoff": -0.0073,
-    "sharpe_tradeoff": -0.007
+    "ann_return": 0.1586,
+    "sharpe_rf0": 2.04,
+    "max_drawdown": -0.0527
   }
 }
