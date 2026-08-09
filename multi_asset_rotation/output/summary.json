@@ -1,0 +1,61 @@
+{
+  "strategy": {
+    "start": "2020-09-04",
+    "end": "2026-08-07",
+    "total_return": 1.3105291758317756,
+    "ann_return": 0.15855277256633848,
+    "ann_vol": 0.07767608333471118,
+    "sharpe_rf0": 2.041204522158056,
+    "sharpe_rf2pct": 1.7837250105583438,
+    "sortino": 2.2857607997839557,
+    "max_drawdown": -0.05272452174655573,
+    "calmar": 3.007192238338247,
+    "win_rate": 0.5662482566248257,
+    "n_days": 1434
+  },
+  "equal_weight": {
+    "start": "2020-09-04",
+    "end": "2026-08-07",
+    "total_return": 1.1950315856568516,
+    "ann_return": 0.14815929064541278,
+    "ann_vol": 0.0998913660542544,
+    "sharpe_rf0": 1.4832041696671003,
+    "sharpe_rf2pct": 1.282986665492242,
+    "sortino": 1.6150578815252257,
+    "max_drawdown": -0.10580733288744149,
+    "calmar": 1.4002743156093498,
+    "win_rate": 0.5711297071129707,
+    "n_days": 1434
+  },
+  "bond_only": {
+    "start": "2020-09-04",
+    "end": "2026-08-07",
+    "total_return": 0.18708447093641234,
+    "ann_return": 0.030596874182701184,
+    "ann_vol": 0.02254074926967317,
+    "sharpe_rf0": 1.3574027117131773,
+    "sharpe_rf2pct": 0.4701207602250585,
+    "sortino": 0.469892626087633,
+    "max_drawdown": -0.027833934265646842,
+    "calmar": 1.0992651592363791,
+    "win_rate": 0.5732217573221757,
+    "n_days": 1434
+  },
+  "targets_check": {
+    "sharpe_rf0>=2": true,
+    "ann_return>=15%": true,
+    "max_drawdown<=7%": true
+  },
+  "params": {
+    "mom_lb": 8,
+    "abs_lb": 4,
+    "vol_lb": 20,
+    "sma_lb": 40,
+    "vol_target": 0.075,
+    "top_k": 2,
+    "max_single": 0.55,
+    "canary_k": 3,
+    "rebalance_thresh": 0.25,
+    "cost_bps": 2.0
+  }
+}
