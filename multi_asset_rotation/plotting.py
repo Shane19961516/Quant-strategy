@@ -83,12 +83,83 @@ def plot_weights(weights_daily: pd.DataFrame, out: Path, freq: str = "W-FRI"):
 
 def plot_contribution(contrib: pd.DataFrame, out: Path):
     _setup_font()
+    name_map = {
+        "地方债0-4Y": "Bond 159816",
+        "黄金": "Gold 159934",
+        "红利低波": "CN DivLowVol",
+        "标普500": "S&P500",
+        "纳斯达克100": "Nasdaq100",
+        "道琼斯": "Dow",
+    }
+    labels = [name_map.get(n, n) for n in contrib["name"]]
     fig, ax = plt.subplots(figsize=(10, 4.5))
     colors = np.where(contrib["cum_contribution"] >= 0, "#2ca02c", "#d62728")
-    ax.barh(contrib["name"], contrib["cum_contribution"], color=colors)
+    ax.barh(labels, contrib["cum_contribution"], color=colors)
     ax.axvline(0, color="black", lw=0.8)
     ax.set_title("Cumulative Return Contribution by Asset")
     ax.grid(True, axis="x", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def plot_yearly_bars(yearly: pd.Series, out: Path):
+    _setup_font()
+    y = yearly.copy()
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    colors = np.where(y.values >= 0, "#2ca02c", "#d62728")
+    ax.bar([str(i) for i in y.index], y.values * 100, color=colors, alpha=0.85)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_title("Yearly Returns (%)")
+    ax.set_ylabel("%")
+    ax.grid(True, axis="y", alpha=0.3)
+    for i, v in enumerate(y.values):
+        ax.text(i, v * 100 + (0.4 if v >= 0 else -0.8), f"{v*100:.1f}%", ha="center", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def plot_monthly_heatmap(nav: pd.Series, out: Path) -> pd.DataFrame:
+    _setup_font()
+    ret = nav.pct_change().fillna(0.0)
+    monthly = ret.groupby([ret.index.year, ret.index.month]).apply(lambda x: (1 + x).prod() - 1)
+    mat = monthly.unstack(level=1).reindex(columns=range(1, 13))
+    mat.columns = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    fig, ax = plt.subplots(figsize=(12, 4.8))
+    data = mat.values * 100
+    vmax = np.nanmax(np.abs(data)) if np.isfinite(data).any() else 1.0
+    im = ax.imshow(data, cmap="RdYlGn", aspect="auto", vmin=-vmax, vmax=vmax)
+    ax.set_xticks(range(12))
+    ax.set_xticklabels(mat.columns)
+    ax.set_yticks(range(len(mat.index)))
+    ax.set_yticklabels([str(y) for y in mat.index])
+    ax.set_title("Monthly Return Heatmap (%)")
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            val = data[i, j]
+            if np.isfinite(val):
+                ax.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=8)
+    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return mat
+
+
+def plot_monthly_timeline(nav: pd.Series, out: Path):
+    _setup_font()
+    ret = nav.pct_change().fillna(0.0)
+    monthly = ret.resample("ME").apply(lambda x: (1 + x).prod() - 1)
+    fig, ax = plt.subplots(figsize=(12, 3.8))
+    colors = np.where(monthly.values >= 0, "#2ca02c", "#d62728")
+    ax.bar(monthly.index, monthly.values * 100, width=20, color=colors, alpha=0.8)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_title("Monthly Returns Timeline (%)")
+    ax.set_ylabel("%")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(out, dpi=150)
     plt.close(fig)

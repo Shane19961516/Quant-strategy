@@ -2,15 +2,15 @@
   "strategy": {
     "start": "2020-09-04",
     "end": "2026-08-07",
-    "total_return": 1.3105291758317756,
-    "ann_return": 0.15855277256633848,
-    "ann_vol": 0.07767608333471118,
-    "sharpe_rf0": 2.041204522158056,
-    "sharpe_rf2pct": 1.7837250105583438,
-    "sortino": 2.2857607997839557,
-    "max_drawdown": -0.05272452174655573,
-    "calmar": 3.007192238338247,
-    "win_rate": 0.5662482566248257,
+    "total_return": 1.2190441025580752,
+    "ann_return": 0.15035664940326554,
+    "ann_vol": 0.07432683650381329,
+    "sharpe_rf0": 2.0229119988922384,
+    "sharpe_rf2pct": 1.7538301848293743,
+    "sortino": 2.1550429166598386,
+    "max_drawdown": -0.05118976013139409,
+    "calmar": 2.93724074926957,
+    "win_rate": 0.5788005578800558,
     "n_days": 1434
   },
   "equal_weight": {
@@ -41,21 +41,51 @@
     "win_rate": 0.5732217573221757,
     "n_days": 1434
   },
+  "yearly": {
+    "std": 0.0989869672488074,
+    "min": 0.015221798480652193,
+    "max": 0.25758928994312535,
+    "mean": 0.12431579764720656,
+    "by_year": {
+      "2020": 0.015485359581203229,
+      "2021": 0.09229042513116514,
+      "2022": 0.015221798480652193,
+      "2023": 0.18515294177621655,
+      "2024": 0.2263884025512466,
+      "2025": 0.25758928994312535,
+      "2026": 0.07808236606683683
+    }
+  },
   "targets_check": {
     "sharpe_rf0>=2": true,
     "ann_return>=15%": true,
-    "max_drawdown<=7%": true
+    "max_drawdown<=7%": true,
+    "all_years_nonneg": true
   },
   "params": {
     "mom_lb": 8,
     "abs_lb": 4,
     "vol_lb": 20,
     "sma_lb": 40,
-    "vol_target": 0.075,
-    "top_k": 2,
-    "max_single": 0.55,
     "canary_k": 3,
-    "rebalance_thresh": 0.25,
+    "top_k": 2,
+    "vol_budget": 0.0715,
+    "neutral_sleeve": {
+      "bond": 0.3,
+      "gold": 0.23,
+      "cn": 0.14,
+      "us": 0.33
+    },
+    "active_tilt": 0.91,
+    "max_sleeve_dev": 0.53,
+    "weight_ema": 1.0,
+    "bond_canary_boost": 0.6,
+    "canary_bond_floor": 0.9,
+    "defense_skip_center": true,
+    "min_bond": 0.07,
+    "max_single_asset": 0.55,
+    "rebalance_thresh": 0.2,
     "cost_bps": 2.0
-  }
+  },
+  "version": "final_asymmetric_weight_mediation"
 }

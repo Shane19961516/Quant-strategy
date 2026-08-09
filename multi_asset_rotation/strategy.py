@@ -1,15 +1,17 @@
 """
-双动量 + 波动目标 + 金丝雀风控 的周度权重矩阵。
+周度轮动：信号层选方向 + 权重层非对称调解（最终版）。
 
-逻辑（清晰可实盘）：
-1) 每周最后一个交易日（通常周五）收盘后计算信号；
-2) 资产分 sleeve：安全垫(地方债) / 黄金 / A股红利低波 / 美股(标普/纳指/道指择强)；
-3) 绝对动量：风险资产过去 abs_lb 周收益需跑赢债券；
-4) 趋势过滤：收盘价 > sma_lb 日均线；
-5) 相对动量排序，取 Top-K；
-6) 逆波动加权，并缩放至 vol_target；
-7) 金丝雀：若风险 sleeve 中短周期（1周）走弱个数 >= canary_k，则 100% 债券；
-8) 换手迟滞：目标权重相对上期换手不足阈值则不调，降低无效交易。
+信号层：
+1) 周五收盘计算动量/趋势
+2) 美股三选一（相对动量最强）
+3) 绝对动量跑赢债 + 站上均线 -> 可进攻
+4) 金丝雀（短线普跌）作为防守信号
+
+权重层（非对称调解，核心）：
+1) 战术仓：合格风险资产逆波动加权 + vol_budget 风险预算
+2) 进攻期：sleeve = (1-tilt)*中枢 + tilt*战术，并裁剪偏离 → 平滑牛市过度集中
+3) 防守期（金丝雀 / 无合格资产）：不强制中枢风险敞口，允许高债券
+4) 权重 EMA 平滑 + 换手阈值
 """
 
 from __future__ import annotations
@@ -19,7 +21,15 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
-from config import CN, CODES, GOLD, PARAMS, SAFE, US_CANDIDATES
+from config import (
+    CN,
+    CODES,
+    GOLD,
+    PARAMS,
+    SAFE,
+    SLEEVES,
+    US_CANDIDATES,
+)
 
 
 def week_ends(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -27,25 +37,120 @@ def week_ends(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(index.to_series().groupby(week_id.values).max().values)
 
 
+def _clip_to_center(tactical: Dict[str, float], center: Dict[str, float], max_dev: float) -> Dict[str, float]:
+    out = {}
+    for k in SLEEVES:
+        c = float(center.get(k, 0.0))
+        x = float(tactical.get(k, 0.0))
+        out[k] = float(np.clip(x, c - max_dev, c + max_dev))
+    s = sum(out.values())
+    if s <= 0:
+        return dict(center)
+    return {k: out[k] / s for k in SLEEVES}
+
+
+def _blend(center: Dict[str, float], tactical: Dict[str, float], tilt: float) -> Dict[str, float]:
+    tilt = float(np.clip(tilt, 0.0, 1.0))
+    out = {k: (1 - tilt) * float(center.get(k, 0.0)) + tilt * float(tactical.get(k, 0.0)) for k in SLEEVES}
+    s = sum(out.values())
+    return {k: out[k] / s for k in SLEEVES} if s > 0 else dict(center)
+
+
+def _inv_vol_weights(
+    assets: list[str],
+    fri: pd.Timestamp,
+    vol: pd.DataFrame,
+    daily_ret: pd.DataFrame,
+    vol_lb: int,
+    vol_budget: float,
+    max_single: float,
+) -> Dict[str, float]:
+    if not assets:
+        return {}
+    vols = np.array(
+        [
+            max(float(vol.loc[fri, c]) if pd.notna(vol.loc[fri, c]) else 0.20, 0.05)
+            for c in assets
+        ]
+    )
+    inv = 1.0 / vols
+    raw = inv / inv.sum()
+    if len(assets) == 1:
+        pvol = float(vols[0])
+    else:
+        hist = daily_ret[assets].loc[:fri].tail(vol_lb)
+        cov = hist.cov().values * 252
+        pvol = float(np.sqrt(max(raw @ cov @ raw, 0.0)))
+    scale = min(1.0, vol_budget / max(pvol, 1e-6))
+    out = {}
+    for i, c in enumerate(assets):
+        out[c] = min(float(raw[i] * scale), max_single)
+    s = sum(out.values())
+    if s > 1.0:
+        out = {k: v / s for k, v in out.items()}
+    return out
+
+
+def _asset_from_sleeve(
+    sleeve_w: Dict[str, float],
+    us_pick: str | None,
+    elig: list[str],
+    tactical_asset: Dict[str, float],
+) -> pd.Series:
+    """sleeve 权重映射到 ETF；已选中的风险资产按战术相对比例拆分。"""
+    w = pd.Series(0.0, index=CODES)
+    w[SAFE] = sleeve_w["bond"]
+
+    # 风险 sleeve：优先按战术相对份额；若该 sleeve 无战术仓则整段给代表资产
+    gold_tac = float(tactical_asset.get(GOLD, 0.0))
+    cn_tac = float(tactical_asset.get(CN, 0.0))
+    us_tac = float(sum(tactical_asset.get(c, 0.0) for c in US_CANDIDATES))
+
+    if sleeve_w["gold"] > 0:
+        w[GOLD] = sleeve_w["gold"]
+    if sleeve_w["cn"] > 0:
+        w[CN] = sleeve_w["cn"]
+    if sleeve_w["us"] > 0:
+        if us_pick:
+            w[us_pick] = sleeve_w["us"]
+        else:
+            w[SAFE] += sleeve_w["us"]
+
+    # 若某风险资产未入选，但其 sleeve 因中枢混合仍有权重：
+    # 进攻期保留（平滑），由上层决定是否先裁剪
+    w = w.clip(lower=0.0)
+    s = float(w.sum())
+    if s <= 0:
+        w[SAFE] = 1.0
+    else:
+        w = w / s
+    return w
+
+
 def generate_target_weights(
     close: pd.DataFrame,
     params: dict | None = None,
 ) -> Tuple[pd.DataFrame, Dict]:
-    """
-    返回：
-      weights: index=信号日(周末), columns=codes 的目标权重
-      meta: 过程信息（美股选择、是否触发金丝雀等）
-    """
     p = {**PARAMS, **(params or {})}
     mom_lb = int(p["mom_lb"])
     abs_lb = int(p["abs_lb"])
     vol_lb = int(p["vol_lb"])
     sma_lb = int(p["sma_lb"])
-    vt = float(p["vol_target"])
-    top_k = int(p["top_k"])
-    max_single = float(p["max_single"])
     canary_k = int(p["canary_k"])
+    top_k = int(p.get("top_k", 2))
+    vol_budget = float(p.get("vol_budget", p.get("vol_target", 0.08)))
+    center = {k: float(v) for k, v in p["neutral_sleeve"].items()}
+    tilt = float(p["active_tilt"])
+    max_dev = float(p["max_sleeve_dev"])
+    ema = float(p["weight_ema"])
+    canary_boost = float(p["bond_canary_boost"])
+    min_bond = float(p["min_bond"])
+    max_single = float(p["max_single_asset"])
     thresh = float(p["rebalance_thresh"])
+    # 防守期是否跳过中枢混合（非对称调解）
+    defense_skip_center = bool(p.get("defense_skip_center", True))
+    # 金丝雀时目标债券比例下限（可高于 min_bond）
+    canary_bond_floor = float(p.get("canary_bond_floor", 0.85))
 
     we = week_ends(close.index)
     w_close = close.loc[we]
@@ -56,96 +161,133 @@ def generate_target_weights(
 
     raw_rows = []
     meta_rows = []
+    prev_w = None
+
     for j, fri in enumerate(we):
         if j < max(mom_lb, abs_lb) + 1:
             continue
+
         rel = w_close.iloc[j] / w_close.iloc[j - mom_lb] - 1
         abs_m = w_close.iloc[j] / w_close.iloc[j - abs_lb] - 1
         short = w_close.iloc[j] / w_close.iloc[j - 1] - 1
 
         us_avail = [c for c in US_CANDIDATES if pd.notna(rel.get(c))]
         us_pick = max(us_avail, key=lambda c: rel[c]) if us_avail else None
+
         risk = [c for c in [GOLD, CN] if pd.notna(rel.get(c))]
         if us_pick:
             risk.append(us_pick)
 
         breadth_weak = sum(1 for c in risk if pd.notna(short.get(c)) and short[c] < 0)
-        w = pd.Series(0.0, index=CODES)
-        regime = "risk_on"
-        elig = []
+        canary = breadth_weak >= canary_k
 
-        if breadth_weak >= canary_k:
-            w[SAFE] = 1.0
-            regime = "canary_safe"
+        thr = float(abs_m[SAFE]) if pd.notna(abs_m.get(SAFE)) else 0.0
+        elig = [
+            c
+            for c in risk
+            if pd.notna(abs_m.get(c)) and abs_m[c] > thr and bool(above.loc[fri, c])
+        ]
+        elig = sorted(elig, key=lambda c: rel[c], reverse=True)[:top_k]
+
+        # ---- 战术资产权重 ----
+        if not elig:
+            tactical_asset = {SAFE: 1.0}
+            regime = "bond_only"
+            defensive = True
         else:
-            thr = float(abs_m[SAFE]) if pd.notna(abs_m.get(SAFE)) else 0.0
-            elig = [
-                c
-                for c in risk
-                if pd.notna(abs_m.get(c))
-                and abs_m[c] > thr
-                and bool(above.loc[fri, c])
-            ]
-            elig = sorted(elig, key=lambda c: rel[c], reverse=True)[:top_k]
-            if not elig:
-                w[SAFE] = 1.0
-                regime = "no_eligible"
-            else:
-                vols = np.array(
-                    [
-                        max(
-                            float(vol.loc[fri, c]) if pd.notna(vol.loc[fri, c]) else 0.2,
-                            0.05,
-                        )
-                        for c in elig
-                    ]
-                )
-                inv = 1.0 / vols
-                raw = inv / inv.sum()
-                if len(elig) == 1:
-                    pvol = float(vols[0])
-                else:
-                    hist = daily_ret[elig].loc[:fri].tail(vol_lb)
-                    cov = hist.cov().values * 252
-                    pvol = float(np.sqrt(max(raw @ cov @ raw, 0.0)))
-                scale = min(1.0, vt / max(pvol, 1e-6))
-                for a, c in enumerate(elig):
-                    w[c] = min(float(raw[a] * scale), max_single)
-                if w.sum() > 1:
-                    w /= w.sum()
-                w[SAFE] = max(0.0, 1.0 - float(w.sum()))
-                regime = "allocated"
+            rw = _inv_vol_weights(elig, fri, vol, daily_ret, vol_lb, vol_budget, max_single)
+            tactical_asset = {SAFE: max(0.0, 1.0 - sum(rw.values())), **rw}
+            regime = "allocated"
+            defensive = False
 
-        raw_rows.append(w.rename(fri))
+        tactical = {
+            "bond": float(tactical_asset.get(SAFE, 0.0)),
+            "gold": float(tactical_asset.get(GOLD, 0.0)),
+            "cn": float(tactical_asset.get(CN, 0.0)),
+            "us": float(sum(tactical_asset.get(c, 0.0) for c in US_CANDIDATES)),
+        }
+        s = sum(tactical.values())
+        tactical = {k: tactical[k] / s for k in SLEEVES} if s > 0 else {"bond": 1.0, "gold": 0.0, "cn": 0.0, "us": 0.0}
+
+        # ---- 非对称权重调解 ----
+        if canary:
+            # 防守：向高债券倾斜，不强制保留中枢风险敞口
+            if defense_skip_center:
+                sleeve_w = dict(tactical)
+            else:
+                sleeve_w = _blend(center, tactical, tilt=max(tilt, 0.85))
+            risk_sum = sleeve_w["gold"] + sleeve_w["cn"] + sleeve_w["us"]
+            target_bond = max(canary_bond_floor, sleeve_w["bond"] + min(canary_boost, risk_sum))
+            target_bond = min(1.0, target_bond)
+            need = target_bond - sleeve_w["bond"]
+            if need > 0 and risk_sum > 0:
+                take = min(need, risk_sum)
+                for k in ["gold", "cn", "us"]:
+                    sleeve_w[k] *= (risk_sum - take) / risk_sum
+                sleeve_w["bond"] += take
+            regime = "canary_tilt"
+            defensive = True
+        elif defensive:
+            # 无合格资产：纯防守，不混入中枢风险
+            sleeve_w = {"bond": 1.0, "gold": 0.0, "cn": 0.0, "us": 0.0}
+        else:
+            # 进攻：中枢混合 + 偏离裁剪，抑制牛市过度集中
+            sleeve_w = _blend(center, tactical, tilt=tilt)
+            sleeve_w = _clip_to_center(sleeve_w, center, max_dev=max_dev)
+            # 进攻期债券下限
+            if sleeve_w["bond"] < min_bond:
+                need = min_bond - sleeve_w["bond"]
+                risk_sum = sleeve_w["gold"] + sleeve_w["cn"] + sleeve_w["us"]
+                if risk_sum > need and risk_sum > 0:
+                    for k in ["gold", "cn", "us"]:
+                        sleeve_w[k] *= (risk_sum - need) / risk_sum
+                    sleeve_w["bond"] = min_bond
+
+        w = _asset_from_sleeve(sleeve_w, us_pick, elig, tactical_asset)
+
+        # 单资产上限
+        for c in CODES:
+            if c == SAFE:
+                continue
+            if w[c] > max_single:
+                overflow = w[c] - max_single
+                w[c] = max_single
+                w[SAFE] += overflow
+        w = w / w.sum()
+
+        # 权重 EMA：防守期直接落地目标仓，避免旧风险仓残留拖累
+        if prev_w is None:
+            final = w
+        elif defensive:
+            final = w
+        else:
+            final = ema * w + (1.0 - ema) * prev_w
+            final = final / final.sum()
+            turn = float((final - prev_w).abs().sum()) / 2.0
+            if turn < thresh:
+                final = prev_w
+        prev_w = final
+
+        raw_rows.append(final.rename(fri))
         meta_rows.append(
             {
                 "signal_date": fri,
                 "regime": regime,
                 "us_pick": us_pick,
-                "eligible": ",".join(elig),
+                "canary": int(canary),
                 "breadth_weak": breadth_weak,
-                "safe_w": float(w[SAFE]),
-                "gold_w": float(w[GOLD]),
-                "cn_w": float(w[CN]),
-                "us_w": float(w[[c for c in US_CANDIDATES]].sum()),
+                "eligible": ",".join(elig),
+                "sleeve_bond": sleeve_w["bond"],
+                "sleeve_gold": sleeve_w["gold"],
+                "sleeve_cn": sleeve_w["cn"],
+                "sleeve_us": sleeve_w["us"],
+                "safe_w": float(final[SAFE]),
+                "gold_w": float(final[GOLD]),
+                "cn_w": float(final[CN]),
+                "us_w": float(final[[c for c in US_CANDIDATES]].sum()),
             }
         )
 
-    raw_w = pd.DataFrame(raw_rows).reindex(columns=CODES).fillna(0.0)
-    # 换手迟滞
-    final_rows = []
-    prev = None
-    for dt, row in raw_w.iterrows():
-        if prev is None:
-            final_rows.append(row)
-            prev = row
-            continue
-        turn = float((row - prev).abs().sum()) / 2.0
-        if turn >= thresh:
-            final_rows.append(row)
-            prev = row
-        else:
-            final_rows.append(prev)
-    weights = pd.DataFrame(final_rows, index=raw_w.index).reindex(columns=CODES)
+    weights = pd.DataFrame(raw_rows).reindex(columns=CODES).fillna(0.0)
     meta = pd.DataFrame(meta_rows).set_index("signal_date")
-    return weights, {"meta": meta, "raw_weights": raw_w, "week_ends": we}
+    return weights, {"meta": meta, "week_ends": we, "params": p}
