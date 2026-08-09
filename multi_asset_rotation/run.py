@@ -21,6 +21,7 @@ from metrics import (
 from plotting import (
     plot_contribution,
     plot_drawdown,
+    plot_month_seasonality,
     plot_monthly_heatmap,
     plot_monthly_timeline,
     plot_nav,
@@ -43,7 +44,7 @@ def _copy_artifacts():
 
 def main(force_download: bool = False):
     print("=" * 64)
-    print("多资产轮动策略回测（最终版：非对称权重调解）")
+    print("多资产轮动策略回测（最终版：非对称权重调解 + YTD油门）")
     print("标的:", {c: UNIVERSE[c]["name"] for c in UNIVERSE})
     print("参数:", PARAMS)
     print("=" * 64)
@@ -119,7 +120,7 @@ def main(force_download: bool = False):
             "all_years_nonneg": bool(float(yearly.min()) >= 0),
         },
         "params": PARAMS,
-        "version": "final_asymmetric_weight_mediation",
+        "version": "final_asymmetric_mediation_ytd_throttle",
     }
     with open(OUT / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
@@ -144,6 +145,16 @@ def main(force_download: bool = False):
     (heat * 100).to_csv(OUT / "monthly_return_matrix_pct.csv")
     heat.to_csv(OUT / "monthly_return_matrix.csv")
     plot_monthly_timeline(nav, OUT / "monthly_returns_timeline.png")
+    season = plot_month_seasonality(nav, OUT / "month_seasonality.png")
+    season.to_csv(OUT / "month_seasonality.csv", header=["avg_monthly_return"])
+
+    # 版本对比（v1硬切换 vs 最终版）
+    try:
+        from compare_versions import main as compare_main
+
+        compare_main()
+    except Exception as e:
+        print("[warn] version compare skipped:", e)
 
     _copy_artifacts()
 

@@ -2,15 +2,15 @@
   "strategy": {
     "start": "2020-09-04",
     "end": "2026-08-07",
-    "total_return": 1.2190441025580752,
-    "ann_return": 0.15035664940326554,
-    "ann_vol": 0.07432683650381329,
-    "sharpe_rf0": 2.0229119988922384,
-    "sharpe_rf2pct": 1.7538301848293743,
-    "sortino": 2.1550429166598386,
-    "max_drawdown": -0.05118976013139409,
-    "calmar": 2.93724074926957,
-    "win_rate": 0.5788005578800558,
+    "total_return": 1.2264694162848864,
+    "ann_return": 0.1510321638650023,
+    "ann_vol": 0.07432107002373858,
+    "sharpe_rf0": 2.0321580921367484,
+    "sharpe_rf2pct": 1.7630554003481094,
+    "sortino": 2.1961846133166643,
+    "max_drawdown": -0.053910238574332525,
+    "calmar": 2.801548794052471,
+    "win_rate": 0.5753138075313807,
     "n_days": 1434
   },
   "equal_weight": {
@@ -42,18 +42,18 @@
     "n_days": 1434
   },
   "yearly": {
-    "std": 0.0989869672488074,
-    "min": 0.015221798480652193,
-    "max": 0.25758928994312535,
-    "mean": 0.12431579764720656,
+    "std": 0.09445701718355352,
+    "min": 0.012283642320921384,
+    "max": 0.23701014910592644,
+    "mean": 0.1245427515372208,
     "by_year": {
-      "2020": 0.015485359581203229,
-      "2021": 0.09229042513116514,
-      "2022": 0.015221798480652193,
-      "2023": 0.18515294177621655,
-      "2024": 0.2263884025512466,
-      "2025": 0.25758928994312535,
-      "2026": 0.07808236606683683
+      "2020": 0.02139396047323916,
+      "2021": 0.09455937453384067,
+      "2022": 0.012283642320921384,
+      "2023": 0.21878570383647666,
+      "2024": 0.20352057068582408,
+      "2025": 0.23701014910592644,
+      "2026": 0.0842458598043172
     }
   },
   "targets_check": {
@@ -69,23 +69,30 @@
     "sma_lb": 40,
     "canary_k": 3,
     "top_k": 2,
-    "vol_budget": 0.0715,
+    "vol_budget": 0.078,
     "neutral_sleeve": {
       "bond": 0.3,
       "gold": 0.23,
       "cn": 0.14,
       "us": 0.33
     },
-    "active_tilt": 0.91,
-    "max_sleeve_dev": 0.53,
+    "active_tilt": 0.9,
+    "max_sleeve_dev": 0.4,
     "weight_ema": 1.0,
     "bond_canary_boost": 0.6,
-    "canary_bond_floor": 0.9,
+    "canary_bond_floor": 0.95,
     "defense_skip_center": true,
     "min_bond": 0.07,
     "max_single_asset": 0.55,
-    "rebalance_thresh": 0.2,
-    "cost_bps": 2.0
+    "rebalance_thresh": 0.25,
+    "cost_bps": 2.0,
+    "use_ytd_throttle": true,
+    "ytd_soft_cap": 0.08,
+    "ytd_soft_floor": 0.02,
+    "ytd_span": 0.1,
+    "ytd_dampen": 0.6,
+    "ytd_boost": 0.06,
+    "ytd_extra_bond": 0.08
   },
-  "version": "final_asymmetric_weight_mediation"
+  "version": "final_asymmetric_mediation_ytd_throttle"
 }

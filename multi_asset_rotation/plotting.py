@@ -163,3 +163,46 @@ def plot_monthly_timeline(nav: pd.Series, out: Path):
     fig.tight_layout()
     fig.savefig(out, dpi=150)
     plt.close(fig)
+
+
+def plot_month_seasonality(nav: pd.Series, out: Path) -> pd.Series:
+    _setup_font()
+    ret = nav.pct_change().fillna(0.0)
+    monthly = ret.resample("ME").apply(lambda x: (1 + x).prod() - 1)
+    by_month = monthly.groupby(monthly.index.month).mean()
+    labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+    colors = np.where(by_month.values >= 0, "#2ca02c", "#d62728")
+    ax.bar([labels[m - 1] for m in by_month.index], by_month.values * 100, color=colors, alpha=0.85)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_title("Average Monthly Seasonality (%)")
+    ax.set_ylabel("%")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return by_month
+
+
+def plot_yearly_compare(yearly_map: dict, out: Path):
+    """yearly_map: {label: pd.Series(year -> return)}"""
+    _setup_font()
+    labels = list(yearly_map.keys())
+    years = sorted(set().union(*[set(s.index) for s in yearly_map.values()]))
+    x = np.arange(len(years))
+    width = 0.8 / max(len(labels), 1)
+    fig, ax = plt.subplots(figsize=(12, 4.8))
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    for i, lab in enumerate(labels):
+        vals = [float(yearly_map[lab].get(y, np.nan)) * 100 for y in years]
+        ax.bar(x + i * width, vals, width=width, label=lab, color=colors[i % len(colors)], alpha=0.9)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_xticks(x + width * (len(labels) - 1) / 2)
+    ax.set_xticklabels([str(y) for y in years])
+    ax.set_ylabel("%")
+    ax.set_title("Yearly Return Comparison")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)

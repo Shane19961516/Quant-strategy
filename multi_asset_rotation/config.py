@@ -1,4 +1,4 @@
-"""策略配置：股债金/美股ETF周度轮动（最终版：非对称权重调解）。"""
+"""策略配置：股债金/美股ETF周度轮动（最终版：非对称调解 + YTD油门）。"""
 
 from __future__ import annotations
 
@@ -29,9 +29,10 @@ START_DATE = "20200101"
 END_DATE = "20260808"
 STRATEGY_START = "2020-09-04"
 
-# 最终版参数（网格搜索固化）：
-# 进攻期中枢混合抑制过度集中；防守期跳过中枢、债券地板保护
-# 目标：Sharpe>=2 / 年化>=15% / MDD<=7%，并降低分年收益离散度
+# 最终版固化参数：
+# - 进攻期中枢混合 + 偏离裁剪
+# - 防守期跳过中枢、债券地板
+# - YTD 油门压平牛市年份、弱年略增进攻
 PARAMS = {
     # ---- 信号层 ----
     "mom_lb": 8,
@@ -40,24 +41,32 @@ PARAMS = {
     "sma_lb": 40,
     "canary_k": 3,
     "top_k": 2,
-    # ---- 权重层（非对称调解）----
-    "vol_budget": 0.0715,       # 战术风险预算（逆波动缩放）
-    "neutral_sleeve": {         # 战略中枢
+    # ---- 权重层 ----
+    "vol_budget": 0.078,
+    "neutral_sleeve": {
         "bond": 0.30,
         "gold": 0.23,
         "cn": 0.14,
         "us": 0.33,
     },
-    "active_tilt": 0.91,        # 进攻期战术占比
-    "max_sleeve_dev": 0.53,     # 进攻期相对中枢最大偏离
-    "weight_ema": 1.00,         # 进攻期权重平滑（1=不拖尾）；防守期强制即时落地
-    "bond_canary_boost": 0.60,  # 金丝雀额外拨债
-    "canary_bond_floor": 0.90,  # 金丝雀债券下限
+    "active_tilt": 0.90,
+    "max_sleeve_dev": 0.40,
+    "weight_ema": 1.00,
+    "bond_canary_boost": 0.60,
+    "canary_bond_floor": 0.95,
     "defense_skip_center": True,
-    "min_bond": 0.07,           # 仅进攻期生效
+    "min_bond": 0.07,
     "max_single_asset": 0.55,
-    "rebalance_thresh": 0.20,
+    "rebalance_thresh": 0.25,
     "cost_bps": 2.0,
+    # ---- YTD 油门 ----
+    "use_ytd_throttle": True,
+    "ytd_soft_cap": 0.08,
+    "ytd_soft_floor": 0.02,
+    "ytd_span": 0.10,
+    "ytd_dampen": 0.60,
+    "ytd_boost": 0.06,
+    "ytd_extra_bond": 0.08,
 }
 
 RF_ANNUAL = 0.02
