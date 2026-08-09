@@ -82,6 +82,78 @@ def contribution_attribution(
     return out.sort_values("cum_contribution", ascending=False)
 
 
+def daily_asset_contribution(close: pd.DataFrame, weights_daily: pd.DataFrame) -> pd.DataFrame:
+    """每日资产贡献：权重_{t-1} * 收益_t。"""
+    ret = close.pct_change().fillna(0.0)
+    w_lag = weights_daily.shift(1).fillna(0.0)
+    return (w_lag * ret).reindex(columns=CODES).fillna(0.0)
+
+
+def yearly_contribution_by_asset(
+    close: pd.DataFrame, weights_daily: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    策略持仓下，各资产对组合的分年贡献（算术加总日贡献）。
+    注意：分年贡献之和近似该年组合收益，但因复合效应不完全相等。
+    """
+    contrib = daily_asset_contribution(close, weights_daily)
+    by_year = contrib.groupby(contrib.index.year).sum()
+    by_year["StrategyApprox"] = by_year.sum(axis=1)
+    return by_year
+
+
+def latest_rebalance_instruction(
+    signal_weights: pd.DataFrame,
+    weights_daily: pd.DataFrame,
+    calendar: pd.DatetimeIndex,
+) -> dict:
+    """
+    最新周五信号 -> 下周一执行的差额调仓指令。
+    current ≈ 信号日前一持仓（最近已执行权重）。
+    """
+    from config import UNIVERSE
+
+    if signal_weights.empty:
+        return {}
+    sig_dt = signal_weights.index.max()
+    target = signal_weights.loc[sig_dt].reindex(CODES).fillna(0.0)
+    # 找信号日及之前最近一次已执行持仓
+    hist = weights_daily.loc[:sig_dt]
+    if len(hist) == 0:
+        current = pd.Series(0.0, index=CODES)
+    else:
+        current = hist.iloc[-1].reindex(CODES).fillna(0.0)
+
+    # 下一交易日
+    pos = {d: i for i, d in enumerate(calendar)}
+    exec_date = None
+    if sig_dt in pos and pos[sig_dt] + 1 < len(calendar):
+        exec_date = calendar[pos[sig_dt] + 1]
+
+    delta = target - current
+    rows = []
+    for c in CODES:
+        rows.append(
+            {
+                "code": c,
+                "name": UNIVERSE[c]["name"],
+                "current_weight": float(current[c]),
+                "target_weight": float(target[c]),
+                "delta_weight": float(delta[c]),
+                "action": (
+                    "BUY" if delta[c] > 1e-4 else ("SELL" if delta[c] < -1e-4 else "HOLD")
+                ),
+            }
+        )
+    return {
+        "signal_date": str(sig_dt.date()),
+        "exec_date": str(exec_date.date()) if exec_date is not None else "next_trading_day_after_signal",
+        "note": "Friday close signal -> next trading day open execution (approx). If sample ends on signal Friday, exec_date is the next session in live trading.",
+        "orders": rows,
+        "turnover": float(delta.abs().sum()) / 2.0,
+    }
+
+
 def sleeve_attribution(weights_daily: pd.DataFrame, close: pd.DataFrame) -> pd.DataFrame:
     from config import CN, GOLD, SAFE, US_CANDIDATES
 

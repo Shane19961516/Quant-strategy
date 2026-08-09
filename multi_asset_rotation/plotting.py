@@ -273,3 +273,59 @@ def plot_asset_yearly_heatmap(asset_yearly: pd.DataFrame, out: Path, strategy_ye
     fig.tight_layout()
     fig.savefig(out, dpi=150)
     plt.close(fig)
+
+
+def plot_yearly_contribution_stacked(yearly_contrib: pd.DataFrame, out: Path):
+    """策略持仓下，各资产分年贡献堆叠图。"""
+    _setup_font()
+    df = yearly_contrib.drop(columns=["StrategyApprox"], errors="ignore").copy()
+    labels = [ASSET_LABELS.get(c, c) for c in df.columns]
+    years = [str(y) for y in df.index]
+    colors = ["#7f7f7f", "#ffbf00", "#2ca02c", "#1f77b4", "#9467bd", "#8c564b"]
+    fig, ax = plt.subplots(figsize=(12, 5.0))
+    bottom_pos = np.zeros(len(df))
+    bottom_neg = np.zeros(len(df))
+    x = np.arange(len(df))
+    for i, (col, lab) in enumerate(zip(df.columns, labels)):
+        vals = df[col].values * 100
+        pos = np.where(vals >= 0, vals, 0.0)
+        neg = np.where(vals < 0, vals, 0.0)
+        ax.bar(x, pos, bottom=bottom_pos, label=lab, color=colors[i % len(colors)], width=0.7)
+        ax.bar(x, neg, bottom=bottom_neg, color=colors[i % len(colors)], width=0.7)
+        bottom_pos += pos
+        bottom_neg += neg
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_xticks(x)
+    ax.set_xticklabels(years)
+    ax.set_ylabel("Contribution (pp, arithmetic)")
+    ax.set_title("Strategy Yearly Return Contribution by Asset")
+    ax.legend(ncol=3, loc="upper left")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def plot_yearly_contribution_heatmap(yearly_contrib: pd.DataFrame, out: Path):
+    _setup_font()
+    df = yearly_contrib.drop(columns=["StrategyApprox"], errors="ignore").copy()
+    labels = [ASSET_LABELS.get(c, c) for c in df.columns]
+    data = df.values * 100
+    fig, ax = plt.subplots(figsize=(12, 4.8))
+    finite = data[np.isfinite(data)]
+    vmax = float(np.nanmax(np.abs(finite))) if len(finite) else 1.0
+    im = ax.imshow(data, cmap="RdYlGn", aspect="auto", vmin=-vmax, vmax=vmax)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.set_yticks(range(len(df.index)))
+    ax.set_yticklabels([str(y) for y in df.index])
+    ax.set_title("Strategy Yearly Contribution Heatmap (pp)")
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            val = data[i, j]
+            if np.isfinite(val):
+                ax.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=8)
+    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)

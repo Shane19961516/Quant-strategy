@@ -40,7 +40,10 @@ python run.py --force-download  # 强制重拉 akshare 数据
 
 - `nav_curve.png` / `drawdown.png` / `weights.png` / `attribution.png`
 - `yearly_returns_bar.png`
-- `asset_yearly_compare.png` / `asset_yearly_heatmap.png`（同年各资产收益对比）
+- `asset_yearly_compare.png` / `asset_yearly_heatmap.png`（同年各资产买入持有收益对比）
+- `yearly_contribution_stacked.png` / `yearly_contribution_heatmap.png`（策略持仓分年贡献）
+- `latest_signal.json` / `latest_orders.csv`（最新周五信号与差额调仓）
+- `REPORT.md` 简明报告
 - `monthly_heatmap.png` / `month_seasonality.png`
 - `summary.json`
 - `trades.csv` / `weights_signal_friday.csv`

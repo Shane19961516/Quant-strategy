@@ -56,6 +56,11 @@
       "2026": 0.07244246128056231
     }
   },
+  "latest_signal": {
+    "signal_date": "2026-08-07",
+    "exec_date": "next_trading_day_after_signal",
+    "turnover": 0.4941205879649554
+  },
   "targets_check": {
     "sharpe_rf0>=2": true,
     "ann_return>=15%": true,

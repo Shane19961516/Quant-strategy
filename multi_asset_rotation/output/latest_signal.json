@@ -1,0 +1,56 @@
+{
+  "signal_date": "2026-08-07",
+  "exec_date": "next_trading_day_after_signal",
+  "note": "Friday close signal -> next trading day open execution (approx). If sample ends on signal Friday, exec_date is the next session in live trading.",
+  "orders": [
+    {
+      "code": "159816",
+      "name": "地方债0-4Y",
+      "current_weight": 0.5639442810162545,
+      "target_weight": 0.5058794120350446,
+      "delta_weight": -0.05806486898120988,
+      "action": "SELL"
+    },
+    {
+      "code": "513400",
+      "name": "道琼斯",
+      "current_weight": 0.0,
+      "target_weight": 0.25957676627098814,
+      "delta_weight": 0.25957676627098814,
+      "action": "BUY"
+    },
+    {
+      "code": "513110",
+      "name": "纳斯达克100",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "513500",
+      "name": "标普500",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "159934",
+      "name": "黄金",
+      "current_weight": 0.0,
+      "target_weight": 0.23454382169396723,
+      "delta_weight": 0.23454382169396723,
+      "action": "BUY"
+    },
+    {
+      "code": "515450",
+      "name": "红利低波",
+      "current_weight": 0.4360557189837455,
+      "target_weight": 0.0,
+      "delta_weight": -0.4360557189837455,
+      "action": "SELL"
+    }
+  ],
+  "turnover": 0.4941205879649554
+}
