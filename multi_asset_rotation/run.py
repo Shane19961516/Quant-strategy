@@ -169,7 +169,7 @@ def main(force_download: bool = False):
     def _pct(x):
         return f"{x:.2%}" if x is not None else "nan"
 
-    print("\n----- 策略业绩（最终版）-----")
+    print("\n----- 策略业绩（校准版 15.86%）-----")
     pct_keys = {"total_return", "ann_return", "ann_vol", "max_drawdown", "win_rate"}
     for k in [
         "start",
