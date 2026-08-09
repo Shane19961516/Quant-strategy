@@ -50,6 +50,7 @@ python optimize_mediation.py  # 可选：权重层搜索
 
 - `nav_curve.png` / `drawdown.png` / `weights.png` / `attribution.png`
 - `yearly_returns_bar.png` / `yearly_compare_v1_vs_final.png`
+- `asset_yearly_compare.png` / `asset_yearly_heatmap.png`（同年各资产收益对比）
 - `monthly_heatmap.png` / `month_seasonality.png`
 - `summary.json` / `version_compare.json`
 - `trades.csv` / `weights_signal_friday.csv`
