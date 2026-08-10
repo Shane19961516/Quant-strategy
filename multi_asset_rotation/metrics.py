@@ -155,7 +155,7 @@ def latest_rebalance_instruction(
 
 
 def sleeve_attribution(weights_daily: pd.DataFrame, close: pd.DataFrame) -> pd.DataFrame:
-    from config import CN, GOLD, SAFE, US_CANDIDATES
+    from config import CN, GOLD, HK, SAFE, US_CANDIDATES
 
     ret = close.pct_change().fillna(0.0)
     w = weights_daily.shift(1).fillna(0.0)
@@ -163,6 +163,7 @@ def sleeve_attribution(weights_daily: pd.DataFrame, close: pd.DataFrame) -> pd.D
         "债券": [SAFE],
         "黄金": [GOLD],
         "A股红利低波": [CN],
+        "港股汇丰": [HK],
         "美股": US_CANDIDATES,
     }
     rows = []

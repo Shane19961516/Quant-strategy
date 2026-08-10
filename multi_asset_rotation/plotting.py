@@ -60,6 +60,7 @@ def plot_weights(weights_daily: pd.DataFrame, out: Path, freq: str = "W-FRI"):
             "Bond": w.get("159816", 0),
             "Gold": w.get("159934", 0),
             "CN DivLowVol": w.get("515450", 0),
+            "HK HSBC": w.get("HK0005", 0),
             "US Equity": w[us].sum(axis=1) if us else 0,
         },
         index=w.index,
@@ -70,7 +71,7 @@ def plot_weights(weights_daily: pd.DataFrame, out: Path, freq: str = "W-FRI"):
         plot_df.T.values,
         labels=plot_df.columns,
         alpha=0.9,
-        colors=["#7f7f7f", "#ffbf00", "#2ca02c", "#1f77b4"],
+        colors=["#7f7f7f", "#ffbf00", "#2ca02c", "#e377c2", "#1f77b4"],
     )
     ax.set_ylim(0, 1)
     ax.set_title("Sleeve Weights Over Time")
@@ -87,6 +88,7 @@ def plot_contribution(contrib: pd.DataFrame, out: Path):
         "地方债0-4Y": "Bond 159816",
         "黄金": "Gold 159934",
         "红利低波": "CN DivLowVol",
+        "汇丰控股": "HK HSBC",
         "标普500": "S&P500",
         "纳斯达克100": "Nasdaq100",
         "道琼斯": "Dow",
@@ -212,6 +214,7 @@ ASSET_LABELS = {
     "159816": "Bond",
     "159934": "Gold",
     "515450": "CN DivLowVol",
+    "HK0005": "HK HSBC",
     "513500": "S&P500",
     "513110": "Nasdaq100",
     "513400": "Dow",

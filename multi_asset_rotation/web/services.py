@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from backtest import run_backtest
-from config import CN, CODES, GOLD, PARAMS, STRATEGY_START, UNIVERSE
+from config import CN, CODES, CORE_RISK, GOLD, HK, PARAMS, STRATEGY_START, UNIVERSE
 from data import build_panels, load_universe
 from metrics import latest_rebalance_instruction, perf_stats, yearly_returns
 from strategy import generate_target_weights, week_ends
@@ -105,7 +105,7 @@ class StrategyEngine:
         w_close = s.close.loc[we]
         short = w_close.iloc[-1] / w_close.iloc[-2] - 1
         us_pick = last_meta.get("us_pick")
-        risk_codes = [c for c in [GOLD, CN] if c in short.index]
+        risk_codes = [c for c in CORE_RISK if c in short.index]
         if us_pick in short.index:
             risk_codes.append(us_pick)
         canary_rows = []
@@ -149,6 +149,7 @@ class StrategyEngine:
                 "safe_w": float(last_meta.get("safe_w", 0) or 0),
                 "gold_w": float(last_meta.get("gold_w", 0) or 0),
                 "cn_w": float(last_meta.get("cn_w", 0) or 0),
+                "hk_w": float(last_meta.get("hk_w", 0) or 0),
                 "us_w": float(last_meta.get("us_w", 0) or 0),
             },
             "panel": {

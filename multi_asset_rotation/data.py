@@ -1,4 +1,4 @@
-"""通过 akshare 拉取ETF日行情，并做对齐/缓存。"""
+"""通过 akshare 拉取ETF/港股日行情，并做对齐/缓存。"""
 
 from __future__ import annotations
 
@@ -21,8 +21,68 @@ def _sina_symbol(code: str) -> str:
     return f"{mkt}{code}"
 
 
+def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    rename = {}
+    for c in df.columns:
+        cl = str(c).lower()
+        if cl in ("date", "日期"):
+            rename[c] = "date"
+        elif cl in ("open", "开盘"):
+            rename[c] = "open"
+        elif cl in ("high", "最高"):
+            rename[c] = "high"
+        elif cl in ("low", "最低"):
+            rename[c] = "low"
+        elif cl in ("close", "收盘"):
+            rename[c] = "close"
+        elif cl in ("volume", "成交量"):
+            rename[c] = "volume"
+    df = df.rename(columns=rename)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").drop_duplicates("date")
+    keep = ["date", "open", "high", "low", "close", "volume"]
+    for col in keep:
+        if col not in df.columns:
+            df[col] = np.nan
+    start = pd.Timestamp(f"{START_DATE[:4]}-{START_DATE[4:6]}-{START_DATE[6:]}")
+    end = pd.Timestamp(f"{END_DATE[:4]}-{END_DATE[4:6]}-{END_DATE[6:]}")
+    df = df[(df["date"] >= start) & (df["date"] <= end)]
+    return df[keep].copy()
+
+
+def download_hk(code: str, retries: int = 5) -> pd.DataFrame:
+    """港股：akshare stock_hk_daily（前复权）。"""
+    symbol = UNIVERSE[code].get("ak_symbol", code.replace("HK", "").zfill(5))
+    last_err = None
+    for i in range(retries):
+        try:
+            df = ak.stock_hk_daily(symbol=symbol, adjust="qfq")
+            return _normalize_ohlcv(df)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            time.sleep(1.0 + i)
+    # fallback eastmoney hist
+    for i in range(retries):
+        try:
+            df = ak.stock_hk_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=START_DATE,
+                end_date=END_DATE,
+                adjust="qfq",
+            )
+            return _normalize_ohlcv(df)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            time.sleep(1.0 + i)
+    raise RuntimeError(f"下载失败 {code}: {last_err}")
+
+
 def download_one(code: str, retries: int = 5) -> pd.DataFrame:
-    """优先腾讯前复权（akshare），失败回退新浪。"""
+    """A股ETF优先腾讯前复权；港股走 HK 接口。"""
+    if UNIVERSE[code]["market"] == "hk":
+        return download_hk(code, retries=retries)
+
     symbol = _sina_symbol(code)
     last_err = None
     for i in range(retries):
@@ -33,21 +93,7 @@ def download_one(code: str, retries: int = 5) -> pd.DataFrame:
                 end_date=END_DATE,
                 adjust="qfq",
             )
-            df = df.rename(
-                columns={
-                    "date": "date",
-                    "open": "open",
-                    "close": "close",
-                    "high": "high",
-                    "low": "low",
-                    "volume": "volume",
-                }
-            )
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date").drop_duplicates("date")
-            keep = ["date", "open", "high", "low", "close", "volume"]
-            df = df[keep].copy()
-            return df
+            return _normalize_ohlcv(df)
         except Exception as e:  # noqa: BLE001
             last_err = e
             time.sleep(1.0 + i)
@@ -55,13 +101,9 @@ def download_one(code: str, retries: int = 5) -> pd.DataFrame:
     for i in range(retries):
         try:
             df = ak.fund_etf_hist_sina(symbol=symbol)
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date")
-            df = df[(df["date"] >= START_DATE[:4] + "-" + START_DATE[4:6] + "-" + START_DATE[6:])
-                    & (df["date"] <= END_DATE[:4] + "-" + END_DATE[4:6] + "-" + END_DATE[6:])]
-            # 粗暴拆分修正：隔夜跳空>28%且开盘同步跳空
+            df = _normalize_ohlcv(df)
             df = _fix_splits(df)
-            return df[["date", "open", "high", "low", "close", "volume"]].copy()
+            return df
         except Exception as e:  # noqa: BLE001
             last_err = e
             time.sleep(1.0 + i)
@@ -99,8 +141,15 @@ def load_universe(force: bool = False) -> Dict[str, pd.DataFrame]:
 
 
 def build_panels(raw: Dict[str, pd.DataFrame]):
-    """对齐交易日历，返回 close/open DataFrame。"""
-    all_idx = sorted(set().union(*[set(df["date"]) for df in raw.values()]))
+    """对齐交易日历，返回 close/open DataFrame。
+
+    主日历使用 A 股/ETF 交易日，避免港股单独开市日把 A 股前值当成“交易日收益=0”。
+    港股价格映射到 A 股日历后 ffill，在 A 股交易日上计港股收益（含隔夜/假期跳空）。
+    """
+    a_codes = [c for c, m in UNIVERSE.items() if m.get("market") != "hk" and c in raw]
+    if not a_codes:
+        a_codes = list(raw.keys())
+    all_idx = sorted(set().union(*[set(raw[c]["date"]) for c in a_codes]))
     all_idx = pd.DatetimeIndex(all_idx)
     all_idx = all_idx[(all_idx >= STRATEGY_START) & (all_idx <= pd.Timestamp(END_DATE))]
 
@@ -111,6 +160,13 @@ def build_panels(raw: Dict[str, pd.DataFrame]):
         first = s.index.min()
         close[code] = s["close"].reindex(all_idx)
         open_[code] = s["open"].reindex(all_idx)
+        # 港股：先按完整历史 ffill 再裁到 A 股日历，保留假期跳空
+        if UNIVERSE.get(code, {}).get("market") == "hk":
+            full = s["close"].copy()
+            full_open = s["open"].copy()
+            # 对齐到 A 股日：取当日或此前最近港股收盘
+            close[code] = full.reindex(all_idx, method="ffill")
+            open_[code] = full_open.reindex(all_idx, method="ffill")
         close.loc[close.index < first, code] = np.nan
         open_.loc[open_.index < first, code] = np.nan
         close[code] = close[code].ffill()

@@ -1,21 +1,21 @@
 {
-  "version": "v1_dual_momentum_vol_target_canary",
-  "note": "用户指定回退到年化15.86%校准版：双动量+波动目标+金丝雀100%债券",
+  "version": "v1_with_HK0005",
+  "note": "基础池加入港股通汇丰控股 HK0005(00005.HK)，并重校准参数",
   "params": {
     "mom_lb": 8,
     "abs_lb": 4,
     "vol_lb": 20,
     "sma_lb": 40,
-    "vol_target": 0.075,
-    "top_k": 2,
-    "max_single": 0.55,
-    "canary_k": 3,
+    "vol_target": 0.08,
+    "top_k": 3,
+    "max_single": 0.40,
+    "canary_k": 4,
     "rebalance_thresh": 0.25,
     "cost_bps": 2.0
   },
   "metrics": {
-    "ann_return": 0.1586,
-    "sharpe_rf0": 2.04,
-    "max_drawdown": -0.0527
+    "ann_return": 0.1736,
+    "sharpe_rf0": 2.131,
+    "max_drawdown": -0.0872
   }
 }

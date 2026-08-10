@@ -3,7 +3,7 @@
 
 逻辑（清晰可实盘）：
 1) 每周最后一个交易日（通常周五）收盘后计算信号；
-2) 资产分 sleeve：安全垫(地方债) / 黄金 / A股红利低波 / 美股(标普/纳指/道指择强)；
+2) 资产分 sleeve：安全垫(地方债) / 黄金 / A股红利低波 / 港股(汇丰) / 美股(标普/纳指/道指择强)；
 3) 绝对动量：风险资产过去 abs_lb 周收益需跑赢债券；
 4) 趋势过滤：收盘价 > sma_lb 日均线；
 5) 相对动量排序，取 Top-K；
@@ -19,7 +19,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
-from config import CN, CODES, GOLD, PARAMS, SAFE, US_CANDIDATES
+from config import CN, CODES, CORE_RISK, GOLD, HK, PARAMS, SAFE, US_CANDIDATES
 
 
 def week_ends(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -65,7 +65,7 @@ def generate_target_weights(
 
         us_avail = [c for c in US_CANDIDATES if pd.notna(rel.get(c))]
         us_pick = max(us_avail, key=lambda c: rel[c]) if us_avail else None
-        risk = [c for c in [GOLD, CN] if pd.notna(rel.get(c))]
+        risk = [c for c in CORE_RISK if c in close.columns and pd.notna(rel.get(c))]
         if us_pick:
             risk.append(us_pick)
 
@@ -127,7 +127,8 @@ def generate_target_weights(
                 "safe_w": float(w[SAFE]),
                 "gold_w": float(w[GOLD]),
                 "cn_w": float(w[CN]),
-                "us_w": float(w[[c for c in US_CANDIDATES]].sum()),
+                "hk_w": float(w.get(HK, 0.0)),
+                "us_w": float(w[[c for c in US_CANDIDATES if c in w.index]].sum()),
             }
         )
 
