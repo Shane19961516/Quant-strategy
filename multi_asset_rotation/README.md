@@ -21,10 +21,13 @@
 
 ## 回测结果（含 HK0005，cost=2bp，2020-09 → 2026-08）
 
-- 年化收益 **~17.4%**
-- Sharpe（rf=0）**~2.13**
-- 最大回撤 **~-8.7%**（港股波动抬升回撤；单资产上限已降到 40%）
+- 年化收益 **~18.5%**
+- Sharpe（rf=0）**~2.25**
+- 最大回撤 **~-8.7%**（趋势过滤加 0.3% 缓冲后，回撤基本持平）
 - 分年收益保持全非负
+
+> 参数搜索：单独拉长/缩短 `abs_lb`、`sma_lb` 很难同时“提收益 + 降回撤”；在不降低 Sharpe 的约束下，
+> 最优是略缩短均线并加入 `sma_buffer=0.3%`（价格需高于均线），年化/夏普明显提升，MDD 几乎不变。
 
 > 汇丰控股为港股通标的（00005.HK），行情按港币计、映射到 A 股交易日历；实盘需考虑汇率与港股通额度/溢折价。
 
@@ -76,8 +79,8 @@ python run.py --force-download  # 强制重拉 akshare 数据
 见 `config.py` 中 `PARAMS`：
 
 ```python
-mom_lb=8, abs_lb=4, sma_lb=40, vol_target=0.08,
-top_k=3, max_single=0.40, canary_k=4,
+mom_lb=8, abs_lb=4, sma_lb=38, sma_buffer=0.003,
+vol_target=0.08, top_k=3, max_single=0.40, canary_k=4,
 rebalance_thresh=0.25, cost_bps=2.0
 ```
 

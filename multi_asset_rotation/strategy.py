@@ -4,8 +4,8 @@
 逻辑（清晰可实盘）：
 1) 每周最后一个交易日（通常周五）收盘后计算信号；
 2) 资产分 sleeve：安全垫(地方债) / 黄金 / A股红利低波 / 港股(汇丰) / 美股(标普/纳指/道指择强)；
-3) 绝对动量：风险资产过去 abs_lb 周收益需跑赢债券；
-4) 趋势过滤：收盘价 > sma_lb 日均线；
+3) 绝对动量：风险资产过去 abs_lb 周收益需跑赢债券（可选超额门槛 abs_margin）；
+4) 趋势过滤：收盘价 > sma_lb 日均线（可选缓冲 sma_buffer；可选均线向上 sma_slope_lb）；
 5) 相对动量排序，取 Top-K；
 6) 逆波动加权，并缩放至 vol_target；
 7) 金丝雀：若风险 sleeve 中短周期（1周）走弱个数 >= canary_k，则 100% 债券；
@@ -41,6 +41,10 @@ def generate_target_weights(
     abs_lb = int(p["abs_lb"])
     vol_lb = int(p["vol_lb"])
     sma_lb = int(p["sma_lb"])
+    abs_margin = float(p.get("abs_margin", 0.0))  # 相对债券的超额收益门槛
+    require_abs_pos = bool(p.get("require_abs_pos", False))  # 绝对动量还需 >0
+    sma_buffer = float(p.get("sma_buffer", 0.0))  # 价格需高于均线的比例缓冲
+    sma_slope_lb = int(p.get("sma_slope_lb", 0))  # >0 时要求均线近 slope_lb 日上行
     vt = float(p["vol_target"])
     top_k = int(p["top_k"])
     max_single = float(p["max_single"])
@@ -51,7 +55,11 @@ def generate_target_weights(
     w_close = close.loc[we]
     daily_ret = close.pct_change()
     sma = close.rolling(sma_lb).mean()
-    above = (close > sma).loc[we]
+    above = (close > sma * (1.0 + sma_buffer)).loc[we]
+    if sma_slope_lb > 0:
+        sma_up = (sma > sma.shift(sma_slope_lb)).loc[we]
+    else:
+        sma_up = None
     vol = (daily_ret.rolling(vol_lb).std() * np.sqrt(252)).loc[we]
 
     raw_rows = []
@@ -79,13 +87,19 @@ def generate_target_weights(
             regime = "canary_safe"
         else:
             thr = float(abs_m[SAFE]) if pd.notna(abs_m.get(SAFE)) else 0.0
-            elig = [
-                c
-                for c in risk
-                if pd.notna(abs_m.get(c))
-                and abs_m[c] > thr
-                and bool(above.loc[fri, c])
-            ]
+            elig = []
+            for c in risk:
+                if not pd.notna(abs_m.get(c)):
+                    continue
+                if abs_m[c] <= thr + abs_margin:
+                    continue
+                if require_abs_pos and abs_m[c] <= 0.0:
+                    continue
+                if not bool(above.loc[fri, c]):
+                    continue
+                if sma_up is not None and not bool(sma_up.loc[fri, c]):
+                    continue
+                elig.append(c)
             elig = sorted(elig, key=lambda c: rel[c], reverse=True)[:top_k]
             if not elig:
                 w[SAFE] = 1.0

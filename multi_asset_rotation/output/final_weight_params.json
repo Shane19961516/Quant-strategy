@@ -1,11 +1,15 @@
 {
-  "version": "v1_with_HK0005",
-  "note": "基础池加入港股通汇丰控股 HK0005(00005.HK)，并重校准参数",
+  "version": "v1_with_HK0005_trend_buffer",
+  "note": "在 HK0005 基础池上搜索绝对动量/趋势门槛：无法在不降 Sharpe 下同时显著压低 MDD；采用 sma_lb=38 + sma_buffer=0.3% 提升年化与 Sharpe，MDD 基本持平",
   "params": {
     "mom_lb": 8,
     "abs_lb": 4,
     "vol_lb": 20,
-    "sma_lb": 40,
+    "sma_lb": 38,
+    "abs_margin": 0.0,
+    "require_abs_pos": false,
+    "sma_buffer": 0.003,
+    "sma_slope_lb": 0,
     "vol_target": 0.08,
     "top_k": 3,
     "max_single": 0.40,
@@ -14,8 +18,16 @@
     "cost_bps": 2.0
   },
   "metrics": {
-    "ann_return": 0.1736,
-    "sharpe_rf0": 2.131,
+    "ann_return": 0.1849,
+    "sharpe_rf0": 2.248,
     "max_drawdown": -0.0872
+  },
+  "vs_prev_hk_baseline": {
+    "prev_ann": 0.1736,
+    "prev_sharpe": 2.131,
+    "prev_mdd": -0.0872,
+    "delta_ann_pp": 1.13,
+    "delta_sharpe": 0.117,
+    "delta_mdd_bp": -0.02
   }
 }

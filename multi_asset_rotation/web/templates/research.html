@@ -43,10 +43,10 @@
   <div class="card span-6">
     <h2 class="section-title">二、具体决策方法（每周五）</h2>
     <div class="flow">
-      <div class="flow-step">1. 计算 8 周相对动量、4 周绝对动量、1 周短线收益、40 日均线状态</div>
+      <div class="flow-step">1. 计算 8 周相对动量、{{ params.abs_lb }} 周绝对动量、1 周短线收益、{{ params.sma_lb }} 日均线状态</div>
       <div class="flow-step">2. 美股候选中选相对动量最强者为 us_pick，组成风险池</div>
       <div class="flow-step">3. 若风险池 1 周下跌个数 ≥ {{ params.canary_k }} → 100% 债券（canary_safe）</div>
-      <div class="flow-step">4. 否则筛选：绝对动量 &gt; 债券 且 价 &gt; SMA{{ params.sma_lb }}；再取 Top-{{ params.top_k }}</div>
+      <div class="flow-step">4. 否则筛选：绝对动量 &gt; 债券 + abs_margin，且 价 &gt; SMA{{ params.sma_lb }} × (1 + sma_buffer)；再取 Top-{{ params.top_k }}</div>
       <div class="flow-step">5. 无合格资产 → 100% 债券；有合格资产 → 逆波动 + vol_target={{ pct(params.vol_target) }} 缩放</div>
       <div class="flow-step">6. 单资产上限 {{ pct(params.max_single) }}；换手 &lt; {{ pct(params.rebalance_thresh) }} 则维持上周权重</div>
     </div>
@@ -72,15 +72,15 @@
         </tr>
         <tr>
           <td>绝对动量门槛</td>
-          <td>风险资产 4 周收益必须高于债券</td>
-          <td>abs_lb={{ params.abs_lb }}</td>
+          <td>风险资产 {{ params.abs_lb }} 周收益必须高于债券（可选超额门槛）</td>
+          <td>abs_lb={{ params.abs_lb }}, abs_margin={{ '%.2f'|format((params.abs_margin or 0) * 100) }}%</td>
           <td>避免弱于现金替代时仍进攻</td>
         </tr>
         <tr>
           <td>趋势过滤</td>
-          <td>收盘价需高于均线</td>
-          <td>sma_lb={{ params.sma_lb }}</td>
-          <td>只做上升趋势</td>
+          <td>收盘价需高于均线一定缓冲</td>
+          <td>sma_lb={{ params.sma_lb }}, sma_buffer={{ '%.2f'|format((params.sma_buffer or 0) * 100) }}%</td>
+          <td>只做上升趋势，过滤假突破</td>
         </tr>
         <tr>
           <td>波动目标</td>
