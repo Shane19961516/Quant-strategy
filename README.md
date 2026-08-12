@@ -63,3 +63,35 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 将日收益率转换为设定频率的收益率，默认为6个月（披露完整持仓数据的报告期仅为半年报和年报），
 
 详见代码。
+
+
+五.因子工程（Factor Engineering）
+------
+
+新增 `factor_engineering/`：面向 A 股月频价量数据的**因子研究全流程**工具包（构建 → 处理 → 评估 → 筛选 → 正交/合成 → 多空验证）。
+
+### 1) 能力清单
+| 模块 | 内容 |
+|------|------|
+| 因子库 | 动量 / 反转 / 低波 / MAX / 偏度 / 下行波动 / 流动性代理等 |
+| 处理 | 滞后1期、缩尾、行业中性、截面 z-score / rank |
+| 评估 | Rank/Pearson IC、ICIR、t 统计、IC 衰减、自相关、分位收益与单调性、换手 |
+| 筛选 | 质量分榜单 + IC/ICIR/胜率/单调性/换手/冗余相关软过滤 |
+| 合成 | 等权、滚动 ICIR；可选 Gram-Schmidt 正交化 |
+| 验证 | 五分位多空回测（含交易成本）+ 自动研究报告 |
+
+### 2) 运行
+```bash
+pip install -r factor_engineering/requirements.txt
+python3 run_factor_engineering.py
+python3 run_factor_engineering.py --universe csi300 --combine equal
+python3 run_factor_engineering.py --factors rev_1,vol_12,max_ret,skew_12,mom_12_1
+python3 -m pytest factor_engineering/tests -q
+```
+
+结果输出至 `factor_engineering_result/`（`FACTOR_ENGINEERING_REPORT.md`、质量榜、IC 序列/衰减、相关矩阵、合成净值与图）。
+
+### 3) 设计要点
+- **无前视**：因子先算 raw，再统一 `shift(1)`，回测用 `weight[t] * return[t]`。
+- **方向校正**：IC 为负的因子在合成前按 `direction` 取反。
+- **冗余控制**：高相关因子对仅保留质量分更高者。
