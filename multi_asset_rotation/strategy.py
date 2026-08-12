@@ -19,7 +19,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
-from config import CN, CODES, CORE_RISK, GOLD, HK, PARAMS, SAFE, US_CANDIDATES
+from config import CN, CODES, CORE_RISK, GOLD, HK, PARAMS, SAFE, US_CANDIDATES, VIG
 
 
 def week_ends(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -142,6 +142,7 @@ def generate_target_weights(
                 "gold_w": float(w[GOLD]),
                 "cn_w": float(w[CN]),
                 "hk_w": float(w.get(HK, 0.0)),
+                "vig_w": float(w.get(VIG, 0.0)),
                 "us_w": float(w[[c for c in US_CANDIDATES if c in w.index]].sum()),
             }
         )

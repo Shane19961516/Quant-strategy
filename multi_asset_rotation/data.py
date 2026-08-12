@@ -126,6 +126,54 @@ def _fix_splits(df: pd.DataFrame, thr: float = 0.28) -> pd.DataFrame:
     return df
 
 
+def download_us_etf(code: str, retries: int = 5) -> pd.DataFrame:
+    """美股 ETF（如 VIG）：akshare stock_us_daily 前复权。"""
+    symbol = UNIVERSE[code].get("ak_symbol", code)
+    last_err = None
+    for i in range(retries):
+        try:
+            df = ak.stock_us_daily(symbol=symbol, adjust="qfq")
+            return _normalize_ohlcv(df)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            time.sleep(1.0 + i)
+    raise RuntimeError(f"下载美股失败 {code}/{symbol}: {last_err}")
+
+
+# 指数回填映射：ETF 代码 -> (新浪指数符号, 补齐起始)
+_INDEX_BACKFILL = {
+    "513400": ".DJI",   # 道琼斯工业指数
+    "513110": ".NDX",   # 纳斯达克 100 指数
+}
+
+
+def _backfill_with_index(code: str, etf_df: pd.DataFrame) -> pd.DataFrame:
+    """用美股指数日线补全 ETF 上市前的缺失区间。"""
+    idx_sym = _INDEX_BACKFILL.get(code)
+    if idx_sym is None:
+        return etf_df
+    etf_start = etf_df["date"].min()
+    bt_start = pd.Timestamp(f"{START_DATE[:4]}-{START_DATE[4:6]}-{START_DATE[6:]}")
+    if etf_start <= bt_start:
+        return etf_df
+    try:
+        idx = ak.index_us_stock_sina(symbol=idx_sym)
+        idx = _normalize_ohlcv(idx)
+    except Exception:  # noqa: BLE001
+        print(f"[data] warning: index backfill for {code} ({idx_sym}) failed")
+        return etf_df
+    idx = idx[idx["date"] < etf_start].copy()
+    if idx.empty:
+        return etf_df
+    ratio = float(etf_df.iloc[0]["close"]) / float(idx.iloc[-1]["close"])
+    for col in ["open", "high", "low", "close"]:
+        idx[col] = idx[col] * ratio
+    idx["volume"] = 0.0
+    combined = pd.concat([idx, etf_df], ignore_index=True).sort_values("date").drop_duplicates("date")
+    print(f"[data] backfilled {code} with {idx_sym}: {idx['date'].min().date()}~{idx['date'].max().date()} ({len(idx)} rows)")
+    return combined.reset_index(drop=True)
+
+
 def load_universe(force: bool = False) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     for code in CODES:
@@ -134,7 +182,11 @@ def load_universe(force: bool = False) -> Dict[str, pd.DataFrame]:
             df = pd.read_csv(cache, parse_dates=["date"])
         else:
             print(f"[data] downloading {code} ...")
-            df = download_one(code)
+            if UNIVERSE[code].get("market") == "us":
+                df = download_us_etf(code)
+            else:
+                df = download_one(code)
+            df = _backfill_with_index(code, df)
             df.to_csv(cache, index=False)
         out[code] = df.sort_values("date").reset_index(drop=True)
     return out
@@ -146,7 +198,7 @@ def build_panels(raw: Dict[str, pd.DataFrame]):
     主日历使用 A 股/ETF 交易日，避免港股单独开市日把 A 股前值当成“交易日收益=0”。
     港股价格映射到 A 股日历后 ffill，在 A 股交易日上计港股收益（含隔夜/假期跳空）。
     """
-    a_codes = [c for c, m in UNIVERSE.items() if m.get("market") != "hk" and c in raw]
+    a_codes = [c for c, m in UNIVERSE.items() if m.get("market") not in ("hk", "us") and c in raw]
     if not a_codes:
         a_codes = list(raw.keys())
     all_idx = sorted(set().union(*[set(raw[c]["date"]) for c in a_codes]))
@@ -160,11 +212,10 @@ def build_panels(raw: Dict[str, pd.DataFrame]):
         first = s.index.min()
         close[code] = s["close"].reindex(all_idx)
         open_[code] = s["open"].reindex(all_idx)
-        # 港股：先按完整历史 ffill 再裁到 A 股日历，保留假期跳空
-        if UNIVERSE.get(code, {}).get("market") == "hk":
+        # 港股/美股：先按完整历史 ffill 再裁到 A 股日历，保留假期跳空
+        if UNIVERSE.get(code, {}).get("market") in ("hk", "us"):
             full = s["close"].copy()
             full_open = s["open"].copy()
-            # 对齐到 A 股日：取当日或此前最近港股收盘
             close[code] = full.reindex(all_idx, method="ffill")
             open_[code] = full_open.reindex(all_idx, method="ffill")
         close.loc[close.index < first, code] = np.nan

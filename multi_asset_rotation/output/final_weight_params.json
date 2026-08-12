@@ -1,33 +1,26 @@
 {
-  "version": "v1_with_HK0005_trend_buffer",
-  "note": "在 HK0005 基础池上搜索绝对动量/趋势门槛：无法在不降 Sharpe 下同时显著压低 MDD；采用 sma_lb=38 + sma_buffer=0.3% 提升年化与 Sharpe，MDD 基本持平",
+  "version": "v2_with_VIG_and_index_backfill",
+  "note": "加入VIG(美股红利增长)入美股择强池；用.DJI/.NDX指数回填513400/513110上市前缺失区间。2022美股熊市完整暴露后重校准。",
   "params": {
     "mom_lb": 8,
     "abs_lb": 4,
     "vol_lb": 20,
-    "sma_lb": 38,
+    "sma_lb": 35,
     "abs_margin": 0.0,
     "require_abs_pos": false,
-    "sma_buffer": 0.003,
+    "sma_buffer": 0.005,
     "sma_slope_lb": 0,
-    "vol_target": 0.08,
+    "vol_target": 0.09,
     "top_k": 3,
-    "max_single": 0.40,
+    "max_single": 0.35,
     "canary_k": 4,
     "rebalance_thresh": 0.25,
     "cost_bps": 2.0
   },
   "metrics": {
-    "ann_return": 0.1849,
-    "sharpe_rf0": 2.248,
-    "max_drawdown": -0.0872
+    "ann_return": 0.1607,
+    "sharpe_rf0": 1.997,
+    "max_drawdown": -0.1104
   },
-  "vs_prev_hk_baseline": {
-    "prev_ann": 0.1736,
-    "prev_sharpe": 2.131,
-    "prev_mdd": -0.0872,
-    "delta_ann_pp": 1.13,
-    "delta_sharpe": 0.117,
-    "delta_mdd_bp": -0.02
-  }
+  "universe_change": "added VIG to US_CANDIDATES; backfilled 513400 with .DJI, 513110 with .NDX"
 }
