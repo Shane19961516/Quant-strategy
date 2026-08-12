@@ -1,0 +1,8 @@
+*.db
+*.duckdb
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/
