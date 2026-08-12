@@ -1,0 +1,147 @@
+{
+  "factor": "alpha005",
+  "admitted": false,
+  "direction": 1,
+  "reject_reasons": [
+    "min_abs_icir: value=0.0532790215440742 vs 0.06 (有效性：|ICIR| 下限)",
+    "min_ic_tstat: value=1.194923859815781 vs 1.5 (有效性：|IC t统计量| 下限)",
+    "min_ic_hit_rate: value=nan vs 0.51 (有效性：方向校正后 IC 胜率下限)",
+    "half_sample_sign_match: value=False vs True (稳定性：前后半样本 IC 必须同号)"
+  ],
+  "metrics": {
+    "admitted": false,
+    "direction": 1,
+    "ic_mean": 0.0073434335144846,
+    "icir": 0.0532790215440742,
+    "ic_tstat": 1.194923859815781,
+    "hit_rate_adj": NaN,
+    "ic_mean_daily": 0.0109523061081169,
+    "subperiod_sign_ratio": 0.6363636363636364,
+    "half_sample_sign_match": false,
+    "rolling_icir_pos_ratio": 0.60625,
+    "q_monotonicity": 0.75,
+    "q_spread": 0.0009557740325043,
+    "ls_sharpe": 0.1331611300207727,
+    "ls_cagr": 0.0087960563608304,
+    "ls_max_drawdown": -0.3648167708598594,
+    "avg_turnover": 1.31095300567359,
+    "n": 503.0,
+    "n_fail": 4,
+    "reject_summary": "min_abs_icir: value=0.05327902154407422 vs 0.06 (有效性：|ICIR| 下限); min_ic_tstat: value=1.194923859815781 vs 1.5 (有效性：|IC t统计量| 下限)",
+    "n_months": 503.0
+  },
+  "gates": [
+    {
+      "name": "min_months",
+      "category": "sample",
+      "passed": true,
+      "value": 503.0,
+      "threshold": 36,
+      "detail": "样本：最少有效月份数"
+    },
+    {
+      "name": "min_abs_ic",
+      "category": "validity",
+      "passed": true,
+      "value": 0.0073434335144846,
+      "threshold": 0.005,
+      "detail": "有效性：|IC均值| 下限"
+    },
+    {
+      "name": "min_abs_icir",
+      "category": "validity",
+      "passed": false,
+      "value": 0.0532790215440742,
+      "threshold": 0.06,
+      "detail": "有效性：|ICIR| 下限"
+    },
+    {
+      "name": "min_ic_tstat",
+      "category": "validity",
+      "passed": false,
+      "value": 1.194923859815781,
+      "threshold": 1.5,
+      "detail": "有效性：|IC t统计量| 下限"
+    },
+    {
+      "name": "min_ic_hit_rate",
+      "category": "validity",
+      "passed": false,
+      "value": null,
+      "threshold": 0.51,
+      "detail": "有效性：方向校正后 IC 胜率下限"
+    },
+    {
+      "name": "min_subperiod_sign_ratio",
+      "category": "stability",
+      "passed": true,
+      "value": 0.6363636363636364,
+      "threshold": 0.55,
+      "detail": "稳定性：年度子样本 IC 同号占比下限"
+    },
+    {
+      "name": "half_sample_sign_match",
+      "category": "stability",
+      "passed": false,
+      "value": 0,
+      "threshold": 1,
+      "detail": "稳定性：前后半样本 IC 必须同号"
+    },
+    {
+      "name": "min_rolling_icir_pos_ratio",
+      "category": "stability",
+      "passed": true,
+      "value": 0.60625,
+      "threshold": 0.5,
+      "detail": "稳定性：滚动 ICIR>0 占比下限"
+    },
+    {
+      "name": "min_quantile_monotonicity",
+      "category": "layered",
+      "passed": true,
+      "value": 0.75,
+      "threshold": 0.5,
+      "detail": "分层：分位收益单调性下限"
+    },
+    {
+      "name": "min_abs_q_spread",
+      "category": "layered",
+      "passed": true,
+      "value": 0.0009557740325043,
+      "threshold": 0.0003,
+      "detail": "分层：|Top-Bottom 月均价差| 下限"
+    },
+    {
+      "name": "min_ls_sharpe",
+      "category": "long_short",
+      "passed": true,
+      "value": 0.1331611300207727,
+      "threshold": 0.0,
+      "detail": "多空：净夏普下限（含成本）"
+    },
+    {
+      "name": "min_ls_cagr",
+      "category": "long_short",
+      "passed": true,
+      "value": 0.0087960563608304,
+      "threshold": -0.01,
+      "detail": "多空：年化收益下限"
+    },
+    {
+      "name": "max_ls_drawdown",
+      "category": "long_short",
+      "passed": true,
+      "value": -0.3648167708598594,
+      "threshold": -0.6,
+      "detail": "多空：最大回撤下限（更差则拒）"
+    },
+    {
+      "name": "max_avg_turnover",
+      "category": "long_short",
+      "passed": true,
+      "value": 1.31095300567359,
+      "threshold": 2.0,
+      "detail": "多空：平均单边换手上限"
+    }
+  ]
+}

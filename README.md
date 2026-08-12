@@ -129,3 +129,36 @@ print(store.get_doc("rev_1")[:400])
 - **无前视**：因子统一 `shift(1)`，回测 `weight[t]*return[t]`。
 - **方向校正**：IC 为负则 `direction=-1`，读取 API 默认取反。
 - **审计**：每次入库写入 `admission_runs`；每次更新写入 `update_runs`。
+
+
+六.Alpha101 美股验证（SPX ∪ NDX，未来5日收益）
+------
+
+新增 `alpha101/`：以 **标普500 ∪ 纳斯达克100** 为股票池，yfinance 近10年日频 OHLCV，
+验证 WorldQuant Alpha101（OHLCV 可实现子集）对**未来5个交易日收益**的预测力，
+并做分层 / 稳定性 / 多空检验，按标准入库。
+
+### 1) 设定
+- 无前视：`shift(1)`；评估用**非重叠5日网格**（避免重叠收益虚高）
+- 入库分两档：研究级（实际入库） / 机构级（对照，通常更严）
+- 因子库：`factor_db_alpha101/`；报告：`alpha101_result/FACTOR_REPORT.md`
+
+### 2) 运行
+```bash
+pip install -r alpha101/requirements.txt
+python3 run_alpha101_validation.py                 # 下载/缓存后全量验证
+python3 run_alpha101_validation.py --list
+python3 -m pytest alpha101/tests -q
+```
+
+```python
+from factor_engineering import FactorStore
+store = FactorStore("factor_db_alpha101")
+print(store.list_factors(status="admitted"))
+s = store.get_factor_on("alpha015", "2024-06-28")
+print(store.get_doc("alpha015")[:400])
+```
+
+### 3) 样本结论（2016-08 → 2026-08）
+- 机构级门槛：**无一通过**（符合 Alpha101 在美股大盘上的弱信号预期）
+- 研究级入库：`alpha015`、`alpha_vol20`（后者 `direction=-1`，调用时取反）
