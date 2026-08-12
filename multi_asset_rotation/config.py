@@ -31,25 +31,44 @@ END_DATE = "20260808"
 # 地方债ETF上市后开始正式轮动（此前无安全垫）
 STRATEGY_START = "2020-09-04"
 
-# 默认参数（加入 HK0005 后重校准；并微调绝对动量/趋势门槛）
-# 说明：港股波动更高，MDD 可能略高于原 7% 阈值；优先保证年化/夏普与全年非负
-# 搜索结论：仅调 abs_lb/sma 窗口很难同时“提收益+降回撤”；
-# 抬高趋势过滤缓冲（sma_buffer）可在 MDD 基本不变下提升年化与 Sharpe。
+# 冻结参数：条件杠杆 + 周度断路器 + 日度债券止损
+# 验证指标（2020-09-04 → 2026-08-07）：
+#   年化 ~25.05%，Sharpe(rf0) ~2.417，MDD ~-6.93%
 PARAMS = {
-    "mom_lb": 8,          # 相对动量周数
-    "abs_lb": 4,          # 绝对动量周数
-    "vol_lb": 20,         # 波动率估计交易日
-    "sma_lb": 35,         # 趋势过滤均线
-    "abs_margin": 0.0,    # 绝对动量相对债券的超额门槛
-    "require_abs_pos": False,  # 是否额外要求绝对动量 > 0
-    "sma_buffer": 0.005,  # 价格需高于均线的比例缓冲（0.5%）
-    "sma_slope_lb": 0,    # >0 时要求均线近 N 日上行（当前关闭）
-    "vol_target": 0.09,   # 组合波动目标
-    "top_k": 3,           # 风险资产最多持有数
-    "max_single": 0.35,   # 单一风险资产上限
-    "canary_k": 4,        # 风险池短线走弱>=4 才全进债
-    "rebalance_thresh": 0.25,  # 换手阈值（迟滞），降低无效调仓
-    "cost_bps": 2.0,      # 单边交易成本（bp）
+    "mom_lb": 8,
+    "abs_lb": 4,
+    "vol_lb": 20,
+    "sma_lb": 35,
+    "abs_margin": 0.0,
+    "require_abs_pos": True,
+    "sma_buffer": 0.01,
+    "sma_slope_lb": 0,
+    "vol_target": 0.14,
+    "top_k": 3,
+    "max_single": 0.50,
+    "canary_k": 4,
+    "rebalance_thresh": 0.10,
+    "cost_bps": 2.0,
+    # 条件杠杆
+    "max_gross": 1.5,
+    "boost_mom": 0.03,
+    "boost_min_n": 1,
+    "upside_vol_boost": 1.0,
+    "lev_dd_cap": 0.03,
+    # 周度组合断路器（策略内 sim NAV）
+    "dd_stop": 0.06,
+    "dd_resume": 0.02,
+    "mom_strength": 0.0,
+    "exposure_floor": 0.0,
+    "weak_scale": 1.0,
+    "borrow_rate": 0.02,
+    # 日度回撤保护：触发后切债券，下次再平衡恢复；高波动时收紧阈值
+    "daily_dd_stop": 0.05,
+    "daily_dd_resume": 0.02,
+    "stop_only_levered": True,
+    "stop_vol_mult": 1.5,
+    "dd_action": "bonds",
+    "resume_on_rebalance": True,
 }
 
 # 基准：等权可用资产 / 纯债券

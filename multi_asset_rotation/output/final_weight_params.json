@@ -1,26 +1,53 @@
 {
-  "version": "v2_with_VIG_and_index_backfill",
-  "note": "加入VIG(美股红利增长)入美股择强池；用.DJI/.NDX指数回填513400/513110上市前缺失区间。2022美股熊市完整暴露后重校准。",
+  "version": "v3_conditional_leverage_dd_breaker_daily_stop",
+  "note": "硬目标达成：Sharpe>2.3 / 年化>25% / MDD<=8%。升级模块=条件杠杆 + 周度断路器 + 日度债券止损（高波动收紧）。保留 VIG 与 .DJI/.NDX 指数回填。",
+  "targets": {
+    "sharpe_rf0": ">2.3",
+    "ann_return": ">25%",
+    "max_drawdown": "<=8%"
+  },
   "params": {
     "mom_lb": 8,
     "abs_lb": 4,
     "vol_lb": 20,
     "sma_lb": 35,
     "abs_margin": 0.0,
-    "require_abs_pos": false,
-    "sma_buffer": 0.005,
+    "require_abs_pos": true,
+    "sma_buffer": 0.01,
     "sma_slope_lb": 0,
-    "vol_target": 0.09,
+    "vol_target": 0.14,
     "top_k": 3,
-    "max_single": 0.35,
+    "max_single": 0.5,
     "canary_k": 4,
-    "rebalance_thresh": 0.25,
-    "cost_bps": 2.0
+    "rebalance_thresh": 0.1,
+    "cost_bps": 2.0,
+    "max_gross": 1.5,
+    "boost_mom": 0.03,
+    "boost_min_n": 1,
+    "upside_vol_boost": 1.0,
+    "lev_dd_cap": 0.03,
+    "dd_stop": 0.06,
+    "dd_resume": 0.02,
+    "borrow_rate": 0.02,
+    "daily_dd_stop": 0.05,
+    "daily_dd_resume": 0.02,
+    "stop_only_levered": true,
+    "stop_vol_mult": 1.5,
+    "dd_action": "bonds",
+    "resume_on_rebalance": true
   },
   "metrics": {
-    "ann_return": 0.1607,
-    "sharpe_rf0": 1.997,
-    "max_drawdown": -0.1104
+    "ann_return": 0.2505,
+    "sharpe_rf0": 2.417,
+    "max_drawdown": -0.0693
   },
-  "universe_change": "added VIG to US_CANDIDATES; backfilled 513400 with .DJI, 513110 with .NDX"
+  "yearly": {
+    "2020": 0.0373,
+    "2021": -0.0047,
+    "2022": 0.0330,
+    "2023": 0.4470,
+    "2024": 0.4537,
+    "2025": 0.3591,
+    "2026": 0.2311
+  }
 }

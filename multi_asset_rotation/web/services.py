@@ -47,7 +47,18 @@ class StrategyEngine:
         close, _ = build_panels(raw)
         close = close.loc[STRATEGY_START:]
         signal_w, info = generate_target_weights(close, PARAMS)
-        nav, weights_daily, trades = run_backtest(close, signal_w, cost_bps=PARAMS["cost_bps"])
+        nav, weights_daily, trades = run_backtest(
+            close,
+            signal_w,
+            cost_bps=PARAMS["cost_bps"],
+            borrow_rate=PARAMS.get("borrow_rate", 0.03),
+            daily_dd_stop=PARAMS.get("daily_dd_stop", 0.99),
+            daily_dd_resume=PARAMS.get("daily_dd_resume", 0.02),
+            stop_only_levered=PARAMS.get("stop_only_levered", True),
+            stop_vol_mult=PARAMS.get("stop_vol_mult", 1.0),
+            dd_action=PARAMS.get("dd_action", "delever"),
+            resume_on_rebalance=PARAMS.get("resume_on_rebalance", True),
+        )
         stats = perf_stats(nav)
         order = latest_rebalance_instruction(signal_w, weights_daily, close.index)
         meta = info["meta"]

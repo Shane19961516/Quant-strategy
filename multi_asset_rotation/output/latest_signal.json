@@ -6,17 +6,17 @@
     {
       "code": "159816",
       "name": "地方债0-4Y",
-      "current_weight": 0.1565654376868144,
-      "target_weight": 0.19950224118377125,
-      "delta_weight": 0.04293680349695683,
-      "action": "BUY"
+      "current_weight": 1.0,
+      "target_weight": 1.1102230246251565e-16,
+      "delta_weight": -0.9999999999999999,
+      "action": "SELL"
     },
     {
       "code": "513400",
       "name": "道琼斯",
       "current_weight": 0.0,
-      "target_weight": 0.2888253402045415,
-      "delta_weight": 0.2888253402045415,
+      "target_weight": 0.36080718156120073,
+      "delta_weight": 0.36080718156120073,
       "action": "BUY"
     },
     {
@@ -38,35 +38,35 @@
     {
       "code": "VIG",
       "name": "美股红利增长",
-      "current_weight": 0.35,
+      "current_weight": 0.0,
       "target_weight": 0.0,
-      "delta_weight": -0.35,
-      "action": "SELL"
+      "delta_weight": 0.0,
+      "action": "HOLD"
     },
     {
       "code": "159934",
       "name": "黄金",
       "current_weight": 0.0,
-      "target_weight": 0.2609717351317689,
-      "delta_weight": 0.2609717351317689,
+      "target_weight": 0.3260118248396999,
+      "delta_weight": 0.3260118248396999,
       "action": "BUY"
     },
     {
       "code": "515450",
       "name": "红利低波",
-      "current_weight": 0.2085820353915358,
+      "current_weight": 0.0,
       "target_weight": 0.0,
-      "delta_weight": -0.2085820353915358,
-      "action": "SELL"
+      "delta_weight": 0.0,
+      "action": "HOLD"
     },
     {
       "code": "HK0005",
       "name": "汇丰控股",
-      "current_weight": 0.28485252692164975,
-      "target_weight": 0.2507006834799184,
-      "delta_weight": -0.03415184344173133,
-      "action": "SELL"
+      "current_weight": 0.0,
+      "target_weight": 0.31318099359909923,
+      "delta_weight": 0.31318099359909923,
+      "action": "BUY"
     }
   ],
-  "turnover": 0.5927338788332672
+  "turnover": 0.9999999999999999
 }

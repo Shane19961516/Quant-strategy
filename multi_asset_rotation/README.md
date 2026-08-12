@@ -12,27 +12,43 @@
 
 > 注：513400（道琼斯）上市 2024-02、513110（纳指）上市 2023-03，在其上市前使用各自跟踪指数（.DJI / .NDX）收盘价按比率拼接，使回测从 2020-09 起全程拥有美股 sleeve 数据。
 
-## 策略逻辑（校准版 / 年化 15.86%）
+## 策略逻辑（升级版 / 硬目标达成）
 
 1. **每周最后一个交易日收盘**计算信号，**下一交易日（通常周一）开盘调仓**；
-2. 美股三只高度相关，先按相对动量选 1 只进入风险池；
-3. **双动量**：风险资产绝对动量需跑赢债券，且价格在均线之上；
-4. **Top-K + 逆波动加权**，并按组合波动目标缩放（余量进债券）；
-5. **金丝雀风控**：风险资产短周期（1周）普遍走弱时，切到 100% 债券；
-6. **换手迟滞**：目标权重变化不足阈值则不调，降低无效交易成本。
+2. 美股四只高度相关，先按相对动量选 1 只进入风险池；
+3. **双动量 + 趋势**：绝对动量需跑赢债券且 `require_abs_pos`，价格需高于 SMA（含缓冲）；
+4. **Top-K + 逆波动加权**，并按组合波动目标缩放；
+5. **条件杠杆**：强动量且广度健康、sim 回撤未超 `lev_dd_cap` 时，允许 `max_gross` 至 1.5x（融资成本 `borrow_rate`）；
+6. **周度断路器**：策略内模拟净值回撤超 `dd_stop` 强制债券，回撤收窄至 `dd_resume` 后恢复；
+7. **日度回撤止损**：仅在杠杆仓位下，组合回撤触发后切债券；高波动时按 `stop_vol_mult` 收紧阈值；**下次再平衡自动恢复**；
+8. **金丝雀 + 换手迟滞**：短周期普跌切债券；换手不足阈值不调仓。
 
-## 回测结果（VIG + 指数回填，cost=2bp，2020-09 → 2026-08）
+## 回测结果（冻结参数，cost=2bp，borrow=2%，2020-09 → 2026-08）
 
-- 年化收益 **~16.1%**
-- Sharpe（rf=0）**~2.0**
-- 最大回撤 **~-11.0%**
-- 分年收益保持全非负（2022 年 +0.04%）
+硬交付目标：**Sharpe > 2.3 / 年化 > 25% / MDD ≤ 8%**
 
-> 加入 VIG 并回填道指/纳指指数后，2022 美股熊市完整暴露。趋势过滤 `sma_buffer=0.5%` 是 2022 年守住正收益的关键。
+- 年化收益 **~25.05%**
+- Sharpe（rf=0）**~2.417**
+- 最大回撤 **~-6.93%**
+- 目标检查：**三项硬目标全部达成**
+
+分年收益（约）：
+
+| 年 | 收益 |
+|---|---:|
+| 2020 | +3.7% |
+| 2021 | -0.5% |
+| 2022 | +3.3% |
+| 2023 | +44.7% |
+| 2024 | +45.4% |
+| 2025 | +35.9% |
+| 2026YTD | +23.1% |
+
+> 注：2021 年微幅为负，是为压回撤/抬升 Sharpe 与年化所付出的代价；若强制“全年非负”，硬目标组合目前不可同时满足。
 
 > 汇丰控股为港股通标的（00005.HK），行情按港币计、映射到 A 股交易日历；实盘需考虑汇率与港股通额度/溢折价。
 
-> 历史回测不代表未来收益；美股 ETF 有溢价/折价与隔夜跳空，实盘请用限价/分批。
+> 条件杠杆涉及融资成本假设（默认年化 2%）；实盘杠杆能力、保证金与 QDII 溢折价需单独评估。历史回测不代表未来收益。
 
 ## Web 控制台
 
@@ -62,12 +78,9 @@ python run.py --force-download  # 强制重拉 akshare 数据
 
 - `nav_curve.png` / `drawdown.png` / `weights.png` / `attribution.png`
 - `yearly_returns_bar.png`
-- `asset_yearly_compare.png` / `asset_yearly_heatmap.png`（同年各资产买入持有收益对比）
-- `yearly_contribution_stacked.png` / `yearly_contribution_heatmap.png`（策略持仓分年贡献）
-- `latest_signal.json` / `latest_orders.csv`（最新周五信号与差额调仓）
-- `REPORT.md` 简明报告
-- `monthly_heatmap.png` / `month_seasonality.png`
-- `summary.json`
+- `asset_yearly_compare.png` / `asset_yearly_heatmap.png`
+- `latest_signal.json` / `latest_orders.csv`
+- `REPORT.md` / `summary.json` / `final_weight_params.json`
 - `trades.csv` / `weights_signal_friday.csv`
 
 ## 数据说明
@@ -75,19 +88,23 @@ python run.py --force-download  # 强制重拉 akshare 数据
 - 数据源：`akshare`（优先 `stock_zh_a_hist_tx` 前复权，失败回退 `fund_etf_hist_sina`）
 - 缓存：`multi_asset_rotation/data/{code}.csv`
 
-## 校准参数
+## 冻结参数
 
-见 `config.py` 中 `PARAMS`：
+见 `config.py` 中 `PARAMS`（摘要）：
 
 ```python
-mom_lb=8, abs_lb=4, sma_lb=35, sma_buffer=0.005,
-vol_target=0.09, top_k=3, max_single=0.35, canary_k=4,
-rebalance_thresh=0.25, cost_bps=2.0
+mom_lb=8, abs_lb=4, sma_lb=35, sma_buffer=0.01, require_abs_pos=True,
+vol_target=0.14, top_k=3, max_single=0.50, canary_k=4, rebalance_thresh=0.10,
+max_gross=1.5, boost_mom=0.03, boost_min_n=1, lev_dd_cap=0.03,
+dd_stop=0.06, dd_resume=0.02,
+daily_dd_stop=0.05, stop_only_levered=True, stop_vol_mult=1.5,
+dd_action="bonds", resume_on_rebalance=True,
+borrow_rate=0.02, cost_bps=2.0
 ```
 
 ## 实盘执行清单
 
 1. 每周五收盘后运行 `python run.py`，读取最新信号权重；
-2. 下周一开盘按目标权重做**差额调仓**；
+2. 下周一开盘按目标权重做**差额调仓**（注意杠杆仓位的融资/融券约束）；
 3. QDII（美股/黄金）建议限价单；
-4. 单边成本默认 2bp，可按券商佣金修改 `cost_bps`。
+4. 若组合盘中回撤触发日度止损规则，按风控切债券，等待下次信号日再平衡。
