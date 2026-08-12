@@ -68,30 +68,64 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 五.因子工程（Factor Engineering）
 ------
 
-新增 `factor_engineering/`：面向 A 股月频价量数据的**因子研究全流程**工具包（构建 → 处理 → 评估 → 筛选 → 正交/合成 → 多空验证）。
+新增 `factor_engineering/`：面向 A 股月频价量数据的**因子研究与因子库**全流程。
 
-### 1) 能力清单
-| 模块 | 内容 |
-|------|------|
-| 因子库 | 动量 / 反转 / 低波 / MAX / 偏度 / 下行波动 / 流动性代理等 |
-| 处理 | 滞后1期、缩尾、行业中性、截面 z-score / rank |
-| 评估 | Rank/Pearson IC、ICIR、t 统计、IC 衰减、自相关、分位收益与单调性、换手 |
-| 筛选 | 质量分榜单 + IC/ICIR/胜率/单调性/换手/冗余相关软过滤 |
-| 合成 | 等权、滚动 ICIR；可选 Gram-Schmidt 正交化 |
-| 验证 | 五分位多空回测（含交易成本）+ 自动研究报告 |
+### 1) 完整流程
+```
+因子生成 → 有效性/稳定性/分层/多空检验 → 入库标准裁决
+       → FactorStore 录入 → 解释文档 → 固定时点更新 → 读取调用
+```
 
-### 2) 运行
+| 步骤 | 模块 | 说明 |
+|------|------|------|
+| 生成 | `factors` / `process` | 滞后1期、缩尾、行业中性、z-score |
+| 检验 | `battery` | 有效性、稳定性、分层、多空四套检验 |
+| 入库标准 | `admission` | 全部门禁通过才可 `admitted` |
+| 数据库 | `store` | SQLite 元数据 + `panels/*.csv.gz` + 文档 |
+| 文档/调用 | `docs` + `FactorStore` API | `list` / `get_factor_on` / `get_doc` |
+| 固定更新 | `update` | 默认 `month_end` 重算、复检、写审计 |
+
+### 2) 入库标准（摘要）
+详见 `factor_db/ADMISSION_STANDARD.md`（运行 `admit` 后生成），核心阈值：
+- 有效性：\|IC\|≥0.02，\|ICIR\|≥0.30，\|t\|≥2，胜率≥55%
+- 稳定性：年度同号≥75%，半样本同号，滚动 ICIR 为正≥55%
+- 分层：单调性≥0.60，\|Top−Bottom\|≥0.3%/月
+- 多空：夏普≥0.30，回撤≥−50%，换手≤1.8（含 20bp 成本）
+
+### 3) 运行
 ```bash
 pip install -r factor_engineering/requirements.txt
+
+# 一键：生成 + 检验 + 入库 + 写文档
+python3 run_factor_warehouse.py admit
+
+# 查看入库标准 / 已入库因子 / 文档 / 截面
+python3 run_factor_warehouse.py standard
+python3 run_factor_warehouse.py list
+python3 run_factor_warehouse.py doc rev_1
+python3 run_factor_warehouse.py get rev_1 --date 2019-12-31
+
+# 固定时点更新（月末）
+python3 run_factor_warehouse.py update --schedule month_end
+python3 run_factor_warehouse.py schedule
+
+# 研究向报告（合成/IC 图等）
 python3 run_factor_engineering.py
-python3 run_factor_engineering.py --universe csi300 --combine equal
-python3 run_factor_engineering.py --factors rev_1,vol_12,max_ret,skew_12,mom_12_1
 python3 -m pytest factor_engineering/tests -q
 ```
 
-结果输出至 `factor_engineering_result/`（`FACTOR_ENGINEERING_REPORT.md`、质量榜、IC 序列/衰减、相关矩阵、合成净值与图）。
+### 4) 调用示例
+```python
+from factor_engineering import FactorStore
 
-### 3) 设计要点
-- **无前视**：因子先算 raw，再统一 `shift(1)`，回测用 `weight[t] * return[t]`。
-- **方向校正**：IC 为负的因子在合成前按 `direction` 取反。
-- **冗余控制**：高相关因子对仅保留质量分更高者。
+store = FactorStore()  # ./factor_db
+store.list_factors(status="admitted")
+panel = store.load_panel("rev_1")           # 已按 direction 校正
+s = store.get_factor_on("rev_1", "2019-12-31")
+print(store.get_doc("rev_1")[:400])
+```
+
+### 5) 设计要点
+- **无前视**：因子统一 `shift(1)`，回测 `weight[t]*return[t]`。
+- **方向校正**：IC 为负则 `direction=-1`，读取 API 默认取反。
+- **审计**：每次入库写入 `admission_runs`；每次更新写入 `update_runs`。
