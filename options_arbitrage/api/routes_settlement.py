@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -14,11 +13,9 @@ from sqlmodel import Session
 
 from core.greeks_book import compute_net_positions_and_greeks
 from core.pnl_engine import compute_live_pnl
-from core.settlement_parser import (
-    lookup_multiplier,
-    parse_option_symbol,
-    parse_settlement_xls,
-)
+from core.risk_cockpit import build_risk_cockpit
+from core.settlement_import_service import UPLOAD_DIR, import_settlement_file, next_session_date
+from core.settlement_parser import lookup_multiplier, parse_option_symbol
 from database.db import (
     add_futures_trade,
     add_today_trade,
@@ -31,15 +28,12 @@ from database.db import (
     get_yesterday_positions,
     list_futures_trades,
     list_today_trades,
-    save_settlement_import,
     upsert_mark,
 )
-from database.models import FuturesManualTrade, SettlementImport, TodayManualTrade, YesterdayOptionPosition
-from core.risk_cockpit import build_risk_cockpit
+from database.models import FuturesManualTrade, TodayManualTrade
+from data_fetcher.cfmmc_client import CfmmcError, download_settlement_xls, previous_trading_day
 
 router = APIRouter(prefix="/api/v1/settlement", tags=["settlement"])
-
-UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -104,11 +98,17 @@ def _norm_offset(offset: str) -> str:
 
 
 def _next_session_date(settlement_date: str) -> str:
-    try:
-        d = datetime.strptime(settlement_date[:10], "%Y-%m-%d").date()
-        return (d + timedelta(days=1)).isoformat()
-    except ValueError:
-        return date.today().isoformat()
+    return next_session_date(settlement_date)
+
+
+class CfmmcSyncIn(BaseModel):
+    """从中国期货市场监控中心拉取逐日盯市结算日报并导入昨仓。"""
+
+    account_id: Optional[str] = None  # 导入用内部账号；默认取结算单内账号
+    trade_date: Optional[str] = None  # YYYY-MM-DD；默认上一交易日
+    user: Optional[str] = None  # CFMMC 查询账号；默认环境变量 CFMMC_USER
+    password: Optional[str] = None  # 默认环境变量 CFMMC_PASSWORD
+    skip_if_same_date: bool = True  # 若当前有效结算日已是该日则跳过下载
 
 
 @router.post("/upload")
@@ -127,78 +127,80 @@ async def upload_settlement(
         tmp_path = Path(tmp.name)
 
     try:
-        parsed = parse_settlement_xls(tmp_path)
+        return import_settlement_file(
+            tmp_path,
+            account_id=account_id,
+            original_filename=file.filename,
+            keep_copy=False,
+        )
     except Exception as exc:  # noqa: BLE001
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"结算单解析失败: {exc}") from exc
 
-    acct = (account_id or parsed.fund.account_id or "UNKNOWN").strip()
-    dest = UPLOAD_DIR / f"{acct}_{parsed.fund.trade_date}_{file.filename}"
-    shutil.move(str(tmp_path), str(dest))
 
-    imp = SettlementImport(
-        account_id=acct,
-        settlement_date=parsed.fund.trade_date,
-        client_name=parsed.fund.client_name,
-        broker=parsed.fund.broker,
-        prev_balance=parsed.fund.prev_balance,
-        balance=parsed.fund.balance,
-        client_equity=parsed.fund.client_equity,
-        margin_occupied=parsed.fund.margin_occupied,
-        available=parsed.fund.available,
-        risk_degree=parsed.fund.risk_degree,
-        premium_net=parsed.fund.premium_net,
-        commission=parsed.fund.commission,
-        realized_pnl=parsed.fund.realized_pnl,
-        filename=file.filename,
-        is_active=True,
-    )
-    positions = [
-        YesterdayOptionPosition(
-            import_id=0,
-            account_id=acct,
-            settlement_date=parsed.fund.trade_date,
-            symbol=p.symbol,
-            underlying=p.underlying,
-            option_type=p.option_type,
-            strike=p.strike,
-            long_volume=p.long_volume,
-            long_avg_price=p.long_avg_price,
-            short_volume=p.short_volume,
-            short_avg_price=p.short_avg_price,
-            prev_settle=p.prev_settle,
-            settle_price=p.settle_price,
-            margin=p.margin,
-            multiplier=p.multiplier,
-            trade_code=p.trade_code,
+@router.post("/cfmmc-sync")
+def cfmmc_sync_settlement(body: CfmmcSyncIn) -> dict[str, Any]:
+    """
+    自动登录中国期货市场监控中心 → 客户交易结算日报（逐日盯市）→ 下载 .xls → 导入昨仓。
+    """
+    trade_date = (body.trade_date or previous_trading_day().isoformat())[:10]
+    try:
+        datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"无效 trade_date: {trade_date}") from exc
+
+    # optional skip
+    if body.skip_if_same_date and body.account_id:
+        with Session(get_engine()) as session:
+            imp = get_active_settlement(session, body.account_id)
+            if imp and imp.settlement_date == trade_date:
+                positions = get_yesterday_positions(session, body.account_id)
+                return {
+                    "skipped": True,
+                    "reason": "active settlement already matches trade_date",
+                    "import_id": imp.id,
+                    "account_id": imp.account_id,
+                    "settlement_date": imp.settlement_date,
+                    "suggested_session_date": _next_session_date(imp.settlement_date),
+                    "position_count": len(positions),
+                    "message": "已有同日有效结算单，跳过下载",
+                }
+
+    try:
+        dl = download_settlement_xls(
+            user=body.user,
+            password=body.password,
+            trade_date=trade_date,
+            save_dir=UPLOAD_DIR / "cfmmc",
         )
-        for p in parsed.option_positions
-    ]
+    except CfmmcError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"CFMMC 下载失败: {exc}") from exc
 
-    session_date = _next_session_date(parsed.fund.trade_date)
-    with Session(get_engine()) as session:
-        saved = save_settlement_import(session, imp, positions, replace_active=True)
-        import_id = int(saved.id) if saved.id is not None else 0
-        # 注意：不要把结算价写入 marks。
-        # marks = 最新价（实时/收盘）；结算价只作昨仓基准回退，否则盯市会全错。
+    try:
+        result = import_settlement_file(
+            dl.filepath,
+            account_id=body.account_id,
+            original_filename=dl.filename,
+            keep_copy=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"结算单解析/导入失败: {exc}") from exc
 
-    return {
-        "import_id": import_id,
-        "account_id": acct,
-        "settlement_date": parsed.fund.trade_date,
-        "suggested_session_date": session_date,
-        "client_name": parsed.fund.client_name,
-        "broker": parsed.fund.broker,
-        "client_equity": parsed.fund.client_equity,
-        "margin_occupied": parsed.fund.margin_occupied,
-        "available": parsed.fund.available,
-        "risk_degree": parsed.fund.risk_degree,
-        "position_count": len(positions),
-        "short_lots": sum(p.short_volume for p in parsed.option_positions),
-        "long_lots": sum(p.long_volume for p in parsed.option_positions),
-        "filename": file.filename,
-        "message": "昨日结算单已导入；当日成交请在 /today-trades 手动录入（与持仓分离）",
-    }
+    result.update(
+        {
+            "skipped": False,
+            "source": "cfmmc",
+            "cfmmc_user": dl.user_id,
+            "cfmmc_trade_date": dl.trade_date,
+            "by_type": "date",
+            "by_type_label": "逐日盯市",
+            "downloaded_bytes": dl.bytes_len,
+            "downloaded_path": str(dl.filepath),
+        }
+    )
+    return result
 
 
 @router.get("/active")
