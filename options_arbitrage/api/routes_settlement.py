@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from core.greeks_book import compute_net_positions_and_greeks
 from core.pnl_engine import compute_live_pnl
 from core.settlement_parser import (
     lookup_multiplier,
@@ -62,6 +63,12 @@ class MarksBatchIn(BaseModel):
     account_id: str = "166308"
     session_date: str
     marks: dict[str, float]
+
+
+class UnderlyingFBatchIn(BaseModel):
+    account_id: str = "166308"
+    session_date: str
+    underlying_F: dict[str, float] = Field(default_factory=dict)
 
 
 def _norm_side(side: str) -> str:
@@ -358,59 +365,80 @@ def set_marks_batch(body: MarksBatchIn) -> dict[str, Any]:
         return {"updated": len(body.marks)}
 
 
+def _load_book_inputs(
+    session: Session,
+    account_id: str,
+    session_date: Optional[str],
+) -> tuple[Any, str, list[dict[str, Any]], list[dict[str, Any]], dict[str, float]]:
+    imp = get_active_settlement(session, account_id)
+    if not imp:
+        raise HTTPException(status_code=404, detail="无有效结算单，请先上传昨日结算单")
+    sess = session_date or _next_session_date(imp.settlement_date)
+    y_rows = get_yesterday_positions(session, account_id)
+    t_rows = list_today_trades(session, account_id, sess)
+    marks = get_marks(session, account_id, sess)
+
+    yesterday = [
+        {
+            "symbol": p.symbol,
+            "underlying": p.underlying,
+            "option_type": p.option_type,
+            "strike": p.strike,
+            "long_volume": p.long_volume,
+            "short_volume": p.short_volume,
+            "long_avg_price": p.long_avg_price,
+            "short_avg_price": p.short_avg_price,
+            "settle_price": p.settle_price,
+            "margin": p.margin,
+            "multiplier": p.multiplier,
+        }
+        for p in y_rows
+    ]
+    for p in y_rows:
+        marks.setdefault(p.symbol, p.settle_price)
+    for t in t_rows:
+        marks.setdefault(t.symbol, t.price)
+
+    today = [
+        {
+            "symbol": t.symbol,
+            "underlying": t.underlying,
+            "option_type": t.option_type,
+            "strike": t.strike,
+            "side": t.side,
+            "offset": t.offset,
+            "price": t.price,
+            "volume": t.volume,
+            "fee": t.fee,
+            "multiplier": t.multiplier,
+            "trade_id": t.trade_id,
+            "trade_time": t.trade_time,
+            "trade_date": t.session_date,
+        }
+        for t in t_rows
+    ]
+    return imp, sess, yesterday, today, marks
+
+
+def _underlying_F_from_marks(session: Session, account_id: str, session_date: str) -> dict[str, float]:
+    """Reuse MarkQuote table with synthetic key __F__:{underlying} for optional F overrides."""
+    all_marks = get_marks(session, account_id, session_date)
+    out: dict[str, float] = {}
+    for k, v in all_marks.items():
+        if k.startswith("__F__:"):
+            out[k.split(":", 1)[1]] = float(v)
+    return out
+
+
 @router.get("/live-pnl")
 def live_pnl(
     account_id: str = Query(default="166308"),
     session_date: Optional[str] = Query(default=None),
 ) -> dict[str, Any]:
-    """实时盈亏：昨日持仓盯市 + 当日成交盈亏 − 手续费。"""
+    """实时盈亏 + 分品种净持仓 + 希腊值汇总（昨仓+今成交）。"""
     with Session(get_engine()) as session:
-        imp = get_active_settlement(session, account_id)
-        if not imp:
-            raise HTTPException(status_code=404, detail="无有效结算单，请先上传昨日结算单")
-        sess = session_date or _next_session_date(imp.settlement_date)
-        y_rows = get_yesterday_positions(session, account_id)
-        t_rows = list_today_trades(session, account_id, sess)
-        marks = get_marks(session, account_id, sess)
-
-        yesterday = [
-            {
-                "symbol": p.symbol,
-                "underlying": p.underlying,
-                "option_type": p.option_type,
-                "strike": p.strike,
-                "long_volume": p.long_volume,
-                "short_volume": p.short_volume,
-                "long_avg_price": p.long_avg_price,
-                "short_avg_price": p.short_avg_price,
-                "settle_price": p.settle_price,
-                "margin": p.margin,
-                "multiplier": p.multiplier,
-            }
-            for p in y_rows
-        ]
-        # default mark = settlement price if not overridden
-        for p in y_rows:
-            marks.setdefault(p.symbol, p.settle_price)
-
-        today = [
-            {
-                "symbol": t.symbol,
-                "underlying": t.underlying,
-                "option_type": t.option_type,
-                "strike": t.strike,
-                "side": t.side,
-                "offset": t.offset,
-                "price": t.price,
-                "volume": t.volume,
-                "fee": t.fee,
-                "multiplier": t.multiplier,
-                "trade_id": t.trade_id,
-                "trade_time": t.trade_time,
-                "trade_date": t.session_date,
-            }
-            for t in t_rows
-        ]
+        imp, sess, yesterday, today, marks = _load_book_inputs(session, account_id, session_date)
+        underlying_F = _underlying_F_from_marks(session, account_id, sess)
 
         report = compute_live_pnl(
             account_id=account_id,
@@ -424,8 +452,69 @@ def live_pnl(
             available_settlement=imp.available,
             risk_degree_settlement=imp.risk_degree,
         )
+        greeks = compute_net_positions_and_greeks(
+            yesterday_positions=yesterday,
+            today_trades=today,
+            marks=marks,
+            underlying_F=underlying_F,
+            asof=sess,
+            r=0.02,
+        )
         out = report.to_dict()
         out["marks"] = marks
+        out["underlying_F"] = underlying_F or {u.underlying: u.F_est for u in greeks.by_underlying}
         out["yesterday_position_count"] = len(yesterday)
         out["today_trade_count"] = len(today)
+        out["net_positions"] = {
+            "by_underlying": [u.to_dict() for u in greeks.by_underlying],
+            "by_product": [p.to_dict() for p in greeks.by_product],
+            "total_long_volume": greeks.total_long_volume,
+            "total_short_volume": greeks.total_short_volume,
+        }
+        out["greeks_summary"] = {
+            "total_net_delta": greeks.total_net_delta,
+            "total_net_gamma": greeks.total_net_gamma,
+            "total_net_vega": greeks.total_net_vega,
+            "total_net_theta": greeks.total_net_theta,
+            "by_underlying": [u.to_dict() for u in greeks.by_underlying],
+            "by_product": [p.to_dict() for p in greeks.by_product],
+            "by_leg": [x.to_dict() for x in greeks.leg_greeks],
+            "alerts": greeks.alerts,
+        }
+        # merge delta-tilt alerts into top-level alerts
+        out["alerts"] = list(out.get("alerts") or []) + list(greeks.alerts)
         return out
+
+
+@router.get("/net-positions")
+def net_positions(
+    account_id: str = Query(default="166308"),
+    session_date: Optional[str] = Query(default=None),
+) -> dict[str, Any]:
+    """分品种/标的净持仓（昨仓+今成交合并）与希腊值。"""
+    with Session(get_engine()) as session:
+        imp, sess, yesterday, today, marks = _load_book_inputs(session, account_id, session_date)
+        underlying_F = _underlying_F_from_marks(session, account_id, sess)
+        greeks = compute_net_positions_and_greeks(
+            yesterday_positions=yesterday,
+            today_trades=today,
+            marks=marks,
+            underlying_F=underlying_F,
+            asof=sess,
+            r=0.02,
+        )
+        return {
+            "account_id": account_id,
+            "settlement_date": imp.settlement_date,
+            "session_date": sess,
+            **greeks.to_dict(),
+        }
+
+
+@router.post("/underlying-F")
+def set_underlying_F(body: UnderlyingFBatchIn) -> dict[str, Any]:
+    """手动覆盖标的期货价 F（用于希腊值更准确）。"""
+    with Session(get_engine()) as session:
+        for u, f in body.underlying_F.items():
+            upsert_mark(session, body.account_id, body.session_date, f"__F__:{u}", float(f))
+        return {"updated": len(body.underlying_F)}

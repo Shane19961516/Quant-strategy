@@ -210,3 +210,75 @@ class TestSettlementAPI:
         # ensure today's new symbol not in yesterday positions
         ysyms = {p["symbol"] for p in yp.json()["positions"]}
         assert "V2610-C-4900" not in ysyms
+
+
+class TestGreeksBook:
+    def test_net_positions_and_greeks(self, parsed):
+        from core.greeks_book import compute_net_positions_and_greeks
+
+        y = [p.to_dict() for p in parsed.option_positions]
+        marks = {p.symbol: p.settle_price for p in parsed.option_positions}
+        trades = [
+            {
+                "symbol": "AP610C8200",
+                "underlying": "AP610",
+                "option_type": "CALL",
+                "strike": 8200,
+                "side": "SELL",
+                "offset": "OPEN",
+                "price": 26.5,
+                "volume": 2,
+                "fee": 2.02,
+                "multiplier": 10,
+                "trade_id": "T1",
+                "trade_time": "10:00:00",
+                "trade_date": "2026-08-13",
+            }
+        ]
+        g = compute_net_positions_and_greeks(
+            yesterday_positions=y,
+            today_trades=trades,
+            marks=marks,
+            asof="2026-08-13",
+        )
+        assert g.total_short_volume >= 82  # yesterday 82 + today open 2 on existing
+        ap = next(u for u in g.by_underlying if u.underlying == "AP610")
+        assert ap.y_short >= 7
+        assert ap.t_short >= 2
+        assert ap.call_short >= 9
+        products = {p.product for p in g.by_product}
+        assert "AP" in products
+        assert "EG" in products
+        # greeks finite
+        assert abs(g.total_net_delta) < 50
+        leg = next(x for x in g.leg_greeks if x.symbol == "AP610C8200")
+        assert leg.net_volume < 0  # net short
+        assert leg.delta < 0  # short call → negative delta contribution? Wait short call: signed=-vol, delta_unit>0 → delta = positive*negative < 0. Yes.
+
+
+def test_net_positions_api(client):
+    with open(FIXTURE, "rb") as f:
+        client.post(
+            "/api/v1/settlement/upload",
+            files={"file": ("settlement.xls", f, "application/vnd.ms-excel")},
+            data={"account_id": "166308"},
+        )
+    r = client.get(
+        "/api/v1/settlement/net-positions",
+        params={"account_id": "166308", "session_date": "2026-08-13"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "by_product" in body and len(body["by_product"]) >= 1
+    assert "by_underlying" in body
+    assert "total_net_delta" in body
+
+    pnl = client.get(
+        "/api/v1/settlement/live-pnl",
+        params={"account_id": "166308", "session_date": "2026-08-13"},
+    )
+    assert pnl.status_code == 200
+    j = pnl.json()
+    assert "greeks_summary" in j
+    assert "net_positions" in j
+    assert "by_product" in j["net_positions"]
