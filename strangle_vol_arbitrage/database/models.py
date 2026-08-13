@@ -51,6 +51,8 @@ class ScreenerResult(SQLModel, table=True):
 
 
 class DailyPosition(SQLModel, table=True):
+    """Legacy sync positions (API /positions/sync). Kept for compatibility."""
+
     id: Optional[int] = Field(default=None, primary_key=True)
     account_id: str = Field(default="DEFAULT", index=True)
     trade_date: str = Field(index=True)
@@ -70,12 +72,14 @@ class DailyPosition(SQLModel, table=True):
 
 
 class DailyTrade(SQLModel, table=True):
+    """Legacy trade sync rows."""
+
     id: Optional[int] = Field(default=None, primary_key=True)
     account_id: str = Field(default="DEFAULT", index=True)
     trade_date: str = Field(index=True)
     trade_id: str = Field(index=True)
     symbol: str
-    direction: str  # BUY_OPEN / SELL_OPEN / BUY_CLOSE / SELL_CLOSE
+    direction: str
     volume: int
     price: float
     fee: float = 0.0
@@ -88,3 +92,86 @@ class WatchlistItem(SQLModel, table=True):
     put_symbol: str
     note: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Settlement / live monitoring tables
+# ---------------------------------------------------------------------------
+
+
+class SettlementImport(SQLModel, table=True):
+    """One uploaded broker settlement statement (昨日结算单)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: str = Field(index=True)
+    settlement_date: str = Field(index=True)  # 结算单交易日期
+    client_name: str = ""
+    broker: str = ""
+    prev_balance: float = 0.0
+    balance: float = 0.0
+    client_equity: float = 0.0
+    margin_occupied: float = 0.0
+    available: float = 0.0
+    risk_degree: float = 0.0
+    premium_net: float = 0.0
+    commission: float = 0.0
+    realized_pnl: float = 0.0
+    filename: str = ""
+    imported_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = Field(default=True, index=True)
+
+
+class YesterdayOptionPosition(SQLModel, table=True):
+    """期权持仓汇总 rows from settlement — 昨日持仓基线（与当日成交分离）。"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    import_id: int = Field(index=True)
+    account_id: str = Field(index=True)
+    settlement_date: str = Field(index=True)
+    symbol: str = Field(index=True)
+    underlying: str = Field(index=True)
+    option_type: str = ""
+    strike: float = 0.0
+    long_volume: int = 0
+    long_avg_price: float = 0.0
+    short_volume: int = 0
+    short_avg_price: float = 0.0
+    prev_settle: float = 0.0
+    settle_price: float = 0.0  # becomes today's ref settle
+    margin: float = 0.0
+    multiplier: float = 10.0
+    trade_code: str = ""
+
+
+class TodayManualTrade(SQLModel, table=True):
+    """当日成交（手动录入，与昨日持仓严格分离）。"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: str = Field(index=True)
+    session_date: str = Field(index=True)  # 监控的交易日
+    trade_id: str = Field(index=True)
+    symbol: str = Field(index=True)
+    underlying: str = ""
+    option_type: str = ""
+    strike: float = 0.0
+    side: str  # BUY / SELL
+    offset: str = "OPEN"  # OPEN / CLOSE
+    price: float
+    volume: int
+    fee: float = 0.0
+    premium_cash: float = 0.0
+    multiplier: float = 10.0
+    trade_time: str = ""
+    note: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MarkQuote(SQLModel, table=True):
+    """Manual / latest mark prices for live MTM."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: str = Field(index=True)
+    session_date: str = Field(index=True)
+    symbol: str = Field(index=True)
+    price: float
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

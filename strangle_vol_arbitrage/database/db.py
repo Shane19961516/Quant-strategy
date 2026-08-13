@@ -11,9 +11,13 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from .models import (
     DailyPosition,
     DailyTrade,
+    MarkQuote,
     OptionContractCache,
     ScreenerResult,
+    SettlementImport,
+    TodayManualTrade,
     WatchlistItem,
+    YesterdayOptionPosition,
 )
 
 _ENGINE = None
@@ -33,6 +37,11 @@ def get_engine(url: Optional[str] = None, *, echo: bool = False):
         connect_args = {"check_same_thread": False}
         _ENGINE = create_engine(get_sqlite_url(url), echo=echo, connect_args=connect_args)
     return _ENGINE
+
+
+def reset_engine() -> None:
+    global _ENGINE
+    _ENGINE = None
 
 
 def init_db(url: Optional[str] = None) -> None:
@@ -132,3 +141,139 @@ def cache_contracts(session: Session, contracts: list[OptionContractCache]) -> i
         session.add(c)
     session.commit()
     return len(contracts)
+
+
+# ---- Settlement CRUD -------------------------------------------------------
+
+
+def deactivate_settlements(session: Session, account_id: str) -> None:
+    rows = session.exec(
+        select(SettlementImport).where(
+            SettlementImport.account_id == account_id,
+            SettlementImport.is_active == True,  # noqa: E712
+        )
+    ).all()
+    for r in rows:
+        r.is_active = False
+
+
+def save_settlement_import(
+    session: Session,
+    imp: SettlementImport,
+    positions: list[YesterdayOptionPosition],
+    *,
+    replace_active: bool = True,
+) -> SettlementImport:
+    if replace_active:
+        deactivate_settlements(session, imp.account_id)
+    session.add(imp)
+    session.commit()
+    session.refresh(imp)
+    for p in positions:
+        p.import_id = imp.id  # type: ignore[assignment]
+        session.add(p)
+    session.commit()
+    session.refresh(imp)
+    return imp
+
+
+def get_active_settlement(session: Session, account_id: str) -> Optional[SettlementImport]:
+    return session.exec(
+        select(SettlementImport)
+        .where(SettlementImport.account_id == account_id, SettlementImport.is_active == True)  # noqa: E712
+        .order_by(SettlementImport.imported_at.desc())
+    ).first()
+
+
+def get_yesterday_positions(
+    session: Session,
+    account_id: str,
+    settlement_date: Optional[str] = None,
+) -> list[YesterdayOptionPosition]:
+    if settlement_date:
+        return list(
+            session.exec(
+                select(YesterdayOptionPosition).where(
+                    YesterdayOptionPosition.account_id == account_id,
+                    YesterdayOptionPosition.settlement_date == settlement_date,
+                )
+            ).all()
+        )
+    active = get_active_settlement(session, account_id)
+    if not active:
+        return []
+    return list(
+        session.exec(
+            select(YesterdayOptionPosition).where(YesterdayOptionPosition.import_id == active.id)
+        ).all()
+    )
+
+
+def list_today_trades(
+    session: Session,
+    account_id: str,
+    session_date: str,
+) -> list[TodayManualTrade]:
+    return list(
+        session.exec(
+            select(TodayManualTrade)
+            .where(
+                TodayManualTrade.account_id == account_id,
+                TodayManualTrade.session_date == session_date,
+            )
+            .order_by(TodayManualTrade.created_at.asc())
+        ).all()
+    )
+
+
+def add_today_trade(session: Session, trade: TodayManualTrade) -> TodayManualTrade:
+    session.add(trade)
+    session.commit()
+    session.refresh(trade)
+    return trade
+
+
+def delete_today_trade(session: Session, trade_id_pk: int, account_id: str) -> bool:
+    row = session.get(TodayManualTrade, trade_id_pk)
+    if not row or row.account_id != account_id:
+        return False
+    session.delete(row)
+    session.commit()
+    return True
+
+
+def upsert_mark(
+    session: Session,
+    account_id: str,
+    session_date: str,
+    symbol: str,
+    price: float,
+) -> MarkQuote:
+    found = session.exec(
+        select(MarkQuote).where(
+            MarkQuote.account_id == account_id,
+            MarkQuote.session_date == session_date,
+            MarkQuote.symbol == symbol,
+        )
+    ).first()
+    if found:
+        found.price = price
+        session.add(found)
+        session.commit()
+        session.refresh(found)
+        return found
+    row = MarkQuote(account_id=account_id, session_date=session_date, symbol=symbol, price=price)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def get_marks(session: Session, account_id: str, session_date: str) -> dict[str, float]:
+    rows = session.exec(
+        select(MarkQuote).where(
+            MarkQuote.account_id == account_id,
+            MarkQuote.session_date == session_date,
+        )
+    ).all()
+    return {r.symbol: r.price for r in rows}
