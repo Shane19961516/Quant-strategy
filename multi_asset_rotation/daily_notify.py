@@ -79,24 +79,20 @@ def main() -> int:
     # 若完全未配置渠道，非零退出，便于 CI 发现
     if "error" in result and len(result) == 1:
         return 2
-    # 若所有渠道都失败
-    oks = []
-    for k, v in result.items():
-        if k == "error":
-            continue
-        if isinstance(v, dict):
-            body = v.get("body")
-            if isinstance(body, dict) and body.get("code") in (0, 200, "0", "200"):
-                oks.append(True)
-            elif v.get("ok") and not (isinstance(body, dict) and body.get("code") not in (None, 0, 200, "0", "200")):
-                # serverchan: code=0; pushplus: code=200
-                if isinstance(body, dict) and "code" in body:
-                    oks.append(body.get("code") in (0, 200, "0", "200"))
-                else:
-                    oks.append(bool(v.get("ok")))
-            else:
-                oks.append(False)
-    if oks and not any(oks):
+
+    def _channel_ok(v: object) -> bool:
+        if not isinstance(v, dict):
+            return False
+        body = v.get("body")
+        # PushPlus: code=200 成功；Server酱: code=0 成功
+        if isinstance(body, dict) and "code" in body:
+            return body.get("code") in (0, 200, "0", "200")
+        return bool(v.get("ok"))
+
+    oks = [_channel_ok(v) for k, v in result.items() if k != "error"]
+    if not oks or not any(oks):
+        # 常见：PushPlus 905=未实名
+        print("[daily_notify] push failed (check token / real-name / channel)", flush=True)
         return 3
     return 0
 
