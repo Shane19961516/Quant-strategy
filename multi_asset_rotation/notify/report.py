@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -231,7 +232,9 @@ def build_daily_report(
 ) -> DailyReport:
     now = datetime.now(CN_TZ)
     asof_str = now.strftime("%Y-%m-%d %H:%M:%S CST")
-    report_day = pd.Timestamp(now.date())
+    # 允许 REPORT_DAY=YYYY-MM-DD 覆盖（便于测试周五文案）
+    report_day_env = (os.environ.get("REPORT_DAY") or "").strip()
+    report_day = pd.Timestamp(report_day_env) if report_day_env else pd.Timestamp(now.date())
 
     raw = load_universe(force=force_download)
     close, _ = build_panels(raw)
@@ -288,34 +291,45 @@ def build_daily_report(
     if effective is None and latest is not None:
         effective = latest
 
-    # 本周收益：生效执行日前收盘 -> min(数据日, 今天)
+    # 报告截止交易日（报告日与数据日取早）
+    end_pt = min(data_asof, report_day.normalize())
+    if end_pt not in nav.index:
+        avail_end = nav.index[nav.index <= end_pt]
+        end_pt = pd.Timestamp(avail_end.max()) if len(avail_end) else data_asof
+
+    # 今日盈亏：报告截止日相对前一交易日
+    day_ret = None
+    if end_pt in nav.index:
+        prev = _prev_trading_day(nav.index, end_pt)
+        if prev is not None and prev in nav.index:
+            day_ret = float(nav.loc[end_pt] / nav.loc[prev] - 1.0)
+
+    # 本周至今盈亏：自然周周一前收盘 → 报告截止日收盘（含周一当日涨跌）
     week_ret = None
     week_from = None
-    week_to = str(min(data_asof, report_day).date())
+    week_to = str(end_pt.date())
     week_note = ""
-    if effective is not None:
-        base = _prev_trading_day(close.index, effective["exec"])
-        # 若 exec 不在样本内（推算的周一），用信号日收盘作起点
-        if base is None or base not in nav.index:
-            if effective["signal"] in nav.index:
-                base = effective["signal"]
-                week_note = "执行日行情尚未入库，起点暂用信号日收盘净值"
-        end_pt = min(data_asof, report_day)
-        # map end_pt to available nav date
-        if end_pt not in nav.index:
-            end_pt = data_asof
-        if base is not None and base in nav.index and end_pt in nav.index:
+    week_start = report_day.normalize() - pd.Timedelta(days=int(report_day.dayofweek))
+    base = _prev_trading_day(nav.index, week_start)
+    if base is None:
+        # 回退：本周首个交易日净值作起点（不含当日则为0）
+        in_week = nav.index[(nav.index >= week_start) & (nav.index <= end_pt)]
+        if len(in_week) >= 2:
+            base = pd.Timestamp(in_week[0])
             week_ret = float(nav.loc[end_pt] / nav.loc[base] - 1.0)
             week_from = str(base.date())
-        if data_asof < report_day:
-            week_note = (
-                (week_note + "；" if week_note else "")
-                + f"行情数据截至 {data_asof.date()}，本周收益为截至该日的收益"
-            )
-
-    day_ret = None
-    if len(nav) >= 2:
-        day_ret = float(nav.iloc[-1] / nav.iloc[-2] - 1.0)
+            week_note = "本周起点暂用周内首个交易日收盘"
+        elif len(in_week) == 1 and day_ret is not None:
+            week_ret = day_ret
+            week_from = str(in_week[0].date())
+    elif base in nav.index and end_pt in nav.index:
+        week_ret = float(nav.loc[end_pt] / nav.loc[base] - 1.0)
+        week_from = str(base.date())
+    if data_asof < report_day.normalize():
+        week_note = (
+            (week_note + "；" if week_note else "")
+            + f"行情数据截至 {data_asof.date()}，今日/本周盈亏为截至该日"
+        )
 
     # meta for effective signal if available else latest
     meta_row = None
@@ -360,169 +374,195 @@ def build_daily_report(
     data_end = {c: str(close[c].dropna().index.max().date()) for c in CODES if c in close}
     phone_line = f"接收人：{phone_hint}" if phone_hint else ""
 
-    status_line = (
-        f"本周生效仓：信号 {effective['signal'].date()} → 执行 {effective['exec'].date()}"
-        if effective
-        else "本周生效仓：—"
-    )
-    if pending:
-        status_line += f"；另有待执行信号 {pending['signal'].date()}（执行 {pending['exec'].date()}）"
+    # 周五收盘后：表头醒目红色标明「下周一策略调仓目标建议！」
+    # 判定：报告日为周五；或（未指定 REPORT_DAY 时）最新数据日为周五且报告日同周周末
+    is_friday_close = int(report_day.dayofweek) == 4
+    if not report_day_env and int(data_asof.dayofweek) == 4 and int(report_day.dayofweek) >= 4:
+        is_friday_close = True
+    monday_target = None
+    monday_exec = None
+    monday_signal = None
+    if is_friday_close:
+        # 1) pending（exec 仍在报告日之后）且信号落在本周五
+        # 2) 否则取报告日/数据日当天（或该周五）的信号权重
+        fri_anchor = report_day.normalize() if int(report_day.dayofweek) == 4 else data_asof.normalize()
+        if pending is not None and pending["signal"].normalize() == fri_anchor:
+            monday_target = pending["weights"]
+            monday_exec = pending["exec"]
+            monday_signal = pending["signal"]
+        elif fri_anchor in signal_w.index:
+            monday_signal = fri_anchor
+            monday_target = signal_w.loc[fri_anchor].reindex(CODES).fillna(0.0)
+            monday_exec = _planned_exec(fri_anchor, close.index)
+        elif pending is not None:
+            monday_target = pending["weights"]
+            monday_exec = pending["exec"]
+            monday_signal = pending["signal"]
+        else:
+            # 回退：不晚于周五锚点的最近周信号
+            for r in reversed(sig_rows):
+                if r["signal"].normalize() <= fri_anchor:
+                    monday_target = r["weights"]
+                    monday_exec = r["exec"]
+                    monday_signal = r["signal"]
+                    break
 
-    title = f"📈 多资产轮动日报 {report_day.date()}"
+    status_line = (
+        f"本周持仓：信号 {effective['signal'].date()} → 已于 {effective['exec'].date()} 执行"
+        if effective
+        else "本周持仓：—"
+    )
+
+    title = f"📈 策略日报 {report_day.date()}｜日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
+    if is_friday_close:
+        title = (
+            f"🔴下周一调仓目标建议！｜{report_day.date()} "
+            f"日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
+        )
 
     # -------- TEXT --------
-    lines = [
-        "【多资产轮动策略日报】",
-        f"生成：{asof_str}",
-    ]
+    lines = ["【多资产轮动策略日报】"]
+    if is_friday_close:
+        lines += [
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+            "【下周一策略调仓目标建议！】",
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+        ]
+    lines.append(f"生成：{asof_str}")
     if phone_line:
         lines.append(phone_line)
     lines += [
-        f"报告日：{report_day.date()}（数据截至 {data_asof.date()}）",
+        f"报告日：{report_day.date()}（约19:00收盘后｜数据截至 {data_asof.date()}）",
+        "",
+        "【今日盈亏】" + _signed_pct(day_ret),
+        "【本周至今盈亏】" + _signed_pct(week_ret) + f"（{week_from or '—'} → {week_to}）",
         status_line,
-        "",
-        "一、策略决策（本周生效）",
-        f"信号日：{effective['signal'].date() if effective else '—'}",
-        f"执行日：{effective['exec'].date() if effective else '—'}",
-        f"适用说明：该目标自执行日起生效，直至下一次再平衡",
-        f"状态：{regime}",
-        f"美股择强：{us_pick}",
-        f"合格资产：{elig}",
-        f"毛敞口：{gross:.3f}" if gross is not None else "毛敞口：—",
-        f"金丝雀弱个数：{breadth}｜断路器：{'开' if breaker else '关'}",
-        "",
-        "二、本周持仓 Target（= 生效目标）",
-    ]
-    lines.extend(_weight_lines(eff_w) or ["（全债券/空仓）"])
-    if pending_w is not None:
-        lines += ["", "（待执行信号目标，尚未到执行日）"]
-        lines.extend(_weight_lines(pending_w))
-    lines += [
-        "",
-        "三、本周整体收益",
-        f"收益区间：{week_from or '—'} → {week_to}",
-        f"本周收益：{_signed_pct(week_ret)}",
-        f"今日收益：{_signed_pct(day_ret)}",
     ]
     if week_note:
         lines.append(f"备注：{week_note}")
+
+    if is_friday_close and monday_target is not None:
+        lines += [
+            "",
+            "★★★ 下周一策略调仓目标建议 ★★★",
+            f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（本周五收盘）",
+            f"建议执行：{monday_exec.date() if monday_exec is not None else '下周一开盘'}",
+        ]
+        lines.extend(_weight_lines(monday_target) or ["（全债券/空仓）"])
+
     lines += [
         "",
-        f"四、{year} 年初至今（YTD）",
-        f"YTD收益：{_signed_pct(ytd.get('ytd_return'))}",
-        f"区间年化：{_signed_pct(ytd.get('ann_return'))}",
-        f"波动：{_pct(ytd.get('ann_vol'))}",
-        f"回撤：{_pct(ytd.get('max_drawdown'))}",
-        f"Sharpe：{ytd.get('sharpe', float('nan')):.2f}" if ytd else "Sharpe：—",
+        "一、当前持仓（本周已生效，用于今日/本周盈亏）",
+        f"信号→执行：{effective['signal'].date() if effective else '—'} → {effective['exec'].date() if effective else '—'}",
+        f"状态：{regime}｜美股择强：{us_pick}",
+        f"合格：{elig}",
+        f"毛敞口：{gross:.3f}" if gross is not None else "毛敞口：—",
+        f"金丝雀弱：{breadth}｜断路器：{'开' if breaker else '关'}",
+    ]
+    lines.extend(_weight_lines(eff_w) or ["（全债券/空仓）"])
+    lines += [
+        "",
+        f"二、{year} 年初至今（YTD）",
+        f"YTD：{_signed_pct(ytd.get('ytd_return'))}｜波动 {_pct(ytd.get('ann_vol'))}",
+        f"回撤：{_pct(ytd.get('max_drawdown'))}｜Sharpe：{ytd.get('sharpe', float('nan')):.2f}"
+        if ytd
+        else "YTD：—",
         f"曲线：{spark}" if spark else "",
         "",
-        "五、全样本概览",
-        f"净值：{float(nav.iloc[-1]):.4f}",
-        f"年化：{_pct(stats.get('ann_return'))}｜Sharpe：{stats.get('sharpe_rf0', float('nan')):.3f}",
-        f"MDD：{_pct(stats.get('max_drawdown'))}",
+        "三、全样本",
+        f"净值 {float(nav.iloc[-1]):.4f}｜年化 {_pct(stats.get('ann_return'))}",
+        f"Sharpe {stats.get('sharpe_rf0', float('nan')):.3f}｜MDD {_pct(stats.get('max_drawdown'))}",
         "",
-        "六、数据日期",
+        "四、数据日期",
     ]
     for c, d in data_end.items():
         lines.append(f"{c} {UNIVERSE[c]['name']}:{d}")
     lines += ["", "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。"]
     text = "\n".join([x for x in lines if x is not None])
 
-    # -------- HTML (beautiful card) --------
+    # -------- HTML --------
     ytd_ret = ytd.get("ytd_return") if ytd else None
+    friday_banner = ""
+    friday_target_block = ""
+    if is_friday_close:
+        friday_banner = """
+  <div style="margin:0 0 14px 0;padding:14px 12px;border-radius:12px;background:#dc2626;color:#fff;text-align:center;border:3px solid #fecaca;">
+    <div style="font-size:12px;letter-spacing:2px;opacity:.95;">FRIDAY CLOSE ALERT</div>
+    <div style="font-size:24px;font-weight:900;line-height:1.35;margin-top:4px;">下周一策略调仓目标建议！</div>
+    <div style="font-size:13px;margin-top:6px;opacity:.95;">请按下方红色卡片目标，于下周一开盘差额调仓</div>
+  </div>"""
+        friday_target_block = f"""
+  <div style="margin-top:12px;background:#fff1f2;color:#0f172a;border-radius:12px;padding:12px;border:2px solid #dc2626;">
+    <div style="font-size:16px;font-weight:900;color:#dc2626;margin-bottom:6px;">下周一调仓目标建议</div>
+    <div style="font-size:12px;color:#7f1d1d;margin-bottom:8px;">
+      信号日 {monday_signal.date() if monday_signal is not None else "—"}（周五收盘）
+      → 建议执行 {monday_exec.date() if monday_exec is not None else "下周一开盘"}
+    </div>
+    {_weight_bars_html(monday_target)}
+  </div>"""
+
     html = f"""
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;background:#0b1220;color:#e5eefc;padding:16px;border-radius:14px;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+  {friday_banner}
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
     <div>
-      <div style="font-size:12px;color:#93c5fd;letter-spacing:1px;">MULTI-ASSET ROTATION</div>
-      <div style="font-size:22px;font-weight:760;margin-top:4px;">每日策略简报</div>
+      <div style="font-size:12px;color:#93c5fd;letter-spacing:1px;">AFTER-CLOSE 19:00 REPORT</div>
+      <div style="font-size:22px;font-weight:780;margin-top:4px;">每日策略盈亏简报</div>
       <div style="font-size:12px;color:#94a3b8;margin-top:6px;">{asof_str}</div>
       {"<div style='font-size:12px;color:#94a3b8;'>" + phone_line + "</div>" if phone_line else ""}
-    </div>
-    <div style="text-align:right;">
-      <div style="font-size:12px;color:#94a3b8;">本周收益</div>
-      <div style="font-size:26px;font-weight:800;color:{_color(week_ret)};">{_signed_pct(week_ret)}</div>
-      <div style="font-size:12px;color:#94a3b8;">今日 {_signed_pct(day_ret)}</div>
+      <div style="font-size:12px;color:#94a3b8;">报告日 {report_day.date()}｜数据截至 {data_asof.date()}</div>
     </div>
   </div>
 
-  <div style="margin-top:14px;padding:12px;border-radius:12px;background:linear-gradient(135deg,#1e293b,#111827);border:1px solid #334155;">
-    <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">本周生效说明</div>
-    <div style="font-size:14px;line-height:1.55;">
-      信号 <b>{effective['signal'].date() if effective else '—'}</b>
-      → 执行 <b>{effective['exec'].date() if effective else '—'}</b><br/>
-      <span style="color:#cbd5e1;">自执行日起整周适用，直到下一次再平衡。
-      报告日 {report_day.date()}，行情截至 {data_asof.date()}。</span>
-      {f"<br/><span style='color:#fbbf24;'>{week_note}</span>" if week_note else ""}
+  <div style="display:flex;gap:10px;margin-top:14px;">
+    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:12px;">
+      <div style="font-size:12px;color:#94a3b8;">今日盈亏</div>
+      <div style="font-size:28px;font-weight:900;color:{_color(day_ret)};">{_signed_pct(day_ret)}</div>
+    </div>
+    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:12px;">
+      <div style="font-size:12px;color:#94a3b8;">本周盈亏（至目前收盘）</div>
+      <div style="font-size:28px;font-weight:900;color:{_color(week_ret)};">{_signed_pct(week_ret)}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px;">{week_from or "—"} → {week_to}</div>
     </div>
   </div>
+  {f"<div style='margin-top:8px;font-size:12px;color:#fbbf24;'>{week_note}</div>" if week_note else ""}
 
-  <div style="display:flex;gap:10px;margin-top:12px;">
-    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
-      <div style="font-size:12px;color:#94a3b8;">{year} YTD</div>
-      <div style="font-size:22px;font-weight:800;color:{_color(ytd_ret)};">{_signed_pct(ytd_ret)}</div>
-    </div>
-    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
-      <div style="font-size:12px;color:#94a3b8;">Sharpe / MDD</div>
-      <div style="font-size:16px;font-weight:700;margin-top:4px;">
-        {(f"{ytd.get('sharpe'):.2f}" if ytd and np.isfinite(ytd.get('sharpe', np.nan)) else "—")}
-        <span style="color:#94a3b8;font-size:12px;"> / </span>
-        <span style="color:{_color(ytd.get('max_drawdown') if ytd else None)};">{_pct(ytd.get('max_drawdown') if ytd else None)}</span>
-      </div>
-    </div>
-    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
-      <div style="font-size:12px;color:#94a3b8;">全样本年化</div>
-      <div style="font-size:18px;font-weight:750;color:#60a5fa;">{_pct(stats.get('ann_return'))}</div>
-    </div>
-  </div>
-
-  <div style="margin-top:14px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
-    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">① 策略决策</div>
-    <div style="font-size:13px;line-height:1.7;color:#334155;">
-      状态 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;">{regime}</code>
-      ｜美股择强 <b>{us_pick}</b><br/>
-      合格：{elig}<br/>
-      毛敞口 <b>{f"{gross:.3f}" if gross is not None else "—"}</b>
-      ｜金丝雀弱 {breadth} ｜断路器 {"开" if breaker else "关"}
-    </div>
-  </div>
+  {friday_target_block}
 
   <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
-    <div style="font-size:15px;font-weight:750;margin-bottom:4px;">② 本周持仓 Target</div>
-    <div style="font-size:12px;color:#64748b;margin-bottom:8px;">与“本周生效仓”一致（不再单独展示冲突旧仓）</div>
+    <div style="font-size:15px;font-weight:750;margin-bottom:4px;">当前持仓（本周已生效）</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px;">
+      信号 {effective['signal'].date() if effective else "—"} → 执行 {effective['exec'].date() if effective else "—"}
+      ｜状态 <code>{regime}</code> ｜美股择强 <b>{us_pick}</b>
+      ｜毛敞口 {f"{gross:.3f}" if gross is not None else "—"}
+    </div>
     {_weight_bars_html(eff_w)}
   </div>
 
   <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
-    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">③ {year} 年初至今曲线与分月</div>
-    <div style="font-size:12px;color:#64748b;margin-bottom:6px;">NAV 火花线：<span style="font-size:16px;letter-spacing:1px;">{spark or "—"}</span></div>
+    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">{year} YTD</div>
     <div style="font-size:13px;margin-bottom:8px;">
       YTD <b style="color:{_color(ytd_ret)};">{_signed_pct(ytd_ret)}</b>
       ｜波动 {_pct(ytd.get('ann_vol') if ytd else None)}
       ｜回撤 <span style="color:{_color(ytd.get('max_drawdown') if ytd else None)};">{_pct(ytd.get('max_drawdown') if ytd else None)}</span>
       ｜Sharpe {(f"{ytd.get('sharpe'):.2f}" if ytd and np.isfinite(ytd.get('sharpe', np.nan)) else "—")}
     </div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:6px;">曲线：<span style="font-size:16px;">{spark or "—"}</span></div>
     {_month_bars_html(monthly)}
-    <div style="font-size:11px;color:#94a3b8;margin-top:8px;">完整曲线图已生成：output/{chart_path.name}</div>
-  </div>
-
-  <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
-    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">④ 全样本业绩</div>
-    <div style="font-size:13px;color:#334155;line-height:1.7;">
-      净值 <b>{float(nav.iloc[-1]):.4f}</b>｜年化 <b>{_pct(stats.get('ann_return'))}</b><br/>
-      Sharpe <b>{stats.get('sharpe_rf0', float('nan')):.3f}</b>｜MDD <b style="color:{_color(stats.get('max_drawdown'))};">{_pct(stats.get('max_drawdown'))}</b>
-    </div>
   </div>
 
   <div style="margin-top:12px;background:#111827;border-radius:12px;padding:12px;border:1px solid #334155;">
-    <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">⑤ 数据日期</div>
-    <div style="font-size:12px;color:#cbd5e1;line-height:1.65;">
-      {"<br/>".join(f"{c} {UNIVERSE[c]['name']}: {d}" for c,d in data_end.items())}
+    <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">全样本 / 数据</div>
+    <div style="font-size:12px;color:#cbd5e1;line-height:1.7;">
+      净值 {float(nav.iloc[-1]):.4f}｜年化 {_pct(stats.get('ann_return'))}
+      ｜Sharpe {stats.get('sharpe_rf0', float('nan')):.3f}
+      ｜MDD {_pct(stats.get('max_drawdown'))}<br/>
+      {"；".join(f"{c}:{d}" for c,d in data_end.items())}
     </div>
   </div>
 
   <div style="margin-top:12px;font-size:11px;color:#94a3b8;line-height:1.5;">
-    风险提示：历史回测不代表未来；实盘需考虑 QDII 溢折价、汇率与融资约束。
+    推送节奏：交易日约 19:00（北京时间）收盘后发送。周五含下周一调仓目标。
   </div>
 </div>
 """
@@ -531,13 +571,20 @@ def build_daily_report(
         "asof": asof_str,
         "report_day": str(report_day.date()),
         "data_asof": str(data_asof.date()),
+        "is_friday_close": bool(is_friday_close),
         "effective_signal": str(effective["signal"].date()) if effective else None,
         "effective_exec": str(effective["exec"].date()) if effective else None,
-        "pending_signal": str(pending["signal"].date()) if pending else None,
+        "monday_signal": str(monday_signal.date()) if monday_signal is not None else None,
+        "monday_exec": str(monday_exec.date()) if monday_exec is not None else None,
+        "monday_targets": {
+            c: float(monday_target[c])
+            for c in CODES
+            if monday_target is not None and abs(float(monday_target[c])) > 1e-4
+        },
         "week_note": week_note,
         "week_return": week_ret,
         "day_return": day_ret,
-        "targets": {
+        "held_targets": {
             c: float(eff_w[c]) for c in CODES if eff_w is not None and abs(float(eff_w[c])) > 1e-4
         },
         "ytd": ytd,

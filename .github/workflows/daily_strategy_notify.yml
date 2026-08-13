@@ -1,14 +1,15 @@
 name: Daily Strategy WeChat Notify
 
-# 中国时间工作日 16:10 ≈ UTC 08:10
+# 中国时间工作日约 19:00 收盘后推送 ≈ UTC 11:00
 on:
   schedule:
-    - cron: "10 8 * * 1-5"
+    - cron: "0 11 * * 1-5"
   workflow_dispatch:
 
 jobs:
   notify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: multi_asset_rotation
@@ -38,7 +39,6 @@ jobs:
           WECHAT_PHONE: ${{ secrets.WECHAT_PHONE }}
           NOTIFY_FORCE_DOWNLOAD: "1"
         run: |
-          # 默认渠道 wechat
           export PUSHPLUS_CHANNEL="${PUSHPLUS_CHANNEL:-wechat}"
           export WECHAT_PHONE="${WECHAT_PHONE:-15111101843}"
           python daily_notify.py
@@ -53,4 +53,5 @@ jobs:
             multi_asset_rotation/output/daily_notify_latest.html
             multi_asset_rotation/output/daily_notify_latest.json
             multi_asset_rotation/output/daily_notify_push_result.json
+            multi_asset_rotation/output/ytd_nav_*.png
           if-no-files-found: warn

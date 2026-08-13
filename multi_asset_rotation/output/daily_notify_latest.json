@@ -1,14 +1,17 @@
 {
-  "asof": "2026-08-13 09:08:35 CST",
+  "asof": "2026-08-13 09:17:41 CST",
   "report_day": "2026-08-13",
   "data_asof": "2026-08-12",
+  "is_friday_close": false,
   "effective_signal": "2026-08-07",
   "effective_exec": "2026-08-10",
-  "pending_signal": null,
-  "week_note": "行情数据截至 2026-08-12，本周收益为截至该日的收益",
+  "monday_signal": null,
+  "monday_exec": null,
+  "monday_targets": {},
+  "week_note": "行情数据截至 2026-08-12，今日/本周盈亏为截至该日",
   "week_return": 0.007677006441528578,
   "day_return": 0.0019096199843438022,
-  "targets": {
+  "held_targets": {
     "513400": 0.3608066824782608,
     "159934": 0.32601137388709067,
     "HK0005": 0.31318194363464863

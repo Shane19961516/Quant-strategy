@@ -109,10 +109,15 @@ borrow_rate=0.02, cost_bps=2.0
 3. QDII（美股/黄金）建议限价单；
 4. 若组合盘中回撤触发日度止损规则，按风控切债券，等待下次信号日再平衡。
 
-## 每日微信推送（云端定时）
+## 每日微信推送（云端定时 · 约 19:00）
 
 程序：`daily_notify.py`  
-内容：最新策略决策 / 数据日期 / 调仓 Target / **本周策略收益**（周五信号→下交易日开盘调仓，执行日前收盘净值→今日收盘）。
+每个交易日收盘后约 **19:00（北京时间）** 按策略逻辑重跑一遍，推送：
+
+- **今日策略盈亏**
+- **本周至今盈亏**（周一前收盘 → 今日/最新数据日收盘）
+- 本周已生效持仓、YTD 曲线与全样本指标
+- **若为周五收盘**：表头用醒目红色标明 **「下周一策略调仓目标建议！」**，并附下周一开盘执行目标权重
 
 > 重要：微信**不能**只凭手机号直发。需要你用微信扫码绑定推送平台拿到 `token`，再由云端调用 API 推到你的微信。手机号只用于消息抬头展示（或 PushPlus 短信渠道）。
 
@@ -132,14 +137,15 @@ cd multi_asset_rotation
 cp .env.example .env
 # 编辑 .env：填入 PUSHPLUS_TOKEN，确认 WECHAT_PHONE
 python daily_notify.py --dry-run          # 只生成报告
+REPORT_DAY=2026-08-07 python daily_notify.py --dry-run   # 测周五红色调仓文案
 python daily_notify.py                    # 真正推送
 ```
 
 报告落盘：`output/daily_notify_latest.txt|html|json`
 
-### 3) GitHub Actions 云端定时（中国时间工作日 16:10）
+### 3) GitHub Actions 云端定时（中国时间工作日 19:00）
 
-仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`（UTC 08:10 = 北京 16:10）。
+仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`（UTC 11:00 = 北京 19:00）。
 
 在 GitHub → Settings → Secrets and variables → Actions 添加：
 
@@ -157,5 +163,5 @@ python daily_notify.py                    # 真正推送
 
 ```bash
 # crontab -e（机器时区设为 Asia/Shanghai）
-10 16 * * 1-5 cd /path/to/multi_asset_rotation && bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
+0 19 * * 1-5 cd /path/to/multi_asset_rotation && bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
 ```
