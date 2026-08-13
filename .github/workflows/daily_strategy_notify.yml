@@ -1,0 +1,57 @@
+name: Daily Strategy WeChat Notify
+
+# 中国时间工作日约 19:00 收盘后推送 ≈ UTC 11:00
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: multi_asset_rotation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: multi_asset_rotation/requirements.txt
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Run daily notify
+        env:
+          TZ: Asia/Shanghai
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHPLUS_CHANNEL: ${{ secrets.PUSHPLUS_CHANNEL }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          WECHAT_PHONE: ${{ secrets.WECHAT_PHONE }}
+          NOTIFY_FORCE_DOWNLOAD: "1"
+        run: |
+          export PUSHPLUS_CHANNEL="${PUSHPLUS_CHANNEL:-wechat}"
+          export WECHAT_PHONE="${WECHAT_PHONE:-15111101843}"
+          python daily_notify.py
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-notify-${{ github.run_id }}
+          path: |
+            multi_asset_rotation/output/daily_notify_latest.txt
+            multi_asset_rotation/output/daily_notify_latest.html
+            multi_asset_rotation/output/daily_notify_latest.json
+            multi_asset_rotation/output/daily_notify_push_result.json
+            multi_asset_rotation/output/ytd_nav_*.png
+          if-no-files-found: warn

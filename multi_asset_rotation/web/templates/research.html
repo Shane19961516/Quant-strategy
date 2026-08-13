@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}可行性研究报告{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>策略可行性研究报告</h1>
+  <p>标的池：地方债 / 黄金 / 红利低波 / 港股汇丰(HK0005) / 美股（标普·纳指·道指择强）。调仓节奏：周五收盘信号 → 下周一开盘差额执行。</p>
+</div>
+
+<div class="grid">
+  <div class="card span-3">
+    <h3>年化收益</h3>
+    <div class="metric good">{{ pct(stats.ann_return) }}</div>
+  </div>
+  <div class="card span-3">
+    <h3>Sharpe (rf=0)</h3>
+    <div class="metric">{{ '%.3f'|format(stats.sharpe_rf0) }}</div>
+  </div>
+  <div class="card span-3">
+    <h3>最大回撤</h3>
+    <div class="metric">{{ pct(stats.max_drawdown) }}</div>
+  </div>
+  <div class="card span-3">
+    <h3>目标达成</h3>
+    <div class="sub" style="margin-top:8px;line-height:1.9;">
+      <div>Sharpe≥2：<span class="badge {{ 'ok' if targets['sharpe_rf0>=2'] else 'no' }}">{{ targets['sharpe_rf0>=2'] }}</span></div>
+      <div>年化≥15%：<span class="badge {{ 'ok' if targets['ann_return>=15%'] else 'no' }}">{{ targets['ann_return>=15%'] }}</span></div>
+      <div>MDD≤7%：<span class="badge {{ 'ok' if targets['max_drawdown<=7%'] else 'no' }}">{{ targets['max_drawdown<=7%'] }}</span></div>
+    </div>
+  </div>
+
+  <div class="card span-6">
+    <h2 class="section-title">一、策略逻辑</h2>
+    <ol class="list">
+      <li><b>资产分层</b>：债券作安全垫；黄金、A股红利低波、港股汇丰、美股为风险 sleeve。</li>
+      <li><b>美股择强</b>：标普/纳指/道指按 8 周相对动量只选 1 只，避免重复敞口；港股汇丰作为独立风险资产参与筛选。</li>
+      <li><b>双动量过滤</b>：风险资产需 4 周绝对动量跑赢债券，且站上 40 日均线。</li>
+      <li><b>集中持仓</b>：合格风险资产按相对动量取 Top-2。</li>
+      <li><b>风险预算</b>：逆波动加权后，把组合波动缩放到目标 7.5%，余量进债券。</li>
+      <li><b>硬风控</b>：短线普跌触发金丝雀时，100% 债券。</li>
+    </ol>
+  </div>
+
+  <div class="card span-6">
+    <h2 class="section-title">二、具体决策方法（每周五）</h2>
+    <div class="flow">
+      <div class="flow-step">1. 计算 8 周相对动量、{{ params.abs_lb }} 周绝对动量、1 周短线收益、{{ params.sma_lb }} 日均线状态</div>
+      <div class="flow-step">2. 美股候选中选相对动量最强者为 us_pick，组成风险池</div>
+      <div class="flow-step">3. 若风险池 1 周下跌个数 ≥ {{ params.canary_k }} → 100% 债券（canary_safe）</div>
+      <div class="flow-step">4. 否则筛选：绝对动量 &gt; 债券 + abs_margin，且 价 &gt; SMA{{ params.sma_lb }} × (1 + sma_buffer)；再取 Top-{{ params.top_k }}</div>
+      <div class="flow-step">5. 无合格资产 → 100% 债券；有合格资产 → 逆波动 + vol_target={{ pct(params.vol_target) }} 缩放</div>
+      <div class="flow-step">6. 单资产上限 {{ pct(params.max_single) }}；换手 &lt; {{ pct(params.rebalance_thresh) }} 则维持上周权重</div>
+    </div>
+  </div>
+
+  <div class="card span-12">
+    <h2 class="section-title">三、风控细则</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>风控项</th>
+          <th>规则</th>
+          <th>参数</th>
+          <th>目的</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>金丝雀</td>
+          <td>风险池短周期（1周）走弱个数达到阈值，强制清仓风险资产</td>
+          <td>canary_k={{ params.canary_k }}</td>
+          <td>规避同步下跌</td>
+        </tr>
+        <tr>
+          <td>绝对动量门槛</td>
+          <td>风险资产 {{ params.abs_lb }} 周收益必须高于债券（可选超额门槛）</td>
+          <td>abs_lb={{ params.abs_lb }}, abs_margin={{ '%.2f'|format((params.abs_margin or 0) * 100) }}%</td>
+          <td>避免弱于现金替代时仍进攻</td>
+        </tr>
+        <tr>
+          <td>趋势过滤</td>
+          <td>收盘价需高于均线一定缓冲</td>
+          <td>sma_lb={{ params.sma_lb }}, sma_buffer={{ '%.2f'|format((params.sma_buffer or 0) * 100) }}%</td>
+          <td>只做上升趋势，过滤假突破</td>
+        </tr>
+        <tr>
+          <td>波动目标</td>
+          <td>风险仓整体缩放到目标波动，超配部分回债券</td>
+          <td>vol_target={{ pct(params.vol_target) }}</td>
+          <td>控制组合风险预算</td>
+        </tr>
+        <tr>
+          <td>单资产上限</td>
+          <td>任一风险 ETF 权重封顶</td>
+          <td>max_single={{ pct(params.max_single) }}</td>
+          <td>防止过度集中</td>
+        </tr>
+        <tr>
+          <td>换手迟滞</td>
+          <td>目标权重变化不足阈值则不交易</td>
+          <td>rebalance_thresh={{ pct(params.rebalance_thresh) }}</td>
+          <td>降低无效交易成本</td>
+        </tr>
+        <tr>
+          <td>交易成本</td>
+          <td>按换手扣减单边成本</td>
+          <td>cost_bps={{ params.cost_bps }}</td>
+          <td>回测贴近实盘</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card span-6">
+    <h2 class="section-title">四、标的池</h2>
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>角色</th></tr></thead>
+      <tbody>
+      {% for code, meta in universe.items() %}
+        <tr>
+          <td>{{ code }}</td>
+          <td>{{ meta.name }}</td>
+          <td><span class="badge">{{ meta.role }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card span-6">
+    <h2 class="section-title">五、分年收益（回测）</h2>
+    <table>
+      <thead><tr><th>年份</th><th class="num">策略收益</th></tr></thead>
+      <tbody>
+      {% for y, v in yearly.items() %}
+        <tr>
+          <td>{{ y }}</td>
+          <td class="num {{ 'good' if v >= 0 else 'bad' }}">{{ pct(v) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="sub" style="margin-top:10px;">样本期：{{ stats.start }} → {{ stats.end }}。历史回测不代表未来收益。</div>
+  </div>
+
+  <div class="card span-12">
+    <h2 class="section-title">六、执行可行性结论</h2>
+    <ul class="list">
+      <li>信号与交易分离：周五只计算，周一开盘差额调仓，流程可标准化。</li>
+      <li>持仓标的均为场内 ETF，流动性与交易成本可控（QDII 需注意溢价与夜盘跳空）。</li>
+      <li>风控规则全部参数化，可复现、可审计；金丝雀为硬约束，优先级最高。</li>
+      <li>在 2020-09 至 2026-08 样本内，年化/夏普/回撤三项硬指标均达成，具备继续实盘跟踪的基础。</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

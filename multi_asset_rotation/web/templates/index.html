@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}首页 · 多资产轮动控制台{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>股债金 / 美股 ETF 周度轮动控制台</h1>
+  <p>
+    校准版策略（双动量 + 波动目标 + 金丝雀；基础池含港股汇丰 HK0005）一站式面板：可行性研究报告、实时指标与调仓建议、本周期持仓收益预计。
+  </p>
+</div>
+
+<div class="grid">
+  <a class="card span-4" href="{{ url_for('research') }}" style="color:inherit;text-decoration:none;">
+    <h3>1. 策略可行性研究报告</h3>
+    <div class="metric small">逻辑 · 决策 · 风控</div>
+    <div class="sub">完整说明信号生成、仓位构建与金丝雀细则，并附回测达标结果。</div>
+  </a>
+  <a class="card span-4" href="{{ url_for('monitor') }}" style="color:inherit;text-decoration:none;">
+    <h3>2. 指标监控与调仓建议</h3>
+    <div class="metric small">监控 · 信号 · 指令</div>
+    <div class="sub">净值/回撤/波动、金丝雀状态、最新目标权重与差额买卖建议。</div>
+  </a>
+  <a class="card span-4" href="{{ url_for('forecast') }}" style="color:inherit;text-decoration:none;">
+    <h3>3. 本周期持仓收益预计</h3>
+    <div class="metric small">预计 · 区间 · 贡献</div>
+    <div class="sub">基于当前目标持仓的动量/历史周收益外推，给出综合预计与分位区间。</div>
+  </a>
+</div>
+{% endblock %}

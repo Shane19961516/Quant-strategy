@@ -1,0 +1,85 @@
+{
+  "signal_date": "2026-08-07",
+  "exec_date": "next_trading_day_after_signal",
+  "sample_ends_on_signal": true,
+  "current_gross": 1.0,
+  "target_gross": 1.0,
+  "previous_target": {
+    "159816": 0.0,
+    "513400": 0.0,
+    "513110": 0.0,
+    "513500": 0.0,
+    "VIG": 0.0,
+    "159934": 0.0,
+    "515450": 0.5852399161278263,
+    "HK0005": 0.7119772407147786
+  },
+  "note": "Friday close signal -> next trading day execution. current_weight is the backtest book still held on the signal close (new signal not executed yet). For live trading, replace current with broker positions.",
+  "orders": [
+    {
+      "code": "159816",
+      "name": "地方债0-4Y",
+      "current_weight": 1.0,
+      "target_weight": 1.1102230246251565e-16,
+      "delta_weight": -0.9999999999999999,
+      "action": "SELL"
+    },
+    {
+      "code": "513400",
+      "name": "道琼斯",
+      "current_weight": 0.0,
+      "target_weight": 0.36080718156120073,
+      "delta_weight": 0.36080718156120073,
+      "action": "BUY"
+    },
+    {
+      "code": "513110",
+      "name": "纳斯达克100",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "513500",
+      "name": "标普500",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "VIG",
+      "name": "美股红利增长",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "159934",
+      "name": "黄金",
+      "current_weight": 0.0,
+      "target_weight": 0.3260118248396999,
+      "delta_weight": 0.3260118248396999,
+      "action": "BUY"
+    },
+    {
+      "code": "515450",
+      "name": "红利低波",
+      "current_weight": 0.0,
+      "target_weight": 0.0,
+      "delta_weight": 0.0,
+      "action": "HOLD"
+    },
+    {
+      "code": "HK0005",
+      "name": "汇丰控股",
+      "current_weight": 0.0,
+      "target_weight": 0.31318099359909923,
+      "delta_weight": 0.31318099359909923,
+      "action": "BUY"
+    }
+  ],
+  "turnover": 0.9999999999999999
+}
