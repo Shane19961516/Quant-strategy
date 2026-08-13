@@ -167,6 +167,13 @@ def save_settlement_import(
 ) -> SettlementImport:
     if replace_active:
         deactivate_settlements(session, imp.account_id)
+        # 清理同账户历史昨仓行，避免重复导入把表撑大（查询虽已按 active import 过滤）
+        stale = session.exec(
+            select(YesterdayOptionPosition).where(YesterdayOptionPosition.account_id == imp.account_id)
+        ).all()
+        for row in stale:
+            session.delete(row)
+        session.commit()
     session.add(imp)
     session.commit()
     session.refresh(imp)

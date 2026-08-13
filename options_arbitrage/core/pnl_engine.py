@@ -104,13 +104,19 @@ class LivePnLReport:
 
 
 def _ref_close(p: dict[str, Any]) -> float:
-    """昨收优先：close > ref_close > ref_price > settle。"""
+    """
+    昨仓盯市基准价（昨收）:
+      1) 显式昨收 prev_close / __PREV_CLOSE__
+      2) 结算单「今结算价」settle_price（次日即昨结算，国内盯市惯例）
+    注意：不要使用被污染的 close_price/__CLOSE__（常被写成盘中最新价）。
+    """
     return float(
-        p.get("close_price")
+        p.get("prev_close")
         or p.get("ref_close")
-        or p.get("ref_price")
         or p.get("settle_price")
         or p.get("ref_settle")
+        or p.get("ref_price")
+        or p.get("close_price")  # 最后才回退
         or 0
     )
 
@@ -243,11 +249,17 @@ def compute_live_pnl(
         sym = p["symbol"]
         mult = float(p.get("multiplier") or 10)
         close = _ref_close(p)
-        last = float(marks.get(sym, close))
         y_long = int(p.get("long_volume") or 0)
         y_short = int(p.get("short_volume") or 0)
-        # 多头 +，空头 −
-        pnl = _direction_pnl(+y_long, last, close, mult) + _direction_pnl(-y_short, last, close, mult)
+        raw_mark = marks.get(sym)
+        # 无有效最新价（缺失或≤0）→ 浮动盈亏记 0，对齐 Libra 无夜盘/无行情品种
+        if raw_mark is None or float(raw_mark) <= 0:
+            last = close
+            pnl = 0.0
+        else:
+            last = float(raw_mark)
+            # 多头 +，空头 −
+            pnl = _direction_pnl(+y_long, last, close, mult) + _direction_pnl(-y_short, last, close, mult)
         y_pnl_by_sym[sym] = y_pnl_by_sym.get(sym, 0.0) + pnl
         total_carry += pnl
         meta_by_sym[sym] = {
@@ -260,6 +272,7 @@ def compute_live_pnl(
             "ref_close": close,
             "mark": last,
             "margin": float(p.get("margin") or 0),
+            "live": raw_mark is not None and float(raw_mark) > 0,
         }
 
     # --- 今日成交损益（逐笔，不与昨仓冲抵）---
@@ -280,10 +293,15 @@ def compute_live_pnl(
         mult = float(t.get("multiplier") or meta_by_sym.get(sym, {}).get("multiplier") or 10)
         if vol <= 0:
             continue
-        # 最新价：mark > 成交价兜底
-        last = float(marks.get(sym, px))
+        # 最新价：无有效 mark 时今成交浮动也记 0（保留成交信息）
         sign = +1 if side == "BUY" else -1
-        pnl = _direction_pnl(sign * vol, last, px, mult)
+        raw_mark = marks.get(sym)
+        if raw_mark is None or float(raw_mark) <= 0:
+            last = px
+            pnl = 0.0
+        else:
+            last = float(raw_mark)
+            pnl = _direction_pnl(sign * vol, last, px, mult)
         t_pnl_by_sym[sym] = t_pnl_by_sym.get(sym, 0.0) + pnl
         total_today += pnl
         fee_by_sym[sym] = fee_by_sym.get(sym, 0.0) + fee

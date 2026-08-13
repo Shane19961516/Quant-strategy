@@ -288,10 +288,10 @@ def build_risk_cockpit(
                 "昨仓: 方向×数量×(最新-昨收)×乘数；"
                 "今成交: 方向×数量×(最新-成交价)×乘数"
             ),
-            "price_basis": "昨仓基准优先昨收/close（无 close 时回退 settle）；盯市与希腊值用最新价",
-            "delta_lots": "期货张数 = 汇总delta / 品种乘数；汇总delta = Σ(单位Δ × 净手数 × 乘数)",
+            "price_basis": "昨仓基准默认结算单今结算价(次日昨结算)；可用 __PREV_CLOSE__ 覆盖。无有效最新价则浮动盈亏=0",
+            "delta_lots": "套利策略delta(张数)=Σ(单位Δ×净手数)，约等于期货对冲张数；汇总delta点值另含乘数",
             "delta_value": "汇总delta（点值）= Σ(单位Δ × 净手数 × 乘数)，即标的变动1点的权利金现金敏感度",
-            "greeks_model": "BS76；T=DTE/245，r=0；delta/vega/theta 对齐 Libra（不乘乘数；vega按σ小数；theta年化）",
+            "greeks_model": "BS76；T=DTE/245，r=0；展示Θ为年化(Libra口径)，另给日Θ现金",
         },
         "风控概览": {
             "昨日持仓损益": round(yday_pnl, 2),
@@ -315,8 +315,16 @@ def build_risk_cockpit(
             "组合净Δ_张数": greeks.total_net_delta,
             "组合净Δ": greeks.total_net_delta,
             "组合净Γ": greeks.total_net_gamma,
+            "年化Theta": greeks.total_net_theta,
+            # 兼容旧 UI 键名：日Theta 现指年化展示口径（对齐 Libra），现金日Θ见 日Theta_现金
             "日Theta": greeks.total_net_theta,
+            "日Theta_现金": round(
+                sum(float(getattr(lg, "cash_theta_daily", 0.0) or 0.0) for lg in greeks.leg_greeks),
+                2,
+            ),
             "Vega": greeks.total_net_vega,
+            "Vega口径": "Libra：∂V/∂σ(小数)×净手数，不乘乘数",
+            "Theta口径": "年化Θ=日Θ×365×净手数(不乘乘数)；日Θ现金含乘数",
         },
         "压力测试": stress,
         "盈亏归因": attribution,

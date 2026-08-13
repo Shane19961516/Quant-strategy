@@ -119,11 +119,13 @@ with c2:
             f'{_fmt(gk.get("组合净Γ"), money=False)} &nbsp;|&nbsp; {_fmt(st_.get("gamma"))} &nbsp;|&nbsp; {_fmt(attr.get("gamma"))}',
         ),
         _kv(
-            "日Theta",
-            f'{_fmt(gk.get("日Theta"))} &nbsp;|&nbsp; {_fmt(st_.get("theta"))} &nbsp;|&nbsp; {_fmt(attr.get("theta"))}',
+            "年化Θ|日Θ现金|归因Θ",
+            f'{_fmt(gk.get("年化Theta") if gk.get("年化Theta") is not None else gk.get("日Theta"))}'
+            f' &nbsp;|&nbsp; {_fmt(gk.get("日Theta_现金") if gk.get("日Theta_现金") is not None else st_.get("theta"))}'
+            f' &nbsp;|&nbsp; {_fmt(attr.get("theta"))}',
         ),
         _kv(
-            "Vega",
+            "Vega(σ)|压力|归因",
             f'{_fmt(gk.get("Vega"))} &nbsp;|&nbsp; {_fmt(st_.get("vega"))} &nbsp;|&nbsp; {_fmt(attr.get("vega"))}',
         ),
         _kv("压力亏损总额", _fmt(st_.get("total"))),
@@ -210,7 +212,7 @@ with st.expander("行情同步（akshare / CTP）— 昨收 + 最新价", expand
     st.caption(
         "数据源规则：①上一交易日收盘价(prev_close)；"
         "②当前最新价(last)——交易时段内实时，非交易时段默认用最近已收盘交易日收盘价。"
-        "写入 marks / __CLOSE__ / __F__ 后刷新风控台。"
+        "写入 marks / __PREV_CLOSE__ / __F__ 后刷新风控台。无夜盘品种请勿保留过期最新价。"
     )
     prov = st.selectbox("行情源", ["akshare", "ctp"], index=0)
     if st.button("从行情源同步并写入 marks", type="primary"):

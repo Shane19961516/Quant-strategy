@@ -515,6 +515,8 @@ def fetch_book_quotes(
         else:
             marks[q.symbol] = float(q.last)
             if q.prev_close is not None:
+                marks[f"__PREV_CLOSE__:{q.symbol}"] = float(q.prev_close)
+                # 兼容旧键名
                 marks[f"__CLOSE__:{q.symbol}"] = float(q.prev_close)
 
     return {

@@ -165,6 +165,57 @@ class TestLivePnL:
         assert len(report.by_trade) == 1
         assert report.by_trade[0]["pnl"] == -50.0
 
+    def test_missing_live_mark_zeros_pnl_and_formula(self, parsed):
+        """无有效最新价时昨仓/今成交浮动=0，且 formula 不因 sign 未赋值崩溃。"""
+        y = [p.to_dict() for p in parsed.option_positions]
+        trades = [
+            {
+                "symbol": "JD2610-C-4100",
+                "underlying": "JD2610",
+                "option_type": "CALL",
+                "strike": 4100,
+                "side": "BUY",
+                "offset": "CLOSE",
+                "price": 40.0,
+                "volume": 2,
+                "fee": 0.0,
+                "multiplier": 10,
+                "trade_id": "JD1",
+                "trade_time": "21:00:00",
+                "trade_date": "2026-08-13",
+            }
+        ]
+        report = compute_live_pnl(
+            account_id="166308",
+            settlement_date="2026-08-12",
+            session_date="2026-08-13",
+            yesterday_positions=y,
+            today_trades=trades,
+            marks={},  # 无夜盘/无行情
+            opening_equity=parsed.fund.client_equity,
+        )
+        assert report.total_carry_pnl == 0.0
+        assert report.total_today_trade_pnl == 0.0
+        jd = next(x for x in report.by_leg if x.symbol == "JD2610-C-4100")
+        assert jd.carry_pnl == 0.0
+        assert jd.today_trade_pnl == 0.0
+        assert len(report.by_trade) == 1
+        assert report.by_trade[0]["pnl"] == 0.0
+        assert "*(最新" in report.by_trade[0]["formula"]
+
+    def test_eg_carry_matches_libra_settle_mtm(self, parsed):
+        """EG 昨仓 + 结算价基准 + Libra 盘中价 → 浮动 1425。"""
+        y = [p.to_dict() for p in parsed.option_positions if p.underlying.startswith("EG")]
+        report = compute_live_pnl(
+            account_id="166308",
+            settlement_date="2026-08-12",
+            session_date="2026-08-13",
+            yesterday_positions=y,
+            today_trades=[],
+            marks={"EG2610-C-5200": 34.0, "EG2610-P-4300": 43.0},
+        )
+        assert report.total_carry_pnl == pytest.approx(1425.0)
+
 
 @pytest.fixture()
 def client(tmp_path):

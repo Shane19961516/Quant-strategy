@@ -14,7 +14,7 @@ screener:
   target_put_delta: -0.20
 
 risk:
-  delta_tilt_threshold: 0.30      # |net_delta| 超此值触发倾斜预警
+  delta_tilt_threshold: 1.0       # |net_delta| 超此值触发倾斜预警（对齐 Libra ~1.0）
   gamma_squeeze_dte: 10           # DTE 低于此值进入 Gamma 监控
   gamma_squeeze_moneyness: 0.03   # 标的贴近行权价 3% 范围
   risk_free_rate: 0.02            # 无风险利率 r

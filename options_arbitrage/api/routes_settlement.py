@@ -392,7 +392,7 @@ def list_marks(
             "count": len(live),
             "marks": live,
             "meta": meta,
-            "note": "marks=最新价；__CLOSE__:合约=昨收；__F__:标的=期货价。切勿把结算价当最新价。",
+            "note": "marks=最新价；__PREV_CLOSE__:合约=昨收(可选覆盖)；__F__:标的=期货价。切勿把结算价当最新价。",
         }
 
 
@@ -466,19 +466,18 @@ def _load_book_inputs(
     t_rows = list_today_trades(session, account_id, sess)
     stored = get_marks(session, account_id, sess)
 
-    # 最新价只来自：手工/导入 marks，或今日成交价兜底。绝不注入结算价。
+    # 最新价只来自：手工/导入 marks。绝不注入结算价，也不用成交价冒充最新价
+    # （成交价冒充会导致无夜盘品种被错误盯市，与 Libra 不一致）。
     marks: dict[str, float] = {
         k: float(v) for k, v in stored.items() if not str(k).startswith("__")
     }
-    for t in t_rows:
-        marks.setdefault(t.symbol, float(t.price))
 
     yesterday = []
     missing_live: list[str] = []
     for p in y_rows:
-        # 昨仓基准价：优先手工 close（__CLOSE__:symbol），否则 settle（回退）
-        close_key = f"__CLOSE__:{p.symbol}"
-        close_px = stored.get(close_key)
+        # 昨仓基准：默认结算价（次日昨结算）。仅 __PREV_CLOSE__:symbol 可覆盖为行情昨收。
+        prev_key = f"__PREV_CLOSE__:{p.symbol}"
+        prev_px = stored.get(prev_key)
         if p.symbol not in marks:
             missing_live.append(p.symbol)
         yesterday.append(
@@ -492,8 +491,8 @@ def _load_book_inputs(
                 "long_avg_price": p.long_avg_price,
                 "short_avg_price": p.short_avg_price,
                 "settle_price": p.settle_price,
-                "close_price": close_px,
-                "ref_price": close_px if close_px is not None else p.settle_price,
+                "prev_close": prev_px,
+                "ref_price": prev_px if prev_px is not None else p.settle_price,
                 "margin": p.margin,
                 "multiplier": p.multiplier,
             }

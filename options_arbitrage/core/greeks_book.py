@@ -278,9 +278,9 @@ class GreeksBookReport:
         }
 
 
-def _risk_status(net_delta: float, delta_tilt: float = 0.30) -> str:
+def _risk_status(net_delta: float, delta_tilt: float = 1.0) -> str:
     ad = abs(net_delta)
-    if ad > 0.50:
+    if ad > max(delta_tilt * 1.5, delta_tilt + 0.5):
         return "CRITICAL"
     if ad > delta_tilt:
         return "WARN"
@@ -295,7 +295,7 @@ def compute_net_positions_and_greeks(
     underlying_F: Optional[dict[str, float]] = None,
     asof: Optional[str] = None,
     r: float = DEFAULT_R,
-    delta_tilt: float = 0.30,
+    delta_tilt: float = 1.0,
     year_days: float = TRADING_DAYS_PER_YEAR,
 ) -> GreeksBookReport:
     """
