@@ -41,8 +41,62 @@ def estimate_F_from_book(legs: list[PositionLegState]) -> float:
     return float(sum(strikes) / len(strikes)) if strikes else 0.0
 
 
+def _nth_trading_day_of_month(year: int, month: int, n: int) -> date:
+    from datetime import timedelta
+
+    d = date(year, month, 1)
+    found = 0
+    while d.month == month:
+        if d.weekday() < 5:
+            found += 1
+            if found == n:
+                return d
+        d += timedelta(days=1)
+    return date(year, month, 28)
+
+
+def _nth_last_trading_day_on_or_before(end: date, n: int) -> date:
+    """倒数第 n 个交易日（含 end 当日，若为交易日）。"""
+    from datetime import timedelta
+
+    days: list[date] = []
+    d = date(end.year, end.month, 1)
+    while d <= end:
+        if d.weekday() < 5:
+            days.append(d)
+        d += timedelta(days=1)
+    if len(days) < n:
+        return days[0] if days else end
+    return days[-n]
+
+
+def _trading_days_inclusive(start: date, end: date) -> int:
+    from datetime import timedelta
+
+    if end < start:
+        return 1
+    n = 0
+    d = start
+    while d <= end:
+        if d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return max(n, 1)
+
+
 def estimate_dte_from_underlying(underlying: str, asof: Optional[date] = None) -> int:
-    """Rough DTE from contract month code: AP610 / EG2610 / SR611."""
+    """
+    Option DTE aligned with exchange last-trading-day conventions (weekends only)
+    and Libra 数据总览 days_to_expiry:
+
+    - DCE/SHFE/INE/GFEX: 合约月份前一个月的第 5 个交易日
+      EG2610 on 2026-08-13 → calendar DTE 25 (matches Libra)
+    - CZCE 苹果等（交割月前两个月月末倒数第 3 个交易日）:
+      AP610 on 2026-08-13 → expiry 2026-08-27 → trading-day DTE 11 (matches Libra)
+    - 其他 CZCE: 合约月份前一个月的第 3 个交易日（日历日 DTE）
+    """
+    from calendar import monthrange
+
     asof = asof or date.today()
     m = re.search(r"(\d{3,4})$", underlying.strip())
     if not m:
@@ -50,21 +104,54 @@ def estimate_dte_from_underlying(underlying: str, asof: Optional[date] = None) -
     code = m.group(1)
     try:
         if len(code) == 3:
-            # YMM e.g. 610 -> 2026-10
             yy = 2020 + int(code[0])
             mm = int(code[1:])
         else:
-            # YYMM e.g. 2610
             yy = 2000 + int(code[:2])
             mm = int(code[2:])
         if mm < 1 or mm > 12:
             return 35
-        # commodity options often expire ~ month before / early in delivery month — use mid-month
-        expiry = date(yy, mm, 15)
-        dte = (expiry - asof).days
-        return max(dte, 1)
+
+        prod = product_code_from_underlying(underlying).upper()
+        # 郑商所：交割月份前两个月最后一个日历日之前（含）的倒数第 3 个交易日
+        # （鲜苹果期权等；Libra AP DTE 用交易日计数）
+        czce_two_month_back3 = {"AP", "CJ", "PK"}
+        czce_front_month_3 = {
+            "SR", "CF", "TA", "MA", "RM", "OI", "FG", "SA", "UR", "PF", "SH", "PX", "PR",
+        }
+
+        if prod in czce_two_month_back3:
+            # 交割月往前两个月
+            em, ey = mm - 2, yy
+            while em <= 0:
+                em += 12
+                ey -= 1
+            end = date(ey, em, monthrange(ey, em)[1])
+            expiry = _nth_last_trading_day_on_or_before(end, 3)
+            return _trading_days_inclusive(asof, expiry)
+
+        if prod in czce_front_month_3:
+            if mm == 1:
+                ey, em = yy - 1, 12
+            else:
+                ey, em = yy, mm - 1
+            expiry = _nth_trading_day_of_month(ey, em, 3)
+            return max((expiry - asof).days, 1)
+
+        # DCE / SHFE / INE / GFEX 等：前月第 5 个交易日，日历日 DTE
+        if mm == 1:
+            ey, em = yy - 1, 12
+        else:
+            ey, em = yy, mm - 1
+        expiry = _nth_trading_day_of_month(ey, em, 5)
+        return max((expiry - asof).days, 1)
     except ValueError:
         return 35
+
+
+# Libra-aligned year fraction & rate (night-session cross-check 2026-08-13)
+TRADING_DAYS_PER_YEAR = 245.0
+DEFAULT_R = 0.0
 
 
 def _solve_iv(mark: float, F: float, K: float, T: float, r: float, opt: str) -> float:
@@ -90,19 +177,21 @@ class LegGreeks:
     F: float
     iv: float
     dte: int
-    delta: float
-    gamma: float
-    vega: float  # cash per 1% (already × mult × signed lots)
-    theta: float  # cash per day
+    delta: float  # Libra: 单位Δ × 净手数（不乘乘数）
+    gamma: float  # Libra: 单位Γ × 净手数
+    vega: float  # Libra: (∂V/∂σ)_小数 × 净手数（不乘乘数）
+    theta: float  # Libra: 年化Θ × 净手数（不乘乘数）
     unit_delta: float
     unit_gamma: float
-    unit_vega: float
-    unit_theta: float
+    unit_vega: float  # per 1% IV (engine native)
+    unit_theta: float  # daily (engine native)
     multiplier: float
     y_long: int = 0
     y_short: int = 0
     t_long: int = 0
     t_short: int = 0
+    cash_vega_1pct: float = 0.0  # 权利金现金 / 1% IV（×乘数）
+    cash_theta_daily: float = 0.0  # 权利金现金 / 日（×乘数）
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -205,15 +294,26 @@ def compute_net_positions_and_greeks(
     marks: dict[str, float],
     underlying_F: Optional[dict[str, float]] = None,
     asof: Optional[str] = None,
-    r: float = 0.02,
+    r: float = DEFAULT_R,
     delta_tilt: float = 0.30,
+    year_days: float = TRADING_DAYS_PER_YEAR,
 ) -> GreeksBookReport:
     """
     Merge 昨仓+今成交 → net book, then BS76 Greeks per leg / underlying / product.
+
+    口径对齐 Libra 数据总览（夜盘核对）:
+      T=DTE/245, r=0;
+      delta/gamma/vega/theta 均不乘合约乘数；vega 按 σ 小数；theta 为年化。
     """
     underlying_F = underlying_F or {}
     asof_d = datetime.strptime(asof, "%Y-%m-%d").date() if asof else date.today()
     book = build_book(yesterday_positions, today_trades)
+
+    # optional per-underlying DTE override via marks __DTE__:UNDERLYING
+    dte_override: dict[str, int] = {}
+    for k, v in list(marks.items()):
+        if str(k).startswith("__DTE__:"):
+            dte_override[k.split(":", 1)[1]] = max(int(float(v)), 1)
 
     # group legs by underlying for F estimate
     by_u_legs: dict[str, list[PositionLegState]] = {}
@@ -224,7 +324,7 @@ def compute_net_positions_and_greeks(
     dte_map: dict[str, int] = {}
     for u, legs in by_u_legs.items():
         F_map[u] = float(underlying_F.get(u) or estimate_F_from_book(legs))
-        dte_map[u] = estimate_dte_from_underlying(u, asof_d)
+        dte_map[u] = int(dte_override.get(u) or estimate_dte_from_underlying(u, asof_d))
 
     leg_greeks: list[LegGreeks] = []
     for sym, leg in sorted(book.items()):
@@ -233,7 +333,7 @@ def compute_net_positions_and_greeks(
         mark = float(marks.get(sym, leg.ref_settle or leg.short_cost or leg.long_cost or 0))
         F = F_map.get(leg.underlying, 0.0)
         dte = dte_map.get(leg.underlying, 35)
-        T = dte / 365.0
+        T = dte / float(year_days)
         opt = leg.option_type if leg.option_type in ("CALL", "PUT") else "CALL"
         iv = _solve_iv(mark, F, leg.strike, T, r, opt)
         try:
@@ -243,13 +343,16 @@ def compute_net_positions_and_greeks(
         # signed lots: long +, short −
         signed = leg.long_volume - leg.short_volume
         mult = leg.multiplier
-        # 口径对齐 Excel：
-        #   汇总delta(点值) = 单位Δ × 净手数 × 乘数
-        #   期货张数         = 汇总delta / 乘数 = 单位Δ × 净手数
+        # Libra 数据总览：不乘乘数
+        delta_lots = g.delta * signed
+        gamma_lots = g.gamma * signed
+        vega_libra = (g.vega / 0.01) * signed  # per 1.0 vol
+        theta_libra = (g.theta * 365.0) * signed  # annualized
+        # cash (with multiplier) for stress / money PnL
+        cash_vega = g.vega * signed * mult
+        cash_theta = g.theta * signed * mult
         delta_value = g.delta * signed * mult
-        delta_lots = delta_value / mult if mult else 0.0
         gamma_value = g.gamma * signed * mult
-        gamma_lots = gamma_value / mult if mult else 0.0
         leg_greeks.append(
             LegGreeks(
                 symbol=sym,
@@ -264,10 +367,10 @@ def compute_net_positions_and_greeks(
                 F=round(F, 4),
                 iv=round(iv, 6),
                 dte=dte,
-                delta=round(delta_lots, 6),  # 期货张数
+                delta=round(delta_lots, 6),
                 gamma=round(gamma_lots, 8),
-                vega=round(g.vega * signed * mult, 4),  # 权利金现金 / 1% IV
-                theta=round(g.theta * signed * mult, 4),
+                vega=round(vega_libra, 4),
+                theta=round(theta_libra, 4),
                 unit_delta=round(g.delta, 6),
                 unit_gamma=round(g.gamma, 8),
                 unit_vega=round(g.vega, 6),
@@ -277,9 +380,10 @@ def compute_net_positions_and_greeks(
                 y_short=leg.y_short,
                 t_long=leg.t_long,
                 t_short=leg.t_short,
+                cash_vega_1pct=round(cash_vega, 4),
+                cash_theta_daily=round(cash_theta, 4),
             )
         )
-        # stash cash delta on object for rollup (dynamic attr)
         leg_greeks[-1].__dict__["_delta_value"] = delta_value
         leg_greeks[-1].__dict__["_gamma_value"] = gamma_value
 

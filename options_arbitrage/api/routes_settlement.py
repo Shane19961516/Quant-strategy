@@ -554,7 +554,7 @@ def live_pnl(
             marks=marks,
             underlying_F=underlying_F,
             asof=sess,
-            r=0.02,
+            r=0.0,
         )
         out = report.to_dict()
         out["marks"] = marks
@@ -602,7 +602,7 @@ def net_positions(
             marks=marks,
             underlying_F=underlying_F,
             asof=sess,
-            r=0.02,
+            r=0.0,
         )
         return {
             "account_id": account_id,

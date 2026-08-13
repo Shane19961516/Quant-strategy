@@ -191,8 +191,20 @@ def get_yesterday_positions(
     account_id: str,
     settlement_date: Optional[str] = None,
 ) -> list[YesterdayOptionPosition]:
-    if settlement_date:
+    """
+    Always prefer the active settlement import to avoid duplicated rows from
+    repeated uploads of the same XLS (same settlement_date, many import_id).
+    """
+    active = get_active_settlement(session, account_id)
+    if active and (settlement_date is None or active.settlement_date == settlement_date):
         return list(
+            session.exec(
+                select(YesterdayOptionPosition).where(YesterdayOptionPosition.import_id == active.id)
+            ).all()
+        )
+    if settlement_date:
+        # fallback: latest import_id for that date only (dedupe by max import_id)
+        rows = list(
             session.exec(
                 select(YesterdayOptionPosition).where(
                     YesterdayOptionPosition.account_id == account_id,
@@ -200,14 +212,11 @@ def get_yesterday_positions(
                 )
             ).all()
         )
-    active = get_active_settlement(session, account_id)
-    if not active:
-        return []
-    return list(
-        session.exec(
-            select(YesterdayOptionPosition).where(YesterdayOptionPosition.import_id == active.id)
-        ).all()
-    )
+        if not rows:
+            return []
+        max_iid = max(int(r.import_id) for r in rows)
+        return [r for r in rows if int(r.import_id) == max_iid]
+    return []
 
 
 def list_today_trades(

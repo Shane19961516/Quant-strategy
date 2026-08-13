@@ -76,31 +76,25 @@ def futures_pnl(trades: list[dict[str, Any]]) -> tuple[float, list[dict[str, Any
 def _stress_components(greeks: GreeksBookReport, shock: float = 0.05, iv_shock_pts: float = 5.0) -> dict[str, float]:
     """
     Stress test on ±shock underlying move (take worse) + IV shock in vega points.
-    Cash PnL approximations:
-      delta_cash(dF) = net_delta * dF * mult_equiv
-    We store per-underlying net_delta as sum(unit_delta*lots); cash = delta * dF * avg_mult
-    Better: use leg-level.
+    Uses cash Greeks (with multiplier). Display greeks on legs are Libra-style.
     """
     up = 0.0
     down = 0.0
     gamma_cash = 0.0
     vega_cash = 0.0
-    theta_cash = greeks.total_net_theta
+    theta_cash = 0.0
 
-    # rebuild from legs for accuracy
     for lg in greeks.leg_greeks:
         dF_up = shock * lg.F
         dF_dn = -shock * lg.F
+        # delta/gamma on legs are unit×lots (no mult)
         up += lg.delta * dF_up * lg.multiplier
         down += lg.delta * dF_dn * lg.multiplier
-        # gamma same for ± (quadratic)
         gamma_cash += 0.5 * lg.gamma * (dF_up**2) * lg.multiplier
-        vega_cash += lg.vega * iv_shock_pts  # lg.vega already cash per 1%
+        vega_cash += float(getattr(lg, "cash_vega_1pct", 0.0) or 0.0) * iv_shock_pts
+        theta_cash += float(getattr(lg, "cash_theta_daily", 0.0) or 0.0)
 
-    # short gamma book: gamma_cash typically negative for short options when using signed gamma
     delta_worse = min(up, down)
-    # For stress "loss" presentation: show component contributions at the worse delta scenario
-    # Gamma/vega/theta as structural risk
     total = delta_worse + gamma_cash + theta_cash + vega_cash
     return {
         "delta": round(delta_worse, 2),
@@ -124,7 +118,7 @@ def _pnl_attribution(
     If dF provided per underlying, delta/gamma use it; else scale delta/gamma to residual after theta.
     """
     underlying_dF = underlying_dF or {}
-    theta_attr = greeks.total_net_theta
+    theta_attr = sum(float(getattr(lg, "cash_theta_daily", 0.0) or 0.0) for lg in greeks.leg_greeks)
     delta_attr = 0.0
     gamma_attr = 0.0
     vega_attr = 0.0
@@ -297,7 +291,7 @@ def build_risk_cockpit(
             "price_basis": "昨仓基准优先昨收/close（无 close 时回退 settle）；盯市与希腊值用最新价",
             "delta_lots": "期货张数 = 汇总delta / 品种乘数；汇总delta = Σ(单位Δ × 净手数 × 乘数)",
             "delta_value": "汇总delta（点值）= Σ(单位Δ × 净手数 × 乘数)，即标的变动1点的权利金现金敏感度",
-            "greeks_model": "BS76（Black-76）；IV 由期权最新价反推",
+            "greeks_model": "BS76；T=DTE/245，r=0；delta/vega/theta 对齐 Libra（不乘乘数；vega按σ小数；theta年化）",
         },
         "风控概览": {
             "昨日持仓损益": round(yday_pnl, 2),
