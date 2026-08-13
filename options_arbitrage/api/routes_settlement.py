@@ -20,17 +20,22 @@ from core.settlement_parser import (
     parse_settlement_xls,
 )
 from database.db import (
+    add_futures_trade,
     add_today_trade,
+    clear_futures_trades,
+    delete_futures_trade,
     delete_today_trade,
     get_active_settlement,
     get_engine,
     get_marks,
     get_yesterday_positions,
+    list_futures_trades,
     list_today_trades,
     save_settlement_import,
     upsert_mark,
 )
-from database.models import SettlementImport, TodayManualTrade, YesterdayOptionPosition
+from database.models import FuturesManualTrade, SettlementImport, TodayManualTrade, YesterdayOptionPosition
+from core.risk_cockpit import build_risk_cockpit
 
 router = APIRouter(prefix="/api/v1/settlement", tags=["settlement"])
 
@@ -518,3 +523,125 @@ def set_underlying_F(body: UnderlyingFBatchIn) -> dict[str, Any]:
         for u, f in body.underlying_F.items():
             upsert_mark(session, body.account_id, body.session_date, f"__F__:{u}", float(f))
         return {"updated": len(body.underlying_F)}
+
+
+class FuturesTradeIn(BaseModel):
+    account_id: str = "166308"
+    session_date: str
+    trade_id: Optional[str] = None
+    symbol: str
+    side: str
+    volume: int
+    price: float
+    last: float
+    fee: float = 0.0
+    note: str = ""
+
+
+@router.post("/futures-trades")
+def create_futures_trade(body: FuturesTradeIn) -> dict[str, Any]:
+    side = _norm_side(body.side)
+    mult = lookup_multiplier(body.symbol)
+    trade_id = body.trade_id or f"F{datetime.utcnow().strftime('%H%M%S%f')}"
+    row = FuturesManualTrade(
+        account_id=body.account_id,
+        session_date=body.session_date,
+        trade_id=trade_id,
+        symbol=body.symbol.strip().upper(),
+        side=side,
+        volume=body.volume,
+        price=body.price,
+        last=body.last,
+        fee=body.fee,
+        multiplier=mult,
+        note=body.note,
+    )
+    with Session(get_engine()) as session:
+        saved = add_futures_trade(session, row)
+        return {
+            "id": saved.id,
+            "trade_id": saved.trade_id,
+            "symbol": saved.symbol,
+            "side": saved.side,
+            "volume": saved.volume,
+            "price": saved.price,
+            "last": saved.last,
+            "multiplier": saved.multiplier,
+        }
+
+
+@router.get("/futures-trades")
+def get_futures_trades(
+    account_id: str = Query(default="166308"),
+    session_date: str = Query(...),
+) -> dict[str, Any]:
+    with Session(get_engine()) as session:
+        rows = list_futures_trades(session, account_id, session_date)
+        return {
+            "count": len(rows),
+            "trades": [
+                {
+                    "id": r.id,
+                    "trade_id": r.trade_id,
+                    "symbol": r.symbol,
+                    "side": r.side,
+                    "volume": r.volume,
+                    "price": r.price,
+                    "last": r.last,
+                    "fee": r.fee,
+                    "multiplier": r.multiplier,
+                    "note": r.note,
+                }
+                for r in rows
+            ],
+        }
+
+
+@router.delete("/futures-trades")
+def clear_futures(
+    account_id: str = Query(default="166308"),
+    session_date: str = Query(...),
+) -> dict[str, Any]:
+    with Session(get_engine()) as session:
+        n = clear_futures_trades(session, account_id, session_date)
+        return {"deleted": n}
+
+
+@router.get("/risk-cockpit")
+def risk_cockpit(
+    account_id: str = Query(default="166308"),
+    session_date: Optional[str] = Query(default=None),
+    daily_profit_target: float = Query(default=660.0),
+) -> dict[str, Any]:
+    """Excel 风格风控台：概览 / 压力测试 / 盈亏归因 / 分品种明细。"""
+    with Session(get_engine()) as session:
+        imp, sess, yesterday, today, marks = _load_book_inputs(session, account_id, session_date)
+        underlying_F = _underlying_F_from_marks(session, account_id, sess)
+        f_rows = list_futures_trades(session, account_id, sess)
+        futures = [
+            {
+                "symbol": r.symbol,
+                "side": r.side,
+                "volume": r.volume,
+                "price": r.price,
+                "last": r.last or r.price,
+                "fee": r.fee,
+                "multiplier": r.multiplier,
+            }
+            for r in f_rows
+        ]
+        return build_risk_cockpit(
+            account_id=account_id,
+            settlement_date=imp.settlement_date,
+            session_date=sess,
+            yesterday_positions=yesterday,
+            today_option_trades=today,
+            marks=marks,
+            opening_equity=imp.client_equity,
+            margin_occupied=imp.margin_occupied,
+            available=imp.available,
+            risk_degree=imp.risk_degree,
+            underlying_F=underlying_F,
+            futures_trades=futures,
+            daily_profit_target=daily_profit_target,
+        )

@@ -1,4 +1,4 @@
-"""Page: 实时盈亏监控 — 含分品种净持仓与希腊值汇总。"""
+"""风控台 — 对齐用户 Excel：概览 / 希腊值压力测试与归因 / 分品种明细。"""
 
 from __future__ import annotations
 
@@ -12,13 +12,33 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ui.common import account_id, get_json, inject_sidebar, post_json, session_date
+from ui.common import account_id, get_json, inject_sidebar, session_date
 
-st.set_page_config(page_title="实时盈亏监控", layout="wide")
+st.set_page_config(page_title="风控台", layout="wide")
 inject_sidebar()
 
-st.title("③ 实时盈亏监控")
-st.caption("昨日持仓盯市 + 当日成交 − 手续费｜分品种净持仓（昨仓+今成交）｜BS76 希腊值汇总")
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 1400px; }
+    div[data-testid="stMetricValue"] { font-size: 1.35rem; }
+    .cockpit-title { font-size: 1.45rem; font-weight: 700; margin: 0 0 0.4rem 0; }
+    .panel {
+      border: 1px solid #c5ced6; background: #f7f9fb; padding: 0.75rem 0.9rem;
+      border-radius: 2px; margin-bottom: 0.6rem; min-height: 210px;
+    }
+    .panel h4 { margin: 0 0 0.55rem 0; font-size: 0.95rem; color: #1f3a4d;
+      border-bottom: 2px solid #1f4e79; padding-bottom: 0.25rem; }
+    .kv { display: flex; justify-content: space-between; font-size: 0.92rem;
+      padding: 0.12rem 0; border-bottom: 1px dotted #d7dee5; }
+    .kv .lab { color: #445; }
+    .kv .val { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .pos { color: #111; } .neg { color: #c0392b; }
+    .hdr { background:#1f4e79; color:#fff; padding:0.35rem 0.6rem; font-weight:600; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 sess = session_date()
 acct = account_id()
@@ -26,198 +46,178 @@ if not sess:
     st.warning("请设置监控交易日")
     st.stop()
 
-if st.button("刷新盈亏 / 希腊值", type="primary"):
-    st.session_state["_pnl_refresh"] = True
+top_l, top_r = st.columns([3, 1])
+with top_l:
+    st.markdown('<div class="cockpit-title">风控台 · 当日盈亏 / 希腊值 / 分品种</div>', unsafe_allow_html=True)
+with top_r:
+    if st.button("刷新", type="primary", use_container_width=True):
+        st.rerun()
 
 try:
-    report = get_json(
-        "/api/v1/settlement/live-pnl",
-        {"account_id": acct, "session_date": sess},
+    data = get_json(
+        "/api/v1/settlement/risk-cockpit",
+        {"account_id": acct, "session_date": sess, "daily_profit_target": 660},
     )
 except Exception as exc:  # noqa: BLE001
-    st.error(f"读取失败: {exc}")
+    st.error(f"读取失败（请确认 API 已启动）: {exc}")
     st.stop()
 
-k1, k2, k3, k4, k5, k6 = st.columns(6)
-k1.metric("期初权益", f"{report['opening_equity']:,.2f}")
-k2.metric("今日总盈亏", f"{report['total_pnl']:,.2f}")
-k3.metric("持仓盯市", f"{report['total_carry_pnl']:,.2f}")
-k4.metric("今日成交盈亏", f"{report['total_today_trade_pnl']:,.2f}")
-k5.metric("手续费", f"{report['total_fees']:,.2f}")
-k6.metric("估算权益", f"{report['estimated_equity']:,.2f}")
+ov = data.get("风控概览") or {}
+gk = data.get("希腊值风控") or {}
+st_ = data.get("压力测试") or {}
+attr = data.get("盈亏归因") or {}
 
-gsum = report.get("greeks_summary") or {}
-g1, g2, g3, g4 = st.columns(4)
-g1.metric("组合净 Δ", f"{gsum.get('total_net_delta', 0):+.3f}")
-g2.metric("组合净 Γ", f"{gsum.get('total_net_gamma', 0):+.5f}")
-g3.metric("组合净 Vega", f"{gsum.get('total_net_vega', 0):+,.1f}")
-g4.metric("组合净 Theta/日", f"{gsum.get('total_net_theta', 0):+,.1f}")
 
-r1, r2, r3 = st.columns(3)
-r1.metric("结算保证金占用", f"{report['margin_occupied_settlement']:,.2f}")
-r2.metric("结算可用", f"{report['available_settlement']:,.2f}")
-r3.metric("结算风险度", f"{report['risk_degree_settlement']:.2f}%")
+def _fmt(v, money=True, signed=True):
+    try:
+        x = float(v)
+    except Exception:
+        return str(v)
+    cls = "neg" if x < 0 else "pos"
+    if money:
+        s = f"{x:+,.2f}" if signed else f"{x:,.2f}"
+    else:
+        s = f"{x:+.4f}" if signed else f"{x:.4f}"
+    return f'<span class="{cls}">{s}</span>'
 
-if report.get("alerts"):
-    for a in report["alerts"]:
+
+def _kv(lab, val_html):
+    return f'<div class="kv"><span class="lab">{lab}</span><span class="val">{val_html}</span></div>'
+
+
+# -------- 三栏概览（对齐 Excel 顶部）--------
+c1, c2, c3 = st.columns([1.15, 1.35, 1.0])
+
+with c1:
+    html = [
+        '<div class="panel"><h4>风控概览</h4>',
+        _kv("套利策略损益", _fmt(ov.get("套利策略损益"))),
+        _kv("CTA策略损益", _fmt(ov.get("CTA策略损益"))),
+        _kv("= 总盈亏", _fmt(ov.get("总盈亏"))),
+        _kv("对冲盈亏", _fmt(ov.get("对冲盈亏"))),
+        _kv("综合(含对冲)", _fmt(ov.get("综合盈亏_含对冲"))),
+        _kv("保证金合计(万)", _fmt(ov.get("保证金合计_万"), signed=False)),
+        _kv("日均盈利目标", _fmt(ov.get("日均盈利目标"), signed=False)),
+        _kv("距目标", _fmt(ov.get("距目标"))),
+        _kv("Δ名义价值总额", _fmt(ov.get("delta名义价值总额"), signed=False)),
+        "</div>",
+    ]
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+with c2:
+    html = [
+        '<div class="panel"><h4>希腊值风控　|　压力测试5%　|　盈亏归因</h4>',
+        '<div class="kv"><span class="lab"></span>'
+        '<span class="val">希腊值&nbsp;&nbsp;|&nbsp;&nbsp;压力测试&nbsp;&nbsp;|&nbsp;&nbsp;归因</span></div>',
+        _kv(
+            "Delta",
+            f'{_fmt(gk.get("组合净Δ"), money=False)} &nbsp;|&nbsp; {_fmt(st_.get("delta"))} &nbsp;|&nbsp; {_fmt(attr.get("delta"))}',
+        ),
+        _kv(
+            "Gamma",
+            f'{_fmt(gk.get("组合净Γ"), money=False)} &nbsp;|&nbsp; {_fmt(st_.get("gamma"))} &nbsp;|&nbsp; {_fmt(attr.get("gamma"))}',
+        ),
+        _kv(
+            "日Theta",
+            f'{_fmt(gk.get("日Theta"))} &nbsp;|&nbsp; {_fmt(st_.get("theta"))} &nbsp;|&nbsp; {_fmt(attr.get("theta"))}',
+        ),
+        _kv(
+            "Vega",
+            f'{_fmt(gk.get("Vega"))} &nbsp;|&nbsp; {_fmt(st_.get("vega"))} &nbsp;|&nbsp; {_fmt(attr.get("vega"))}',
+        ),
+        _kv("压力亏损总额", _fmt(st_.get("total"))),
+        _kv("归因合计", _fmt(attr.get("total"))),
+        f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#667;">'
+        f'压力: 标的±{st_.get("shock_pct", 5)}%取劣侧 + IV冲击{st_.get("iv_shock_pts", 5)}点</div>',
+        "</div>",
+    ]
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+with c3:
+    html = [
+        '<div class="panel"><h4>保证金占用</h4>',
+        _kv("结算保证金", _fmt(ov.get("保证金合计"), signed=False)),
+        _kv("可用资金", _fmt(data.get("available"), signed=False)),
+        _kv("风险度", f'{float(data.get("risk_degree") or 0):.2f}%'),
+        _kv("品种保证金最大占比", f'{ov.get("品种保证金最大占比", 0)}%（{ov.get("最大占比品种","-")}）'),
+        _kv("配置上限", f'{ov.get("配置上限占比", 12)}%'),
+        _kv("期初权益", _fmt(data.get("opening_equity"), signed=False)),
+        "</div>",
+    ]
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+if data.get("alerts"):
+    for a in data["alerts"][:6]:
         st.warning(a)
 
-# ---- 分品种净持仓 ----
-st.subheader("分品种净持仓汇总（昨仓 + 今成交）")
-np_ = report.get("net_positions") or {}
-by_prod = np_.get("by_product") or gsum.get("by_product") or []
-by_u = np_.get("by_underlying") or gsum.get("by_underlying") or []
-
-c_a, c_b = st.columns(2)
-with c_a:
-    st.markdown("**按品种**")
-    if by_prod:
-        pdf = pd.DataFrame(by_prod)
-        cols = [
-            "product",
-            "short_volume",
-            "long_volume",
-            "net_volume",
-            "net_delta",
-            "net_gamma",
-            "net_vega",
-            "net_theta",
-            "margin",
-            "risk_status",
-            "underlyings",
-        ]
-        st.dataframe(pdf[[c for c in cols if c in pdf.columns]], use_container_width=True, hide_index=True)
-    else:
-        st.info("无品种汇总")
-with c_b:
-    st.markdown(
-        f"**合计** 卖持仓 `{np_.get('total_short_volume', 0)}` 手 · "
-        f"买持仓 `{np_.get('total_long_volume', 0)}` 手"
-    )
-
-st.markdown("**按标的合约**")
-if by_u:
-    udf = pd.DataFrame(by_u)
-    show = [
-        "underlying",
-        "product",
-        "F_est",
-        "dte",
-        "y_short",
-        "y_long",
-        "t_short",
-        "t_long",
-        "call_short",
-        "put_short",
-        "call_long",
-        "put_long",
-        "short_volume",
-        "long_volume",
-        "net_volume",
-        "net_delta",
-        "net_vega",
-        "net_theta",
-        "margin",
+# -------- 分品种明细表（对齐 Excel 下部）--------
+st.markdown('<div class="hdr">分品种明细（套利策略 delta / 品种盈亏 / 预估损益 / 保证金）</div>', unsafe_allow_html=True)
+rows = data.get("分品种明细") or []
+if rows:
+    df = pd.DataFrame(rows)
+    show_cols = [
+        "合约",
+        "套利策略delta(张数)",
+        "CTA策略delta",
+        "持仓delta张数汇总",
+        "品种盈亏",
+        "套利策略",
+        "CTA策略",
+        "预估损益",
+        "保证金",
+        "净卖持仓",
+        "昨仓短",
+        "今开短",
         "risk_status",
-    ]
-    st.dataframe(udf[[c for c in show if c in udf.columns]], use_container_width=True, hide_index=True)
-else:
-    st.info("无标的汇总")
-
-# ---- 希腊值明细 ----
-st.subheader("希腊值汇总（BS76）")
-st.caption("Δ/Γ 按手数合计；Vega/Theta 已乘合约乘数（权利金点值）。F 默认由宽跨式行权价中点估计，可手动覆盖。")
-
-legs_g = gsum.get("by_leg") or []
-if legs_g:
-    gdf = pd.DataFrame(legs_g)
-    gcols = [
-        "symbol",
-        "underlying",
-        "option_type",
-        "strike",
-        "net_volume",
         "F",
-        "iv",
-        "dte",
-        "unit_delta",
-        "delta",
-        "gamma",
-        "vega",
-        "theta",
-        "mark",
     ]
-    st.dataframe(gdf[[c for c in gcols if c in gdf.columns]], use_container_width=True, hide_index=True)
+    view = df[[c for c in show_cols if c in df.columns]].copy()
 
-# optional F override
-F_map = report.get("underlying_F") or {}
-if by_u:
-    st.markdown("**覆盖标的期货价 F**")
-    f_edit = st.data_editor(
-        pd.DataFrame(
-            {
-                "underlying": [u["underlying"] for u in by_u],
-                "F": [float(F_map.get(u["underlying"], u.get("F_est") or 0)) for u in by_u],
-            }
-        ),
-        hide_index=True,
-        use_container_width=True,
-        disabled=["underlying"],
-        key="f_editor",
-    )
-    if st.button("保存 F 并重算希腊值"):
-        payload = {str(r["underlying"]): float(r["F"]) for _, r in f_edit.iterrows()}
+    def _color_pnl(val):
         try:
-            post_json(
-                "/api/v1/settlement/underlying-F",
-                {"account_id": acct, "session_date": sess, "underlying_F": payload},
-            )
-            st.success("已更新标的 F")
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001
-            st.error(str(exc))
+            v = float(val)
+        except Exception:
+            return ""
+        if v < 0:
+            return "color: #c0392b; font-weight: 600"
+        return "color: #111"
 
-# ---- 合约盈亏明细 ----
-st.subheader("按合约盈亏明细")
-legs = report.get("by_leg") or []
-if legs:
-    df = pd.DataFrame(legs)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    st.subheader("更新期权标记价格")
-    edit = st.data_editor(
-        pd.DataFrame(
-            {
-                "symbol": [x["symbol"] for x in legs],
-                "mark": [x["mark"] for x in legs],
-                "ref_settle": [x["ref_settle"] for x in legs],
-            }
-        ),
-        hide_index=True,
-        use_container_width=True,
-        disabled=["symbol", "ref_settle"],
-        key="mark_editor",
-    )
-    if st.button("保存标记价格并重算"):
-        marks = {str(r["symbol"]): float(r["mark"]) for _, r in edit.iterrows()}
-        try:
-            post_json(
-                "/api/v1/settlement/marks/batch",
-                {"account_id": acct, "session_date": sess, "marks": marks},
-            )
-            st.success("已更新标记价格")
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001
-            st.error(str(exc))
+    styler = view.style.map(_color_pnl, subset=[c for c in ["品种盈亏", "套利策略", "预估损益"] if c in view.columns])
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=260)
 else:
-    st.info("无持仓腿")
+    st.info("无分品种数据")
 
-st.subheader("按标的盈亏")
-by_u_pnl = report.get("by_underlying") or []
-if by_u_pnl:
-    st.dataframe(pd.DataFrame(by_u_pnl), use_container_width=True, hide_index=True)
+# -------- 对冲明细 + 品种净持仓 --------
+h1, h2 = st.columns(2)
+with h1:
+    st.markdown("**对冲成交（期货）**")
+    hedge = data.get("对冲明细") or []
+    if hedge:
+        st.dataframe(pd.DataFrame(hedge), use_container_width=True, hide_index=True)
+        st.caption(f"对冲盈亏合计：{ov.get('对冲盈亏'):,.2f}")
+    else:
+        st.caption("暂无期货对冲成交 — 可在 API `/futures-trades` 录入")
+with h2:
+    st.markdown("**分品种净持仓（昨仓+今成交）**")
+    net = data.get("分品种净持仓") or []
+    if net:
+        ndf = pd.DataFrame(net)
+        cols = ["product", "short_volume", "long_volume", "net_volume", "net_delta", "net_vega", "net_theta", "margin", "risk_status"]
+        st.dataframe(ndf[[c for c in cols if c in ndf.columns]], use_container_width=True, hide_index=True)
+
+with st.expander("期权合约盈亏明细 / 标记价"):
+    pnl = data.get("pnl_report") or {}
+    legs = pnl.get("by_leg") or []
+    if legs:
+        st.dataframe(pd.DataFrame(legs), use_container_width=True, hide_index=True)
+
+with st.expander("希腊值分腿明细 (BS76)"):
+    gs = data.get("greeks_summary") or {}
+    by_leg = gs.get("leg_greeks") or []
+    if by_leg:
+        st.dataframe(pd.DataFrame(by_leg), use_container_width=True, hide_index=True)
 
 st.caption(
-    f"结算日 {report['settlement_date']} · 监控日 {report['session_date']} · "
-    f"昨持仓 {report.get('yesterday_position_count')} · 今成交 {report.get('today_trade_count')}"
+    f"结算日 {data.get('settlement_date')} · 监控日 {data.get('session_date')} · "
+    f"目标日均盈利 {ov.get('日均盈利目标')} · 压力测试标的±{st_.get('shock_pct')}%"
 )

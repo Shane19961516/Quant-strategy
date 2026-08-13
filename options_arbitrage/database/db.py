@@ -11,6 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from .models import (
     DailyPosition,
     DailyTrade,
+    FuturesManualTrade,
     MarkQuote,
     OptionContractCache,
     ScreenerResult,
@@ -277,3 +278,44 @@ def get_marks(session: Session, account_id: str, session_date: str) -> dict[str,
         )
     ).all()
     return {r.symbol: r.price for r in rows}
+
+
+def list_futures_trades(
+    session: Session,
+    account_id: str,
+    session_date: str,
+) -> list[FuturesManualTrade]:
+    return list(
+        session.exec(
+            select(FuturesManualTrade)
+            .where(
+                FuturesManualTrade.account_id == account_id,
+                FuturesManualTrade.session_date == session_date,
+            )
+            .order_by(FuturesManualTrade.created_at.asc())
+        ).all()
+    )
+
+
+def add_futures_trade(session: Session, trade: FuturesManualTrade) -> FuturesManualTrade:
+    session.add(trade)
+    session.commit()
+    session.refresh(trade)
+    return trade
+
+
+def delete_futures_trade(session: Session, pk: int, account_id: str) -> bool:
+    row = session.get(FuturesManualTrade, pk)
+    if not row or row.account_id != account_id:
+        return False
+    session.delete(row)
+    session.commit()
+    return True
+
+
+def clear_futures_trades(session: Session, account_id: str, session_date: str) -> int:
+    rows = list_futures_trades(session, account_id, session_date)
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    return len(rows)
