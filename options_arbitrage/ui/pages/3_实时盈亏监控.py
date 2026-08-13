@@ -172,18 +172,7 @@ if rows:
         "F",
     ]
     view = df[[c for c in show_cols if c in df.columns]].copy()
-
-    def _color_pnl(val):
-        try:
-            v = float(val)
-        except Exception:
-            return ""
-        if v < 0:
-            return "color: #c0392b; font-weight: 600"
-        return "color: #111"
-
-    styler = view.style.map(_color_pnl, subset=[c for c in ["品种盈亏", "套利策略", "预估损益"] if c in view.columns])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=260)
+    st.dataframe(view, use_container_width=True, hide_index=True, height=260)
 else:
     st.info("无分品种数据")
 
