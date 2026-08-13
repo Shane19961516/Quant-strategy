@@ -108,3 +108,54 @@ borrow_rate=0.02, cost_bps=2.0
 2. 下周一开盘按目标权重做**差额调仓**（注意杠杆仓位的融资/融券约束）；
 3. QDII（美股/黄金）建议限价单；
 4. 若组合盘中回撤触发日度止损规则，按风控切债券，等待下次信号日再平衡。
+
+## 每日微信推送（云端定时）
+
+程序：`daily_notify.py`  
+内容：最新策略决策 / 数据日期 / 调仓 Target / **本周策略收益**（周五信号→下交易日开盘调仓，执行日前收盘净值→今日收盘）。
+
+> 重要：微信**不能**只凭手机号直发。需要你用微信扫码绑定推送平台拿到 `token`，再由云端调用 API 推到你的微信。手机号只用于消息抬头展示（或 PushPlus 短信渠道）。
+
+### 1) 获取推送 Token（推荐 PushPlus）
+
+1. 打开 [pushplus.plus](https://www.pushplus.plus/)  
+2. 微信扫码关注并登录，完成实名  
+3. 复制个人 `token`  
+4. （可选）在个人中心绑定手机号 `15111101843`，若要用短信渠道
+
+也可改用 Server酱 `SendKey`，或企业微信群机器人 Webhook。
+
+### 2) 本地试跑
+
+```bash
+cd multi_asset_rotation
+cp .env.example .env
+# 编辑 .env：填入 PUSHPLUS_TOKEN，确认 WECHAT_PHONE
+python daily_notify.py --dry-run          # 只生成报告
+python daily_notify.py                    # 真正推送
+```
+
+报告落盘：`output/daily_notify_latest.txt|html|json`
+
+### 3) GitHub Actions 云端定时（中国时间工作日 16:10）
+
+仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`（UTC 08:10 = 北京 16:10）。
+
+在 GitHub → Settings → Secrets and variables → Actions 添加：
+
+| Secret | 说明 |
+|---|---|
+| `PUSHPLUS_TOKEN` | **必填**（推荐） |
+| `WECHAT_PHONE` | 可选，默认示例手机号仅作抬头 |
+| `SERVERCHAN_SENDKEY` | 可选 |
+| `WECOM_WEBHOOK` | 可选 |
+| `PUSHPLUS_CHANNEL` | 可选，默认 `wechat` |
+
+然后在 Actions 里手动 Run workflow 测试一次。
+
+### 4) 云主机 cron
+
+```bash
+# crontab -e（机器时区设为 Asia/Shanghai）
+10 16 * * 1-5 cd /path/to/multi_asset_rotation && bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
+```
