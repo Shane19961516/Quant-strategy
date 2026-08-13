@@ -206,7 +206,55 @@ with h2:
         cols = ["product", "short_volume", "long_volume", "net_volume", "net_delta", "net_vega", "net_theta", "margin", "risk_status"]
         st.dataframe(ndf[[c for c in cols if c in ndf.columns]], use_container_width=True, hide_index=True)
 
-with st.expander("导入最新价 marks（对齐 Libra rt_price）", expanded=True):
+with st.expander("行情同步（akshare / CTP）— 昨收 + 最新价", expanded=True):
+    st.caption(
+        "数据源规则：①上一交易日收盘价(prev_close)；"
+        "②当前最新价(last)——交易时段内实时，非交易时段默认用最近已收盘交易日收盘价。"
+        "写入 marks / __CLOSE__ / __F__ 后刷新风控台。"
+    )
+    prov = st.selectbox("行情源", ["akshare", "ctp"], index=0)
+    if st.button("从行情源同步并写入 marks", type="primary"):
+        try:
+            from ui.common import post_json
+
+            with st.spinner("正在拉取行情…"):
+                r = post_json(
+                    "/api/v1/settlement/sync-quotes",
+                    {
+                        "account_id": acct,
+                        "session_date": sess,
+                        "provider": prov,
+                        "persist": True,
+                    },
+                )
+            st.success(
+                f"provider={r.get('provider')} · in_session={r.get('in_session')} · "
+                f"写入 {r.get('persisted')} 条 · 错误 {len(r.get('errors') or [])}"
+            )
+            qdf = pd.DataFrame(r.get("quotes") or [])
+            if not qdf.empty:
+                show = [
+                    c
+                    for c in [
+                        "symbol",
+                        "kind",
+                        "prev_close",
+                        "last",
+                        "last_bar_date",
+                        "in_session",
+                        "source",
+                        "note",
+                    ]
+                    if c in qdf.columns
+                ]
+                st.dataframe(qdf[show], use_container_width=True, hide_index=True)
+            if r.get("errors"):
+                st.warning(pd.DataFrame(r["errors"]))
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"同步失败: {exc}")
+
+with st.expander("导入最新价 marks（对齐 Libra rt_price）", expanded=False):
     st.caption(
         "差额主因：本系统曾把结算价当成最新价。请粘贴 Libra「数据总览」的 rt_price，"
         "或 JSON如 {\"AP610C8200\": 30, \"__F__:AP610\": 7855}。"

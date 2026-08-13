@@ -70,6 +70,15 @@ class MarksBatchIn(BaseModel):
     marks: dict[str, float]
 
 
+class SyncQuotesIn(BaseModel):
+    account_id: str = "166308"
+    session_date: str
+    provider: str = "akshare"  # akshare | ctp
+    persist: bool = True
+    underlyings: Optional[list[str]] = None
+    option_symbols: Optional[list[str]] = None
+
+
 class UnderlyingFBatchIn(BaseModel):
     account_id: str = "166308"
     session_date: str
@@ -386,6 +395,48 @@ def set_marks_batch(body: MarksBatchIn) -> dict[str, Any]:
         for sym, px in body.marks.items():
             upsert_mark(session, body.account_id, body.session_date, sym, float(px))
         return {"updated": len(body.marks)}
+
+
+@router.post("/sync-quotes")
+def sync_quotes(body: SyncQuotesIn) -> dict[str, Any]:
+    """
+    从 akshare（或 CTP）拉取标的/期权行情并写入 marks：
+      - 期权最新价 → marks[symbol]
+      - 期权昨收 → __CLOSE__:symbol
+      - 标的最新价 → __F__:underlying
+      - 标的昨收 → __F_CLOSE__:underlying
+    规则：非交易时段最新价 = 上一交易日收盘价。
+    """
+    from data_fetcher.quote_provider import fetch_book_quotes
+
+    with Session(get_engine()) as session:
+        underlyings = list(body.underlyings or [])
+        options = list(body.option_symbols or [])
+        if not underlyings or not options:
+            y_rows = get_yesterday_positions(session, body.account_id)
+            t_rows = list_today_trades(session, body.account_id, body.session_date)
+            if not underlyings:
+                underlyings = sorted(
+                    {p.underlying for p in y_rows} | {t.underlying for t in t_rows if t.underlying}
+                )
+            if not options:
+                options = sorted({p.symbol for p in y_rows} | {t.symbol for t in t_rows})
+
+        payload = fetch_book_quotes(
+            underlyings=underlyings,
+            option_symbols=options,
+            asof=body.session_date,
+            provider=body.provider,
+        )
+        written = 0
+        if body.persist and payload.get("marks"):
+            for sym, px in payload["marks"].items():
+                upsert_mark(session, body.account_id, body.session_date, sym, float(px))
+                written += 1
+        payload["persisted"] = written
+        payload["account_id"] = body.account_id
+        payload["session_date"] = body.session_date
+        return payload
 
 
 def _load_book_inputs(
