@@ -185,6 +185,9 @@ def build_risk_cockpit(
     stress_shock: float = 0.05,
 ) -> dict[str, Any]:
     """Assemble Excel-like 风控概览 payload."""
+    marks = dict(marks)
+    missing_live_n = int(marks.pop("__WARN_MISSING_LIVE__", 0) or 0)
+
     pnl_report = compute_live_pnl(
         account_id=account_id,
         settlement_date=settlement_date,
@@ -269,6 +272,14 @@ def build_risk_cockpit(
                 max_ratio = ratio
                 max_prod = prod
 
+    alerts = list(pnl_report.alerts) + list(greeks.alerts)
+    if missing_live_n > 0:
+        alerts.insert(
+            0,
+            f"有 {missing_live_n} 个昨仓合约缺少最新价 marks（未用结算价冒充）。"
+            f"请从 Libra/行情导入 rt_price，否则昨仓损益为 0、希腊值不准。",
+        )
+
     return {
         "account_id": account_id,
         "settlement_date": settlement_date,
@@ -321,5 +332,5 @@ def build_risk_cockpit(
         "今日成交逐笔": pnl_report.by_trade,
         "greeks_summary": greeks.to_dict(),
         "pnl_report": pnl_report.to_dict(),
-        "alerts": list(pnl_report.alerts) + list(greeks.alerts),
+        "alerts": alerts,
     }

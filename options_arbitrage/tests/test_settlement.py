@@ -251,6 +251,18 @@ class TestSettlementAPI:
         ysyms = {p["symbol"] for p in yp.json()["positions"]}
         assert "V2610-C-4900" not in ysyms
 
+        # 结算导入不得把 settle 写入 marks（否则盯市全错）
+        mk = client.get(
+            "/api/v1/settlement/marks",
+            params={"account_id": "166308", "session_date": "2026-08-13"},
+        )
+        assert mk.status_code == 200
+        marks = mk.json()["marks"]
+        # 仅手工写入的 AP610C8200=27，不应出现其它 settle 种子
+        assert marks.get("AP610C8200") == pytest.approx(27.0)
+        assert "EG2610-C-5200" not in marks
+        assert "V2610-C-4800" not in marks
+
 
 class TestGreeksBook:
     def test_net_positions_and_greeks(self, parsed):

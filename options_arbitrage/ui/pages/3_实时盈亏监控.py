@@ -206,6 +206,58 @@ with h2:
         cols = ["product", "short_volume", "long_volume", "net_volume", "net_delta", "net_vega", "net_theta", "margin", "risk_status"]
         st.dataframe(ndf[[c for c in cols if c in ndf.columns]], use_container_width=True, hide_index=True)
 
+with st.expander("导入最新价 marks（对齐 Libra rt_price）", expanded=True):
+    st.caption(
+        "差额主因：本系统曾把结算价当成最新价。请粘贴 Libra「数据总览」的 rt_price，"
+        "或 JSON如 {\"AP610C8200\": 30, \"__F__:AP610\": 7855}。"
+    )
+    raw_marks = st.text_area(
+        "marks JSON",
+        height=140,
+        placeholder='{"AP610C8200":30,"AP610P7500":25,"__F__:JD2610":3907}',
+    )
+    c_imp1, c_imp2 = st.columns(2)
+    with c_imp1:
+        if st.button("写入 marks", type="primary"):
+            import json as _json
+
+            try:
+                payload = _json.loads(raw_marks.strip() or "{}")
+                if not isinstance(payload, dict) or not payload:
+                    st.error("请提供非空 JSON 对象")
+                else:
+                    from ui.common import post_json
+
+                    r = post_json(
+                        "/api/v1/settlement/marks/batch",
+                        {
+                            "account_id": acct,
+                            "session_date": sess,
+                            "marks": {str(k): float(v) for k, v in payload.items()},
+                        },
+                    )
+                    st.success(f"已更新 {r.get('updated')} 条最新价")
+                    st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"导入失败: {exc}")
+    with c_imp2:
+        try:
+            from ui.common import get_json as _gj
+
+            cur = _gj("/api/v1/settlement/marks", {"account_id": acct, "session_date": sess})
+            st.caption(f"当前已存最新价 {cur.get('count', 0)} 条")
+            if cur.get("marks"):
+                st.dataframe(
+                    pd.DataFrame(
+                        [{"symbol": k, "last": v} for k, v in sorted(cur["marks"].items())]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=160,
+                )
+        except Exception:
+            st.caption("暂无 marks 或 API 未就绪")
+
 with st.expander("今日成交逐笔损益（方向计，不冲抵）"):
     by_trade = data.get("今日成交逐笔") or []
     if by_trade:

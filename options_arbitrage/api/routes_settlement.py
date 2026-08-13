@@ -170,9 +170,8 @@ async def upload_settlement(
     with Session(get_engine()) as session:
         saved = save_settlement_import(session, imp, positions, replace_active=True)
         import_id = int(saved.id) if saved.id is not None else 0
-        # seed marks with settlement 今结算价 for next session
-        for p in parsed.option_positions:
-            upsert_mark(session, acct, session_date, p.symbol, p.settle_price)
+        # 注意：不要把结算价写入 marks。
+        # marks = 最新价（实时/收盘）；结算价只作昨仓基准回退，否则盯市会全错。
 
     return {
         "import_id": import_id,
@@ -355,6 +354,25 @@ def remove_today_trade(pk: int, account_id: str = Query(default="166308")) -> di
         return {"deleted": pk}
 
 
+@router.get("/marks")
+def list_marks(
+    account_id: str = Query(default="166308"),
+    session_date: str = Query(...),
+) -> dict[str, Any]:
+    with Session(get_engine()) as session:
+        marks = get_marks(session, account_id, session_date)
+        live = {k: v for k, v in marks.items() if not k.startswith("__")}
+        meta = {k: v for k, v in marks.items() if k.startswith("__")}
+        return {
+            "account_id": account_id,
+            "session_date": session_date,
+            "count": len(live),
+            "marks": live,
+            "meta": meta,
+            "note": "marks=最新价；__CLOSE__:合约=昨收；__F__:标的=期货价。切勿把结算价当最新价。",
+        }
+
+
 @router.post("/marks")
 def set_mark(body: MarkIn) -> dict[str, Any]:
     with Session(get_engine()) as session:
@@ -381,13 +399,23 @@ def _load_book_inputs(
     sess = session_date or _next_session_date(imp.settlement_date)
     y_rows = get_yesterday_positions(session, account_id)
     t_rows = list_today_trades(session, account_id, sess)
-    marks = get_marks(session, account_id, sess)
+    stored = get_marks(session, account_id, sess)
+
+    # 最新价只来自：手工/导入 marks，或今日成交价兜底。绝不注入结算价。
+    marks: dict[str, float] = {
+        k: float(v) for k, v in stored.items() if not str(k).startswith("__")
+    }
+    for t in t_rows:
+        marks.setdefault(t.symbol, float(t.price))
 
     yesterday = []
+    missing_live: list[str] = []
     for p in y_rows:
-        # 昨仓基准价：优先手工 close（__CLOSE__:symbol），否则 settle（并标记回退）
+        # 昨仓基准价：优先手工 close（__CLOSE__:symbol），否则 settle（回退）
         close_key = f"__CLOSE__:{p.symbol}"
-        close_px = marks.get(close_key)
+        close_px = stored.get(close_key)
+        if p.symbol not in marks:
+            missing_live.append(p.symbol)
         yesterday.append(
             {
                 "symbol": p.symbol,
@@ -405,15 +433,6 @@ def _load_book_inputs(
                 "multiplier": p.multiplier,
             }
         )
-        # 最新价：已有 mark > 今日成交价 > 不强制用 settle（避免希腊值被结算价污染）
-        if p.symbol not in marks:
-            # 仅当完全没有最新价时，才临时用 settle 占位
-            marks[p.symbol] = p.settle_price
-
-    for t in t_rows:
-        # 今日成交价视为更新的最新价（若尚未手工覆盖 mark）
-        # 不覆盖用户已设 mark
-        marks.setdefault(t.symbol, t.price)
 
     today = [
         {
@@ -433,6 +452,9 @@ def _load_book_inputs(
         }
         for t in t_rows
     ]
+    # stash missing-live hint for callers via synthetic mark key (consumed by cockpit)
+    if missing_live:
+        marks["__WARN_MISSING_LIVE__"] = float(len(missing_live))
     return imp, sess, yesterday, today, marks
 
 
@@ -461,6 +483,7 @@ def live_pnl(
     with Session(get_engine()) as session:
         imp, sess, yesterday, today, marks = _load_book_inputs(session, account_id, session_date)
         underlying_F = _underlying_F_from_marks(session, account_id, sess)
+        missing_live_n = int(marks.pop("__WARN_MISSING_LIVE__", 0) or 0)
 
         report = compute_live_pnl(
             account_id=account_id,
@@ -505,6 +528,11 @@ def live_pnl(
         }
         # merge delta-tilt alerts into top-level alerts
         out["alerts"] = list(out.get("alerts") or []) + list(greeks.alerts)
+        if missing_live_n > 0:
+            out["alerts"].insert(
+                0,
+                f"有 {missing_live_n} 个昨仓合约缺少最新价 marks；请导入 Libra/行情 rt_price，勿用结算价冒充最新价。",
+            )
         return out
 
 
