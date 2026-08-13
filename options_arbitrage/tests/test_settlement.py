@@ -121,9 +121,49 @@ class TestLivePnL:
             margin_occupied_settlement=parsed.fund.margin_occupied,
         )
         leg = next(x for x in report.by_leg if x.symbol == "AP610C8400")
-        # (18-15)*2*10 - 2 = 60 - 2 = 58
+        # 卖: -2*(15-18)*10 = 60；total 含费 58
         assert abs(leg.today_trade_pnl - 60.0) < 0.01
         assert abs(leg.total_pnl - 58.0) < 0.01
+
+    def test_close_does_not_offset_yesterday_carry(self, parsed):
+        """平仓只计入今成交损益，不得冲减昨仓数量。"""
+        y = [p.to_dict() for p in parsed.option_positions]
+        # AP610C8200: 昨空 7，昨收/settle=29，最新=27 → 昨仓损益仍按 7 手
+        # 今日买平 5 @ 28 → 今成交: +5*(27-28)*10 = -50
+        trades = [
+            {
+                "symbol": "AP610C8200",
+                "underlying": "AP610",
+                "option_type": "CALL",
+                "strike": 8200,
+                "side": "BUY",
+                "offset": "CLOSE",
+                "price": 28.0,
+                "volume": 5,
+                "fee": 0.0,
+                "multiplier": 10,
+                "trade_id": "C1",
+                "trade_time": "11:00:00",
+                "trade_date": "2026-08-13",
+            }
+        ]
+        report = compute_live_pnl(
+            account_id="166308",
+            settlement_date="2026-08-12",
+            session_date="2026-08-13",
+            yesterday_positions=y,
+            today_trades=trades,
+            marks={"AP610C8200": 27.0},
+            opening_equity=parsed.fund.client_equity,
+            margin_occupied_settlement=parsed.fund.margin_occupied,
+        )
+        leg = next(x for x in report.by_leg if x.symbol == "AP610C8200")
+        assert leg.short_volume == 7  # 昨仓展示数量不因平仓冲减
+        assert abs(leg.carry_pnl - 140.0) < 0.01  # -7*(27-29)*10
+        assert abs(leg.today_trade_pnl - (-50.0)) < 0.01
+        assert abs(leg.total_pnl - 90.0) < 0.01
+        assert len(report.by_trade) == 1
+        assert report.by_trade[0]["pnl"] == -50.0
 
 
 @pytest.fixture()

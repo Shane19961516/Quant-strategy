@@ -1,8 +1,12 @@
-"""Risk cockpit aggregations matching the user's Excel 风控台 layout."""
+"""Risk cockpit aggregations matching the user's Excel 风控台 layout.
+
+套利策略损益 = 昨日持仓损益 + 今日成交损益（只按方向计，不冲抵）。
+底层希腊值 / IV / 理论价一律用 BS76。
+"""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from core.greeks_book import GreeksBookReport, compute_net_positions_and_greeks
@@ -26,10 +30,9 @@ class FuturesTrade:
 
     @property
     def pnl(self) -> float:
-        # long: (last-price)*vol*mult; short: (price-last)*vol*mult
-        if self.side == "BUY":
-            return (self.last - self.price) * self.volume * self.multiplier - self.fee
-        return (self.price - self.last) * self.volume * self.multiplier - self.fee
+        # 方向计：买 +(last-px)*q*m；卖 -(last-px)*q*m
+        sign = 1 if self.side == "BUY" else -1
+        return sign * (self.last - self.price) * self.volume * self.multiplier - self.fee
 
 
 def futures_pnl(trades: list[dict[str, Any]]) -> tuple[float, list[dict[str, Any]]]:
@@ -177,7 +180,6 @@ def build_risk_cockpit(
     risk_degree: float,
     underlying_F: Optional[dict[str, float]] = None,
     futures_trades: Optional[list[dict[str, Any]]] = None,
-    cta_pnl: float = 0.0,
     daily_profit_target: float = 660.0,
     max_product_margin_ratio: float = 0.12,
     stress_shock: float = 0.05,
@@ -203,21 +205,20 @@ def build_risk_cockpit(
         asof=session_date,
     )
 
-    arb_pnl = float(pnl_report.total_pnl)  # option book
+    yday_pnl = float(pnl_report.total_carry_pnl)
+    today_pnl = float(pnl_report.total_today_trade_pnl)
+    fees = float(pnl_report.total_fees)
+    arb_pnl = float(pnl_report.total_pnl)  # 昨仓 + 今成交 - 费
     hedge_pnl, hedge_rows = futures_pnl(futures_trades or [])
-    total_pnl = arb_pnl + cta_pnl
-    # combined day result often shown as arb + hedge in some desks; keep separate like Excel
 
     stress = _stress_components(greeks, shock=stress_shock)
     attribution = _pnl_attribution(greeks, arb_pnl)
 
     # delta notional: sum |net_delta| * F * representative multiplier
     delta_notional = 0.0
-    # per underlying table rows
     pnl_by_u = {r["underlying"]: r for r in pnl_report.by_underlying}
     variety_rows: list[dict[str, Any]] = []
     for u in greeks.by_underlying:
-        # representative multiplier from first leg
         mult = 10.0
         for lg in greeks.leg_greeks:
             if lg.underlying == u.underlying:
@@ -228,7 +229,8 @@ def build_risk_cockpit(
         delta_notional += abs(delta_lots) * u.F_est * mult
         u_pnl = pnl_by_u.get(u.underlying, {})
         variety_pnl = float(u_pnl.get("total_pnl") or 0.0)
-        # 预估损益 ≈ 日theta（权利金衰减）
+        carry_u = float(u_pnl.get("carry_pnl") or 0.0)
+        today_u = float(u_pnl.get("today_trade_pnl") or 0.0)
         est_pnl = round(u.net_theta, 2)
         variety_rows.append(
             {
@@ -236,11 +238,11 @@ def build_risk_cockpit(
                 "品种": u.product,
                 "汇总delta": round(delta_value, 2),
                 "套利策略delta(张数)": round(delta_lots, 4),
-                "CTA策略delta": 0.0,
                 "持仓delta张数汇总": round(delta_lots, 4),
                 "品种盈亏": round(variety_pnl, 2),
+                "昨仓损益": round(carry_u, 2),
+                "今成交损益": round(today_u, 2),
                 "套利策略": round(variety_pnl, 2),
-                "CTA策略": 0.0,
                 "预估损益": est_pnl,
                 "保证金": round(u.margin, 2),
                 "净卖持仓": u.short_volume,
@@ -257,7 +259,6 @@ def build_risk_cockpit(
 
     margin_total = float(margin_occupied)
     margin_wan = round(margin_total / 10000.0, 2)
-    # max product margin ratio among products
     prod_margins = {p.product: p.margin for p in greeks.by_product}
     max_ratio = 0.0
     max_prod = ""
@@ -275,28 +276,37 @@ def build_risk_cockpit(
         "opening_equity": opening_equity,
         "available": available,
         "risk_degree": risk_degree,
+        "model": "BS76",
         "methodology": {
-            "price_basis": "昨仓盈亏基准优先 close（无 close 时才回退 settle）；希腊值用最新 mark + 标的 F(close/最新)",
+            "pnl": (
+                "套利策略损益=昨日持仓损益+今日成交损益（方向计，不冲抵）；"
+                "昨仓: 方向×数量×(最新-昨收)×乘数；"
+                "今成交: 方向×数量×(最新-成交价)×乘数"
+            ),
+            "price_basis": "昨仓基准优先昨收/close（无 close 时回退 settle）；盯市与希腊值用最新价",
             "delta_lots": "期货张数 = 汇总delta / 品种乘数；汇总delta = Σ(单位Δ × 净手数 × 乘数)",
             "delta_value": "汇总delta（点值）= Σ(单位Δ × 净手数 × 乘数)，即标的变动1点的权利金现金敏感度",
-            "greeks_model": "Black-76；IV 由期权最新价反推",
+            "greeks_model": "BS76（Black-76）；IV 由期权最新价反推",
         },
         "风控概览": {
+            "昨日持仓损益": round(yday_pnl, 2),
+            "今日成交损益": round(today_pnl, 2),
+            "手续费": round(fees, 2),
             "套利策略损益": round(arb_pnl, 2),
-            "CTA策略损益": round(cta_pnl, 2),
-            "总盈亏": round(total_pnl, 2),
+            "总盈亏": round(arb_pnl, 2),
             "对冲盈亏": round(hedge_pnl, 2),
-            "综合盈亏_含对冲": round(total_pnl + hedge_pnl, 2),
+            "综合盈亏_含对冲": round(arb_pnl + hedge_pnl, 2),
             "保证金合计": round(margin_total, 2),
             "保证金合计_万": margin_wan,
             "日均盈利目标": daily_profit_target,
-            "距目标": round(total_pnl - daily_profit_target, 2),
+            "距目标": round(arb_pnl - daily_profit_target, 2),
             "delta名义价值总额": round(delta_notional, 2),
             "品种保证金最大占比": round(max_ratio * 100, 2),
             "最大占比品种": max_prod,
             "配置上限占比": round(max_product_margin_ratio * 100, 2),
         },
         "希腊值风控": {
+            "模型": "BS76",
             "组合净Δ_张数": greeks.total_net_delta,
             "组合净Δ": greeks.total_net_delta,
             "组合净Γ": greeks.total_net_gamma,
@@ -308,6 +318,7 @@ def build_risk_cockpit(
         "分品种明细": variety_rows,
         "分品种净持仓": [p.to_dict() for p in greeks.by_product],
         "对冲明细": hedge_rows,
+        "今日成交逐笔": pnl_report.by_trade,
         "greeks_summary": greeks.to_dict(),
         "pnl_report": pnl_report.to_dict(),
         "alerts": list(pnl_report.alerts) + list(greeks.alerts),

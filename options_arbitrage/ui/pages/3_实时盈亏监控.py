@@ -91,9 +91,10 @@ c1, c2, c3 = st.columns([1.15, 1.35, 1.0])
 with c1:
     html = [
         '<div class="panel"><h4>风控概览</h4>',
-        _kv("套利策略损益", _fmt(ov.get("套利策略损益"))),
-        _kv("CTA策略损益", _fmt(ov.get("CTA策略损益"))),
-        _kv("= 总盈亏", _fmt(ov.get("总盈亏"))),
+        _kv("昨日持仓损益", _fmt(ov.get("昨日持仓损益"))),
+        _kv("今日成交损益", _fmt(ov.get("今日成交损益"))),
+        _kv("手续费", _fmt(ov.get("手续费"))),
+        _kv("= 套利策略损益", _fmt(ov.get("套利策略损益"))),
         _kv("对冲盈亏", _fmt(ov.get("对冲盈亏"))),
         _kv("综合(含对冲)", _fmt(ov.get("综合盈亏_含对冲"))),
         _kv("保证金合计(万)", _fmt(ov.get("保证金合计_万"), signed=False)),
@@ -151,7 +152,7 @@ if data.get("alerts"):
         st.warning(a)
 
 # -------- 分品种明细表（对齐 Excel 下部）--------
-st.markdown('<div class="hdr">分品种明细（套利策略 delta / 品种盈亏 / 预估损益 / 保证金）</div>', unsafe_allow_html=True)
+st.markdown('<div class="hdr">分品种明细（BS76 delta / 昨仓+今成交损益 / 预估损益 / 保证金）</div>', unsafe_allow_html=True)
 rows = data.get("分品种明细") or []
 if rows:
     df = pd.DataFrame(rows)
@@ -159,11 +160,11 @@ if rows:
         "合约",
         "汇总delta",
         "套利策略delta(张数)",
-        "CTA策略delta",
         "持仓delta张数汇总",
         "品种盈亏",
+        "昨仓损益",
+        "今成交损益",
         "套利策略",
-        "CTA策略",
         "预估损益",
         "保证金",
         "乘数",
@@ -181,7 +182,9 @@ else:
 meth = data.get("methodology") or {}
 if meth:
     st.caption(
-        f"口径：{meth.get('price_basis', '')}｜"
+        f"模型：{data.get('model') or meth.get('greeks_model', 'BS76')}｜"
+        f"{meth.get('pnl', '')}｜"
+        f"{meth.get('price_basis', '')}｜"
         f"{meth.get('delta_lots', '')}"
     )
 
@@ -202,6 +205,13 @@ with h2:
         ndf = pd.DataFrame(net)
         cols = ["product", "short_volume", "long_volume", "net_volume", "net_delta", "net_vega", "net_theta", "margin", "risk_status"]
         st.dataframe(ndf[[c for c in cols if c in ndf.columns]], use_container_width=True, hide_index=True)
+
+with st.expander("今日成交逐笔损益（方向计，不冲抵）"):
+    by_trade = data.get("今日成交逐笔") or []
+    if by_trade:
+        st.dataframe(pd.DataFrame(by_trade), use_container_width=True, hide_index=True)
+    else:
+        st.caption("暂无今日期权成交")
 
 with st.expander("期权合约盈亏明细 / 标记价"):
     pnl = data.get("pnl_report") or {}

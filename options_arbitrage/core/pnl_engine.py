@@ -1,4 +1,17 @@
-"""Live P&L engine: yesterday settlement positions + today's manual trades."""
+"""Live P&L engine — gross direction PnL (no inventory netting/offset).
+
+套利策略损益 = 昨日持仓损益 + 今日成交损益
+
+昨日持仓损益（逐腿、按方向）:
+  多头: +qty * (最新价 - 昨收) * 乘数
+  空头: -qty * (最新价 - 昨收) * 乘数
+
+今日成交损益（逐笔、按方向，不与昨仓冲抵）:
+  买入: +qty * (最新价 - 成交价) * 乘数
+  卖出: -qty * (最新价 - 成交价) * 乘数
+
+希腊值持仓簿（净持仓）仍由 build_book 提供，仅用于风险/Greeks，不用于本盈亏公式。
+"""
 
 from __future__ import annotations
 
@@ -14,6 +27,8 @@ class MarkPrice:
 
 @dataclass
 class PositionLegState:
+    """Net book for risk/Greeks only (not used for gross PnL)."""
+
     symbol: str
     underlying: str
     option_type: str
@@ -21,16 +36,12 @@ class PositionLegState:
     multiplier: float
     long_volume: int = 0
     short_volume: int = 0
-    # reference settle from yesterday EOD (今结算 of settlement sheet)
-    ref_settle: float = 0.0
-    # volume-weighted open prices for today-opened lots (approximate)
+    ref_settle: float = 0.0  # 昨收/基准价
     long_cost: float = 0.0
     short_cost: float = 0.0
     margin: float = 0.0
-    # lots that came from yesterday (for carry MTM vs ref_settle)
     y_long: int = 0
     y_short: int = 0
-    # lots opened today (for MTM vs trade price)
     t_long: int = 0
     t_short: int = 0
     t_long_cost: float = 0.0
@@ -47,16 +58,18 @@ class LegPnL:
     underlying: str
     option_type: str
     strike: float
-    long_volume: int
-    short_volume: int
-    mark: float
-    ref_settle: float
-    carry_pnl: float
-    today_trade_pnl: float
+    long_volume: int  # 昨仓买持仓（不因今平仓冲减）
+    short_volume: int  # 昨仓卖持仓（不因今平仓冲减）
+    mark: float  # 最新价
+    ref_settle: float  # 昨收（优先 close）
+    carry_pnl: float  # 昨日持仓损益
+    today_trade_pnl: float  # 该合约今日成交损益合计
     fee: float
     total_pnl: float
     margin: float
     multiplier: float
+    today_buy_volume: int = 0
+    today_sell_volume: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -65,56 +78,63 @@ class LegPnL:
 @dataclass
 class LivePnLReport:
     account_id: str
-    settlement_date: str  # yesterday settlement date
-    session_date: str  # today trading date being monitored
+    settlement_date: str
+    session_date: str
     opening_equity: float
     margin_occupied_settlement: float
     available_settlement: float
     risk_degree_settlement: float
-    total_carry_pnl: float
-    total_today_trade_pnl: float
+    total_carry_pnl: float  # 昨日持仓损益合计
+    total_today_trade_pnl: float  # 今日成交损益合计
     total_fees: float
-    total_pnl: float
+    total_pnl: float  # 套利策略损益 = 昨仓 + 今成交 - 费
     estimated_equity: float
     by_leg: list[LegPnL] = field(default_factory=list)
     by_underlying: list[dict[str, Any]] = field(default_factory=list)
+    by_trade: list[dict[str, Any]] = field(default_factory=list)
     alerts: list[str] = field(default_factory=list)
+    methodology: str = (
+        "套利=昨仓损益+今成交损益；"
+        "昨仓: 方向×数量×(最新-昨收)×乘数；"
+        "今成交: 方向×数量×(最新-成交价)×乘数；不冲抵"
+    )
 
     def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        return d
+        return asdict(self)
 
 
-def _apply_close(long_v: int, short_v: int, side: str, volume: int) -> tuple[int, int, int]:
-    """
-    Apply a close trade. Returns (new_long, new_short, closed_volume_applied).
-    BUY close reduces short; SELL close reduces long.
-    """
-    if side == "BUY":
-        closed = min(short_v, volume)
-        return long_v, short_v - closed, closed
-    closed = min(long_v, volume)
-    return long_v - closed, short_v, closed
+def _ref_close(p: dict[str, Any]) -> float:
+    """昨收优先：close > ref_close > ref_price > settle。"""
+    return float(
+        p.get("close_price")
+        or p.get("ref_close")
+        or p.get("ref_price")
+        or p.get("settle_price")
+        or p.get("ref_settle")
+        or 0
+    )
+
+
+def _norm_side(side: Any) -> str:
+    s = str(side or "").strip().upper()
+    if s in {"买", "BUY", "B", "LONG"} or "买" in str(side):
+        return "BUY"
+    return "SELL"
 
 
 def build_book(
     yesterday_positions: list[dict[str, Any]],
     today_trades: list[dict[str, Any]],
 ) -> dict[str, PositionLegState]:
-    """Merge yesterday option positions with today's trades into a live book."""
+    """
+    Net inventory book for Greeks/risk only.
+    PnL must NOT use this for gross attribution — see compute_live_pnl.
+    """
     book: dict[str, PositionLegState] = {}
 
     for p in yesterday_positions:
         sym = p["symbol"]
-        # 优先 close，其次显式 ref_price，最后才 settle（与 Excel 口径对齐）
-        ref = float(
-            p.get("close_price")
-            or p.get("ref_close")
-            or p.get("ref_price")
-            or p.get("settle_price")
-            or p.get("ref_settle")
-            or 0
-        )
+        ref = _ref_close(p)
         leg = PositionLegState(
             symbol=sym,
             underlying=p.get("underlying") or sym,
@@ -132,7 +152,6 @@ def build_book(
         )
         book[sym] = leg
 
-    # sort trades by time if present
     ordered = sorted(
         today_trades,
         key=lambda t: (str(t.get("trade_date") or ""), str(t.get("trade_time") or ""), str(t.get("trade_id") or "")),
@@ -140,7 +159,7 @@ def build_book(
 
     for t in ordered:
         sym = t["symbol"]
-        side = str(t.get("side") or "").upper()
+        side = _norm_side(t.get("side"))
         offset = str(t.get("offset") or "OPEN").upper()
         vol = int(t.get("volume") or 0)
         px = float(t.get("price") or 0)
@@ -153,22 +172,19 @@ def build_book(
                 option_type=t.get("option_type") or "",
                 strike=float(t.get("strike") or 0),
                 multiplier=float(t.get("multiplier") or 10),
-                ref_settle=px,  # no yesterday ref — use trade as anchor for residual
+                ref_settle=px,
             )
         leg = book[sym]
         if t.get("multiplier"):
             leg.multiplier = float(t["multiplier"])
 
         if offset == "CLOSE":
-            # close against yesterday first, then today
             if side == "BUY":
-                # covering short
                 close_y = min(leg.y_short, vol)
                 leg.y_short -= close_y
                 rem = vol - close_y
                 close_t = min(leg.t_short, rem)
                 leg.t_short -= close_t
-                # adjust short cost for today lots remaining — keep simple
                 leg.short_volume = leg.y_short + leg.t_short
             else:
                 close_y = min(leg.y_long, vol)
@@ -178,30 +194,25 @@ def build_book(
                 leg.t_long -= close_t
                 leg.long_volume = leg.y_long + leg.t_long
         else:
-            # OPEN
             if side == "SELL":
-                # weighted avg for today short
                 new_v = leg.t_short + vol
                 if new_v > 0:
                     leg.t_short_cost = (leg.t_short_cost * leg.t_short + px * vol) / new_v
                 leg.t_short = new_v
                 leg.short_volume = leg.y_short + leg.t_short
-                if leg.short_volume > 0:
-                    # overall short cost approx
-                    y_part = leg.short_cost * leg.y_short
-                    # if y_short originally had short_cost from settlement avg
-                    leg.short_cost = (y_part + leg.t_short_cost * leg.t_short) / leg.short_volume
             else:
                 new_v = leg.t_long + vol
                 if new_v > 0:
                     leg.t_long_cost = (leg.t_long_cost * leg.t_long + px * vol) / new_v
                 leg.t_long = new_v
                 leg.long_volume = leg.y_long + leg.t_long
-                if leg.long_volume > 0:
-                    y_part = leg.long_cost * leg.y_long
-                    leg.long_cost = (y_part + leg.t_long_cost * leg.t_long) / leg.long_volume
 
     return book
+
+
+def _direction_pnl(signed_qty: float, last: float, entry: float, mult: float) -> float:
+    """signed_qty: +多 / -空；损益 = signed_qty * (last - entry) * mult。"""
+    return float(signed_qty) * (last - entry) * mult
 
 
 def compute_live_pnl(
@@ -218,49 +229,131 @@ def compute_live_pnl(
     risk_degree_settlement: float = 0.0,
 ) -> LivePnLReport:
     """
-    Carry PnL (yesterday lots): short (ref - mark)*y_short*mult ; long (mark - ref)*y_long*mult
-    Today open PnL: short (trade_cost - mark)*t_short*mult ; long (mark - trade_cost)*t_long*mult
-    Fees: sum of today trade fees
+    Gross PnL — 昨仓与今成交独立计价，不做开平冲抵。
+
+    昨仓:  多 +q*(last-close)*mult；空 -q*(last-close)*mult
+    今成交: 买 +q*(last-px)*mult；卖 -q*(last-px)*mult
     """
-    book = build_book(yesterday_positions, today_trades)
-    fee_by_symbol: dict[str, float] = {}
-    for t in today_trades:
-        fee_by_symbol[t["symbol"]] = fee_by_symbol.get(t["symbol"], 0.0) + float(t.get("fee") or 0)
-
-    legs: list[LegPnL] = []
+    # --- 昨日持仓损益（按昨仓数量，不冲减）---
+    y_pnl_by_sym: dict[str, float] = {}
+    meta_by_sym: dict[str, dict[str, Any]] = {}
     total_carry = 0.0
-    total_today = 0.0
-    total_fees = sum(fee_by_symbol.values())
 
-    for sym, leg in sorted(book.items()):
-        mark = float(marks.get(sym, leg.ref_settle or leg.short_cost or leg.long_cost or 0))
-        mult = leg.multiplier
-        carry = (leg.ref_settle - mark) * leg.y_short * mult + (mark - leg.ref_settle) * leg.y_long * mult
-        today_pnl = (leg.t_short_cost - mark) * leg.t_short * mult + (mark - leg.t_long_cost) * leg.t_long * mult
-        fee = fee_by_symbol.get(sym, 0.0)
-        total = carry + today_pnl - fee
-        total_carry += carry
-        total_today += today_pnl
+    for p in yesterday_positions:
+        sym = p["symbol"]
+        mult = float(p.get("multiplier") or 10)
+        close = _ref_close(p)
+        last = float(marks.get(sym, close))
+        y_long = int(p.get("long_volume") or 0)
+        y_short = int(p.get("short_volume") or 0)
+        # 多头 +，空头 −
+        pnl = _direction_pnl(+y_long, last, close, mult) + _direction_pnl(-y_short, last, close, mult)
+        y_pnl_by_sym[sym] = y_pnl_by_sym.get(sym, 0.0) + pnl
+        total_carry += pnl
+        meta_by_sym[sym] = {
+            "underlying": p.get("underlying") or sym,
+            "option_type": p.get("option_type") or "",
+            "strike": float(p.get("strike") or 0),
+            "multiplier": mult,
+            "long_volume": y_long,
+            "short_volume": y_short,
+            "ref_close": close,
+            "mark": last,
+            "margin": float(p.get("margin") or 0),
+        }
+
+    # --- 今日成交损益（逐笔，不与昨仓冲抵）---
+    t_pnl_by_sym: dict[str, float] = {}
+    buy_vol: dict[str, int] = {}
+    sell_vol: dict[str, int] = {}
+    fee_by_sym: dict[str, float] = {}
+    by_trade: list[dict[str, Any]] = []
+    total_today = 0.0
+    total_fees = 0.0
+
+    for t in today_trades:
+        sym = t["symbol"]
+        side = _norm_side(t.get("side"))
+        vol = int(t.get("volume") or 0)
+        px = float(t.get("price") or 0)
+        fee = float(t.get("fee") or 0)
+        mult = float(t.get("multiplier") or meta_by_sym.get(sym, {}).get("multiplier") or 10)
+        if vol <= 0:
+            continue
+        # 最新价：mark > 成交价兜底
+        last = float(marks.get(sym, px))
+        sign = +1 if side == "BUY" else -1
+        pnl = _direction_pnl(sign * vol, last, px, mult)
+        t_pnl_by_sym[sym] = t_pnl_by_sym.get(sym, 0.0) + pnl
+        total_today += pnl
+        fee_by_sym[sym] = fee_by_sym.get(sym, 0.0) + fee
+        total_fees += fee
+        if side == "BUY":
+            buy_vol[sym] = buy_vol.get(sym, 0) + vol
+        else:
+            sell_vol[sym] = sell_vol.get(sym, 0) + vol
+
+        if sym not in meta_by_sym:
+            meta_by_sym[sym] = {
+                "underlying": t.get("underlying") or sym,
+                "option_type": t.get("option_type") or "",
+                "strike": float(t.get("strike") or 0),
+                "multiplier": mult,
+                "long_volume": 0,
+                "short_volume": 0,
+                "ref_close": 0.0,
+                "mark": last,
+                "margin": 0.0,
+            }
+        else:
+            meta_by_sym[sym]["mark"] = last
+
+        by_trade.append(
+            {
+                "trade_id": t.get("trade_id") or "",
+                "symbol": sym,
+                "underlying": meta_by_sym[sym]["underlying"],
+                "side": side,
+                "offset": str(t.get("offset") or ""),
+                "volume": vol,
+                "price": px,
+                "mark": last,
+                "multiplier": mult,
+                "pnl": round(pnl, 2),
+                "fee": fee,
+                "formula": f"{'+' if sign > 0 else '-'}{vol}*(最新{last}-成交{px})*{mult}",
+            }
+        )
+
+    # --- 按合约汇总展示 ---
+    all_syms = sorted(set(y_pnl_by_sym) | set(t_pnl_by_sym) | set(meta_by_sym))
+    legs: list[LegPnL] = []
+    for sym in all_syms:
+        meta = meta_by_sym.get(sym, {})
+        carry = y_pnl_by_sym.get(sym, 0.0)
+        today_pnl = t_pnl_by_sym.get(sym, 0.0)
+        fee = fee_by_sym.get(sym, 0.0)
         legs.append(
             LegPnL(
                 symbol=sym,
-                underlying=leg.underlying,
-                option_type=leg.option_type,
-                strike=leg.strike,
-                long_volume=leg.long_volume,
-                short_volume=leg.short_volume,
-                mark=mark,
-                ref_settle=leg.ref_settle,
+                underlying=str(meta.get("underlying") or sym),
+                option_type=str(meta.get("option_type") or ""),
+                strike=float(meta.get("strike") or 0),
+                long_volume=int(meta.get("long_volume") or 0),
+                short_volume=int(meta.get("short_volume") or 0),
+                mark=float(meta.get("mark") or marks.get(sym) or 0),
+                ref_settle=float(meta.get("ref_close") or 0),
                 carry_pnl=round(carry, 2),
                 today_trade_pnl=round(today_pnl, 2),
                 fee=round(fee, 2),
-                total_pnl=round(total, 2),
-                margin=round(leg.margin, 2),
-                multiplier=mult,
+                total_pnl=round(carry + today_pnl - fee, 2),
+                margin=float(meta.get("margin") or 0),
+                multiplier=float(meta.get("multiplier") or 10),
+                today_buy_volume=buy_vol.get(sym, 0),
+                today_sell_volume=sell_vol.get(sym, 0),
             )
         )
 
-    # aggregate by underlying
     by_u: dict[str, dict[str, Any]] = {}
     for leg in legs:
         u = by_u.setdefault(
@@ -311,5 +404,6 @@ def compute_live_pnl(
         estimated_equity=round(opening_equity + total_pnl, 2) if opening_equity else round(total_pnl, 2),
         by_leg=legs,
         by_underlying=by_underlying,
+        by_trade=by_trade,
         alerts=alerts,
     )
