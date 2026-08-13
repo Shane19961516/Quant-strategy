@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 # 标的池与角色
 UNIVERSE = {
     "159816": {"name": "地方债0-4Y", "role": "safe", "market": "sz"},
@@ -25,9 +28,9 @@ VIG = "VIG"
 # 非美股风险资产（直接进入风险池）
 CORE_RISK = [GOLD, CN, HK]
 
-# 回测区间
+# 回测/拉数区间（结束日默认滚动到今天，避免写死后无法获取新行情）
 START_DATE = "20200101"
-END_DATE = "20260808"
+END_DATE = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
 # 地方债ETF上市后开始正式轮动（此前无安全垫）
 STRATEGY_START = "2020-09-04"
 

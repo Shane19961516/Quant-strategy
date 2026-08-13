@@ -1,110 +1,54 @@
 {
-  "asof": "2026-08-13 08:39:36 CST",
-  "data_asof": "2026-08-07",
-  "phone_hint": "",
-  "signal_date": "2026-08-07",
-  "exec_date": "next_trading_day_after_signal",
+  "asof": "2026-08-13 09:08:35 CST",
+  "report_day": "2026-08-13",
+  "data_asof": "2026-08-12",
+  "effective_signal": "2026-08-07",
+  "effective_exec": "2026-08-10",
+  "pending_signal": null,
+  "week_note": "行情数据截至 2026-08-12，本周收益为截至该日的收益",
+  "week_return": 0.007677006441528578,
+  "day_return": 0.0019096199843438022,
+  "targets": {
+    "513400": 0.3608066824782608,
+    "159934": 0.32601137388709067,
+    "HK0005": 0.31318194363464863
+  },
+  "ytd": {
+    "ytd_return": 0.24054678390566875,
+    "ann_return": 0.44703714966048325,
+    "ann_vol": 0.14462885170023454,
+    "max_drawdown": -0.06718436705170505,
+    "sharpe": 3.09092649499172,
+    "nav_start": 3.048894742378638,
+    "nav_end": 3.7822965671247215
+  },
+  "monthly_ytd": {
+    "01月": 0.11731679394961225,
+    "02月": 0.017525540727800992,
+    "03月": -0.03698823075062441,
+    "04月": 0.02084407964612245,
+    "05月": 0.058158016828803616,
+    "06月": -0.012577200120430398,
+    "07月": 0.07762471102050861,
+    "08月": -0.014221656354047818
+  },
+  "stats": {
+    "start": "2020-09-04",
+    "end": "2026-08-12",
+    "total_return": 2.7822965671247215,
+    "ann_return": 0.25156309391713916,
+    "ann_vol": 0.10362040392378015,
+    "sharpe_rf0": 2.4277370516928394,
+    "sharpe_rf2pct": 2.2347248722121327,
+    "sortino": 2.6688933447051655,
+    "max_drawdown": -0.06932259391166495,
+    "calmar": 3.6288759511465494,
+    "win_rate": 0.5502008032128514,
+    "n_days": 1494
+  },
   "regime": "allocated",
   "us_pick": "513400",
   "eligible": "HK0005,513400,159934",
   "gross": 1.0,
-  "targets": {
-    "513400": 0.36080718156120073,
-    "159934": 0.3260118248396999,
-    "HK0005": 0.31318099359909923
-  },
-  "week_exec": "2026-08-03",
-  "week_return": -0.02173190910945,
-  "day_return": 0.00012291375843953567,
-  "nav": 3.7534822409294017,
-  "stats": {
-    "ann_return": 0.2505109483582233,
-    "sharpe_rf0": 2.416750484393728,
-    "max_drawdown": -0.0693224459798294
-  },
-  "order": {
-    "signal_date": "2026-08-07",
-    "exec_date": "next_trading_day_after_signal",
-    "sample_ends_on_signal": true,
-    "current_gross": 1.0,
-    "target_gross": 1.0,
-    "previous_target": {
-      "159816": 0.0,
-      "513400": 0.0,
-      "513110": 0.0,
-      "513500": 0.0,
-      "VIG": 0.0,
-      "159934": 0.0,
-      "515450": 0.5852399161278263,
-      "HK0005": 0.7119772407147786
-    },
-    "note": "Friday close signal -> next trading day execution. current_weight is the backtest book still held on the signal close (new signal not executed yet). For live trading, replace current with broker positions.",
-    "orders": [
-      {
-        "code": "159816",
-        "name": "地方债0-4Y",
-        "current_weight": 1.0,
-        "target_weight": 1.1102230246251565e-16,
-        "delta_weight": -0.9999999999999999,
-        "action": "SELL"
-      },
-      {
-        "code": "513400",
-        "name": "道琼斯",
-        "current_weight": 0.0,
-        "target_weight": 0.36080718156120073,
-        "delta_weight": 0.36080718156120073,
-        "action": "BUY"
-      },
-      {
-        "code": "513110",
-        "name": "纳斯达克100",
-        "current_weight": 0.0,
-        "target_weight": 0.0,
-        "delta_weight": 0.0,
-        "action": "HOLD"
-      },
-      {
-        "code": "513500",
-        "name": "标普500",
-        "current_weight": 0.0,
-        "target_weight": 0.0,
-        "delta_weight": 0.0,
-        "action": "HOLD"
-      },
-      {
-        "code": "VIG",
-        "name": "美股红利增长",
-        "current_weight": 0.0,
-        "target_weight": 0.0,
-        "delta_weight": 0.0,
-        "action": "HOLD"
-      },
-      {
-        "code": "159934",
-        "name": "黄金",
-        "current_weight": 0.0,
-        "target_weight": 0.3260118248396999,
-        "delta_weight": 0.3260118248396999,
-        "action": "BUY"
-      },
-      {
-        "code": "515450",
-        "name": "红利低波",
-        "current_weight": 0.0,
-        "target_weight": 0.0,
-        "delta_weight": 0.0,
-        "action": "HOLD"
-      },
-      {
-        "code": "HK0005",
-        "name": "汇丰控股",
-        "current_weight": 0.0,
-        "target_weight": 0.31318099359909923,
-        "delta_weight": 0.31318099359909923,
-        "action": "BUY"
-      }
-    ],
-    "turnover": 0.9999999999999999
-  }
+  "chart": "/workspace/multi_asset_rotation/output/ytd_nav_2026.png"
 }

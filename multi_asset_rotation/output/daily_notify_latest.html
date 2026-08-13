@@ -1,46 +1,169 @@
 
-<h3>多资产轮动策略日报</h3>
-<p><b>生成</b>：2026-08-13 08:39:36 CST<br/>
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;background:#0b1220;color:#e5eefc;padding:16px;border-radius:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:12px;color:#93c5fd;letter-spacing:1px;">MULTI-ASSET ROTATION</div>
+      <div style="font-size:22px;font-weight:760;margin-top:4px;">每日策略简报</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:6px;">2026-08-13 09:08:35 CST</div>
+      <div style='font-size:12px;color:#94a3b8;'>接收人：15111101843</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:12px;color:#94a3b8;">本周收益</div>
+      <div style="font-size:26px;font-weight:800;color:#d93838;">+0.77%</div>
+      <div style="font-size:12px;color:#94a3b8;">今日 +0.19%</div>
+    </div>
+  </div>
 
-<b>数据截至</b>：2026-08-07</p>
+  <div style="margin-top:14px;padding:12px;border-radius:12px;background:linear-gradient(135deg,#1e293b,#111827);border:1px solid #334155;">
+    <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">本周生效说明</div>
+    <div style="font-size:14px;line-height:1.55;">
+      信号 <b>2026-08-07</b>
+      → 执行 <b>2026-08-10</b><br/>
+      <span style="color:#cbd5e1;">自执行日起整周适用，直到下一次再平衡。
+      报告日 2026-08-13，行情截至 2026-08-12。</span>
+      <br/><span style='color:#fbbf24;'>行情数据截至 2026-08-12，本周收益为截至该日的收益</span>
+    </div>
+  </div>
 
-<h3>1. 策略决策</h3>
-<ul>
-<li>最新信号日：2026-08-07</li>
-<li>执行日：next_trading_day_after_signal</li>
-<li>状态 regime：<code>allocated</code></li>
-<li>美股择强：513400</li>
-<li>合格资产：HK0005,513400,159934</li>
-<li>毛敞口 gross：1.000</li>
-<li>金丝雀弱资产数：2</li>
-<li>周度断路器：关闭</li>
-</ul>
+  <div style="display:flex;gap:10px;margin-top:12px;">
+    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
+      <div style="font-size:12px;color:#94a3b8;">2026 YTD</div>
+      <div style="font-size:22px;font-weight:800;color:#d93838;">+24.05%</div>
+    </div>
+    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
+      <div style="font-size:12px;color:#94a3b8;">Sharpe / MDD</div>
+      <div style="font-size:16px;font-weight:700;margin-top:4px;">
+        3.09
+        <span style="color:#94a3b8;font-size:12px;"> / </span>
+        <span style="color:#1f9d55;">-6.72%</span>
+      </div>
+    </div>
+    <div style="flex:1;background:#111827;border:1px solid #334155;border-radius:12px;padding:10px;">
+      <div style="font-size:12px;color:#94a3b8;">全样本年化</div>
+      <div style="font-size:18px;font-weight:750;color:#60a5fa;">25.16%</div>
+    </div>
+  </div>
 
-<h3>2. 调仓 Target（最新信号）</h3>
-<ul><li>513400 道琼斯: 36.08%</li><li>159934 黄金: 32.60%</li><li>HK0005 汇丰控股: 31.32%</li></ul>
-<p>目标换手(相对信号日旧仓)：100.00%</p>
+  <div style="margin-top:14px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
+    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">① 策略决策</div>
+    <div style="font-size:13px;line-height:1.7;color:#334155;">
+      状态 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;">allocated</code>
+      ｜美股择强 <b>513400</b><br/>
+      合格：HK0005,513400,159934<br/>
+      毛敞口 <b>1.000</b>
+      ｜金丝雀弱 2 ｜断路器 关
+    </div>
+  </div>
 
-<h3>3. 本周整体收益</h3>
-<ul>
-<li>本周执行日：2026-08-03</li>
-<li>收益区间：2026-07-31 收盘 → 2026-08-07 收盘</li>
-<li>口径：周五信号 → 下一交易日开盘调仓；执行日前收盘净值 → 今日收盘</li>
-<li><b>本周策略收益：-2.17%</b></li>
-<li>今日策略收益：0.01%</li>
-</ul>
+  <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
+    <div style="font-size:15px;font-weight:750;margin-bottom:4px;">② 本周持仓 Target</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px;">与“本周生效仓”一致（不再单独展示冲突旧仓）</div>
+    
+<div style="margin:8px 0;">
+  <div style="font-size:13px;color:#333;">513400 道琼斯 <b style="float:right;color:#3b82f6">36.08%</b></div>
+  <div style="background:#eef2ff;border-radius:6px;height:10px;overflow:hidden;">
+    <div style="width:100.0%;background:#3b82f6;height:10px;border-radius:6px;"></div>
+  </div>
+</div>
+<div style="margin:8px 0;">
+  <div style="font-size:13px;color:#333;">159934 黄金 <b style="float:right;color:#3b82f6">32.60%</b></div>
+  <div style="background:#eef2ff;border-radius:6px;height:10px;overflow:hidden;">
+    <div style="width:90.4%;background:#3b82f6;height:10px;border-radius:6px;"></div>
+  </div>
+</div>
+<div style="margin:8px 0;">
+  <div style="font-size:13px;color:#333;">HK0005 汇丰控股 <b style="float:right;color:#3b82f6">31.32%</b></div>
+  <div style="background:#eef2ff;border-radius:6px;height:10px;overflow:hidden;">
+    <div style="width:86.8%;background:#3b82f6;height:10px;border-radius:6px;"></div>
+  </div>
+</div>
+  </div>
 
-<h3>4. 组合概览</h3>
-<ul>
-<li>累计净值：3.7535</li>
-<li>年化：25.05%</li>
-<li>Sharpe：2.417</li>
-<li>最大回撤：-6.93%</li>
-</ul>
+  <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
+    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">③ 2026 年初至今曲线与分月</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:6px;">NAV 火花线：<span style="font-size:16px;letter-spacing:1px;">▁▁▁▃▃▄▄▃▃▃▃▃▃▄▄▄▄▅▆▅▆▅▅▅▆▇▇▇</span></div>
+    <div style="font-size:13px;margin-bottom:8px;">
+      YTD <b style="color:#d93838;">+24.05%</b>
+      ｜波动 14.46%
+      ｜回撤 <span style="color:#1f9d55;">-6.72%</span>
+      ｜Sharpe 3.09
+    </div>
+    
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">01月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:100.0%;background:#d93838;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#d93838;font-weight:600;">+11.73%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">02月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:14.9%;background:#d93838;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#d93838;font-weight:600;">+1.75%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">03月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:31.5%;background:#1f9d55;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#1f9d55;font-weight:600;">-3.70%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">04月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:17.8%;background:#d93838;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#d93838;font-weight:600;">+2.08%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">05月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:49.6%;background:#d93838;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#d93838;font-weight:600;">+5.82%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">06月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:10.7%;background:#1f9d55;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#1f9d55;font-weight:600;">-1.26%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">07月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:66.2%;background:#d93838;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#d93838;font-weight:600;">+7.76%</div>
+</div>
+<div style="display:flex;align-items:center;margin:4px 0;font-size:12px;">
+  <div style="width:42px;color:#555;">08月</div>
+  <div style="flex:1;background:#f1f5f9;border-radius:4px;height:8px;margin:0 8px;">
+    <div style="width:12.1%;background:#1f9d55;height:8px;border-radius:4px;"></div>
+  </div>
+  <div style="width:64px;text-align:right;color:#1f9d55;font-weight:600;">-1.42%</div>
+</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:8px;">完整曲线图已生成：output/ytd_nav_2026.png</div>
+  </div>
 
-<h3>5. 数据日期</h3>
-<ul><li>159816 地方债0-4Y: 2026-08-07</li><li>513400 道琼斯: 2026-08-07</li><li>513110 纳斯达克100: 2026-08-07</li><li>513500 标普500: 2026-08-07</li><li>VIG 美股红利增长: 2026-08-07</li><li>159934 黄金: 2026-08-07</li><li>515450 红利低波: 2026-08-07</li><li>HK0005 汇丰控股: 2026-08-07</li></ul>
+  <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
+    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">④ 全样本业绩</div>
+    <div style="font-size:13px;color:#334155;line-height:1.7;">
+      净值 <b>3.7823</b>｜年化 <b>25.16%</b><br/>
+      Sharpe <b>2.428</b>｜MDD <b style="color:#1f9d55;">-6.93%</b>
+    </div>
+  </div>
 
-<h3>6. 本周持仓（已执行）</h3>
-<ul><li>515450 红利低波: 58.52%</li><li>HK0005 汇丰控股: 71.20%</li></ul>
+  <div style="margin-top:12px;background:#111827;border-radius:12px;padding:12px;border:1px solid #334155;">
+    <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">⑤ 数据日期</div>
+    <div style="font-size:12px;color:#cbd5e1;line-height:1.65;">
+      159816 地方债0-4Y: 2026-08-12<br/>513400 道琼斯: 2026-08-12<br/>513110 纳斯达克100: 2026-08-12<br/>513500 标普500: 2026-08-12<br/>VIG 美股红利增长: 2026-08-12<br/>159934 黄金: 2026-08-12<br/>515450 红利低波: 2026-08-12<br/>HK0005 汇丰控股: 2026-08-12
+    </div>
+  </div>
 
-<p style="color:#666">风险提示：历史回测不代表未来；实盘请注意 QDII 溢折价、汇率与融资约束。</p>
+  <div style="margin-top:12px;font-size:11px;color:#94a3b8;line-height:1.5;">
+    风险提示：历史回测不代表未来；实盘需考虑 QDII 溢折价、汇率与融资约束。
+  </div>
+</div>
