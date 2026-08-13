@@ -19,7 +19,10 @@ st.set_page_config(page_title="当日成交录入", layout="wide")
 inject_sidebar()
 
 st.title("② 当日成交录入")
-st.caption("期权与期货分表存储；期货对冲计入风控台「对冲盈亏」。")
+st.caption(
+    "期权与期货分表存储；期货对冲计入风控台「对冲盈亏」。"
+    "API 每次启动会自动清空本页全部手录成交。"
+)
 
 sess = session_date()
 acct = account_id()

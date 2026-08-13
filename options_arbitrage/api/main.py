@@ -16,7 +16,11 @@ from api.routes_charts import router as charts_router
 from api.routes_portfolio import router as portfolio_router
 from api.routes_screener import router as screener_router
 from api.routes_settlement import router as settlement_router
-from database.db import init_db
+from database.db import init_db, get_engine, clear_all_session_trades
+from sqlmodel import Session
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Short Strangle Vol Arbitrage & Settlement Monitor",
@@ -43,6 +47,19 @@ app.include_router(charts_router)
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # 每次启动清空「当日成交录入」（期权 + 期货对冲），避免沿用上一次手录
+    with Session(get_engine()) as session:
+        cleared = clear_all_session_trades(session)
+    logger.info(
+        "startup cleared session trades: options=%s futures=%s",
+        cleared["today_option_trades"],
+        cleared["futures_trades"],
+    )
+    print(
+        f"[startup] cleared today trades: "
+        f"options={cleared['today_option_trades']} futures={cleared['futures_trades']}",
+        flush=True,
+    )
 
 
 @app.get("/health")

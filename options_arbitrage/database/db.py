@@ -252,6 +252,34 @@ def delete_today_trade(session: Session, trade_id_pk: int, account_id: str) -> b
     return True
 
 
+def clear_today_trades(
+    session: Session,
+    account_id: Optional[str] = None,
+    session_date: Optional[str] = None,
+) -> int:
+    """Delete today option trades. Omit filters to clear the whole table (startup wipe)."""
+    q = select(TodayManualTrade)
+    if account_id:
+        q = q.where(TodayManualTrade.account_id == account_id)
+    if session_date:
+        q = q.where(TodayManualTrade.session_date == session_date)
+    rows = list(session.exec(q).all())
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    return len(rows)
+
+
+def clear_all_session_trades(session: Session) -> dict[str, int]:
+    """Wipe all hand-entered option + futures trades (used on API startup)."""
+    opt_n = clear_today_trades(session)
+    fut_rows = list(session.exec(select(FuturesManualTrade)).all())
+    for r in fut_rows:
+        session.delete(r)
+    session.commit()
+    return {"today_option_trades": opt_n, "futures_trades": len(fut_rows)}
+
+
 def upsert_mark(
     session: Session,
     account_id: str,

@@ -20,6 +20,7 @@ from database.db import (
     add_futures_trade,
     add_today_trade,
     clear_futures_trades,
+    clear_today_trades,
     delete_futures_trade,
     delete_today_trade,
     get_active_settlement,
@@ -363,6 +364,17 @@ def remove_today_trade(pk: int, account_id: str = Query(default="166308")) -> di
         if not ok:
             raise HTTPException(status_code=404, detail="trade not found")
         return {"deleted": pk}
+
+
+@router.delete("/today-trades")
+def clear_today(
+    account_id: str = Query(default="166308"),
+    session_date: str = Query(...),
+) -> dict[str, Any]:
+    """清空指定账户/交易日的期权当日成交。"""
+    with Session(get_engine()) as session:
+        n = clear_today_trades(session, account_id=account_id, session_date=session_date)
+        return {"cleared": n, "account_id": account_id, "session_date": session_date}
 
 
 @router.get("/marks")
