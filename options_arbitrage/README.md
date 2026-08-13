@@ -12,7 +12,7 @@
 ## 启动
 
 ```bash
-cd strangle_vol_arbitrage
+cd options_arbitrage
 pip install -r requirements.txt
 
 # 终端 1 — API
