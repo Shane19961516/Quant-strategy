@@ -12,6 +12,16 @@ import pandas as pd
 from config import CODES, PARAMS, SAFE
 
 
+def weight_turnover(w_old: pd.Series, w_new: pd.Series) -> float:
+    """
+    NAV 口径换手：0.5 * L1(Δw)。
+    杠杆簿从 1.5x 切到全债券时可为 >1，表示交易名义超过 1x NAV（经济上合理）。
+    """
+    a = w_old.reindex(CODES).fillna(0.0)
+    b = w_new.reindex(CODES).fillna(0.0)
+    return float((b - a).abs().sum()) / 2.0
+
+
 def map_signal_to_exec(
     signal_weights: pd.DataFrame, calendar: pd.DatetimeIndex
 ) -> Dict[pd.Timestamp, pd.Series]:
@@ -94,13 +104,15 @@ def run_backtest(
             # 默认：下次再平衡强制恢复，避免长期锁死在债券/降杠杆状态
             allow_rebalance = (not stopped) or resume_on_rebalance
             if allow_rebalance:
-                turn = float((desired - cur).abs().sum()) / 2.0
+                turn = weight_turnover(cur, desired)
                 equity *= 1.0 - turn * cost_bps / 10000.0
                 trades.append(
                     {
                         "exec_date": dt,
                         "turnover": turn,
+                        "turnover_note": "nav_notional_l1/2",
                         "cost": turn * cost_bps / 10000.0,
+                        "gross_old": float(cur.sum()),
                         "gross": gs,
                         "event": "rebalance",
                         **{c: float(desired[c]) for c in CODES},
@@ -165,13 +177,15 @@ def run_backtest(
                     if float(new_w.sum()) <= 0:
                         new_w[SAFE] = 1.0
                     event = "daily_dd_delever"
-                turn = float((new_w - cur).abs().sum()) / 2.0
+                turn = weight_turnover(cur, new_w)
                 equity *= 1.0 - turn * cost_bps / 10000.0
                 trades.append(
                     {
                         "exec_date": dt,
                         "turnover": turn,
+                        "turnover_note": "nav_notional_l1/2_may_exceed_1_when_delevering",
                         "cost": turn * cost_bps / 10000.0,
+                        "gross_old": float(cur.sum()),
                         "gross": float(new_w.sum()),
                         "event": event,
                         **{c: float(new_w[c]) for c in CODES},
@@ -186,13 +200,15 @@ def run_backtest(
                 and dd >= -abs(daily_dd_resume)
             ):
                 gs = float(desired.sum()) if float(desired.sum()) > 0 else 1.0
-                turn = float((desired - cur).abs().sum()) / 2.0
+                turn = weight_turnover(cur, desired)
                 equity *= 1.0 - turn * cost_bps / 10000.0
                 trades.append(
                     {
                         "exec_date": dt,
                         "turnover": turn,
+                        "turnover_note": "nav_notional_l1/2",
                         "cost": turn * cost_bps / 10000.0,
+                        "gross_old": float(cur.sum()),
                         "gross": gs,
                         "event": "daily_dd_resume",
                         **{c: float(desired[c]) for c in CODES},

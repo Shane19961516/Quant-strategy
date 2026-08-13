@@ -1,7 +1,20 @@
 {
   "signal_date": "2026-08-07",
   "exec_date": "next_trading_day_after_signal",
-  "note": "Friday close signal -> next trading day open execution (approx). If sample ends on signal Friday, exec_date is the next session in live trading.",
+  "sample_ends_on_signal": true,
+  "current_gross": 1.0,
+  "target_gross": 1.0,
+  "previous_target": {
+    "159816": 0.0,
+    "513400": 0.0,
+    "513110": 0.0,
+    "513500": 0.0,
+    "VIG": 0.0,
+    "159934": 0.0,
+    "515450": 0.5852399161278263,
+    "HK0005": 0.7119772407147786
+  },
+  "note": "Friday close signal -> next trading day execution. current_weight is the backtest book still held on the signal close (new signal not executed yet). For live trading, replace current with broker positions.",
   "orders": [
     {
       "code": "159816",

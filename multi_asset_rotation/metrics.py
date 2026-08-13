@@ -108,8 +108,11 @@ def latest_rebalance_instruction(
     calendar: pd.DatetimeIndex,
 ) -> dict:
     """
-    最新周五信号 -> 下周一执行的差额调仓指令。
-    current ≈ 信号日前一持仓（最近已执行权重）。
+    最新周五信号 -> 下一交易日执行的差额调仓指令。
+
+    current_weight =
+      信号日当天回测持仓（该日尚未执行新信号，故为“信号日收盘仍持有的旧仓”）。
+    实盘请用券商持仓覆盖 current；本字段仅作研究/对照。
     """
     from config import UNIVERSE
 
@@ -117,18 +120,30 @@ def latest_rebalance_instruction(
         return {}
     sig_dt = signal_weights.index.max()
     target = signal_weights.loc[sig_dt].reindex(CODES).fillna(0.0)
-    # 找信号日及之前最近一次已执行持仓
-    hist = weights_daily.loc[:sig_dt]
-    if len(hist) == 0:
-        current = pd.Series(0.0, index=CODES)
-    else:
-        current = hist.iloc[-1].reindex(CODES).fillna(0.0)
 
-    # 下一交易日
+    # 信号日收盘仍持有的仓位（执行在下一交易日）
+    if sig_dt in weights_daily.index:
+        current = weights_daily.loc[sig_dt].reindex(CODES).fillna(0.0)
+    else:
+        hist = weights_daily.loc[:sig_dt]
+        current = (
+            hist.iloc[-1].reindex(CODES).fillna(0.0)
+            if len(hist)
+            else pd.Series(0.0, index=CODES)
+        )
+
+    prev_target = None
+    if len(signal_weights.index) >= 2:
+        prev_target = signal_weights.iloc[-2].reindex(CODES).fillna(0.0)
+
     pos = {d: i for i, d in enumerate(calendar)}
     exec_date = None
-    if sig_dt in pos and pos[sig_dt] + 1 < len(calendar):
-        exec_date = calendar[pos[sig_dt] + 1]
+    sample_ends_on_signal = False
+    if sig_dt in pos:
+        if pos[sig_dt] + 1 < len(calendar):
+            exec_date = calendar[pos[sig_dt] + 1]
+        else:
+            sample_ends_on_signal = True
 
     delta = target - current
     rows = []
@@ -147,8 +162,22 @@ def latest_rebalance_instruction(
         )
     return {
         "signal_date": str(sig_dt.date()),
-        "exec_date": str(exec_date.date()) if exec_date is not None else "next_trading_day_after_signal",
-        "note": "Friday close signal -> next trading day open execution (approx). If sample ends on signal Friday, exec_date is the next session in live trading.",
+        "exec_date": (
+            str(exec_date.date())
+            if exec_date is not None
+            else "next_trading_day_after_signal"
+        ),
+        "sample_ends_on_signal": sample_ends_on_signal,
+        "current_gross": float(current.sum()),
+        "target_gross": float(target.sum()),
+        "previous_target": (
+            {c: float(prev_target[c]) for c in CODES} if prev_target is not None else None
+        ),
+        "note": (
+            "Friday close signal -> next trading day execution. "
+            "current_weight is the backtest book still held on the signal close "
+            "(new signal not executed yet). For live trading, replace current with broker positions."
+        ),
         "orders": rows,
         "turnover": float(delta.abs().sum()) / 2.0,
     }

@@ -1,6 +1,6 @@
 {
   "version": "v3_conditional_leverage_dd_breaker_daily_stop",
-  "note": "硬目标达成：Sharpe>2.3 / 年化>25% / MDD<=8%。升级模块=条件杠杆 + 周度断路器 + 日度债券止损（高波动收紧）。保留 VIG 与 .DJI/.NDX 指数回填。",
+  "note": "硬目标达成：Sharpe>2.3 / 年化>25% / MDD<=8%。升级模块=条件杠杆 + 周度断路器 + 日度债券止损（高波动收紧）。P0工程修复：迟滞内置于周循环，sim/breaker 跟踪执行权重；regime 按真实毛敞口标注；调仓指令明确 current=信号日未执行旧仓。保留 VIG 与 .DJI/.NDX 指数回填。",
   "targets": {
     "sharpe_rf0": ">2.3",
     "ann_return": ">25%",
