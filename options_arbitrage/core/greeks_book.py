@@ -126,12 +126,14 @@ class UnderlyingNetSummary:
     t_long: int
     t_short: int
     margin: float
-    net_delta: float
+    net_delta: float  # 期货张数 = 汇总delta / 乘数
+    net_delta_value: float  # 汇总delta点值
     net_gamma: float
     net_vega: float
     net_theta: float
     risk_status: str
     legs: int
+    price_basis: str = "close_or_mark"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -241,6 +243,13 @@ def compute_net_positions_and_greeks(
         # signed lots: long +, short −
         signed = leg.long_volume - leg.short_volume
         mult = leg.multiplier
+        # 口径对齐 Excel：
+        #   汇总delta(点值) = 单位Δ × 净手数 × 乘数
+        #   期货张数         = 汇总delta / 乘数 = 单位Δ × 净手数
+        delta_value = g.delta * signed * mult
+        delta_lots = delta_value / mult if mult else 0.0
+        gamma_value = g.gamma * signed * mult
+        gamma_lots = gamma_value / mult if mult else 0.0
         leg_greeks.append(
             LegGreeks(
                 symbol=sym,
@@ -255,9 +264,9 @@ def compute_net_positions_and_greeks(
                 F=round(F, 4),
                 iv=round(iv, 6),
                 dte=dte,
-                delta=round(g.delta * signed, 6),
-                gamma=round(g.gamma * signed, 8),
-                vega=round(g.vega * signed * mult, 4),
+                delta=round(delta_lots, 6),  # 期货张数
+                gamma=round(gamma_lots, 8),
+                vega=round(g.vega * signed * mult, 4),  # 权利金现金 / 1% IV
                 theta=round(g.theta * signed * mult, 4),
                 unit_delta=round(g.delta, 6),
                 unit_gamma=round(g.gamma, 8),
@@ -270,6 +279,9 @@ def compute_net_positions_and_greeks(
                 t_short=leg.t_short,
             )
         )
+        # stash cash delta on object for rollup (dynamic attr)
+        leg_greeks[-1].__dict__["_delta_value"] = delta_value
+        leg_greeks[-1].__dict__["_gamma_value"] = gamma_value
 
     # underlying rollup
     u_acc: dict[str, dict[str, Any]] = {}
@@ -292,11 +304,13 @@ def compute_net_positions_and_greeks(
                 "t_long": 0,
                 "t_short": 0,
                 "margin": 0.0,
-                "net_delta": 0.0,
+                "net_delta": 0.0,  # 期货张数
+                "net_delta_value": 0.0,  # 汇总delta点值 = 张数×乘数
                 "net_gamma": 0.0,
                 "net_vega": 0.0,
                 "net_theta": 0.0,
                 "legs": 0,
+                "price_basis": "close_or_mark",
             },
         )
         a["long_volume"] += lg.long_volume
@@ -306,6 +320,7 @@ def compute_net_positions_and_greeks(
         a["t_long"] += lg.t_long
         a["t_short"] += lg.t_short
         a["net_delta"] += lg.delta
+        a["net_delta_value"] += float(lg.__dict__.get("_delta_value") or lg.delta * lg.multiplier)
         a["net_gamma"] += lg.gamma
         a["net_vega"] += lg.vega
         a["net_theta"] += lg.theta
@@ -345,11 +360,13 @@ def compute_net_positions_and_greeks(
                 t_short=a["t_short"],
                 margin=a["margin"],
                 net_delta=nd,
+                net_delta_value=round(a.get("net_delta_value", nd * 10), 4),
                 net_gamma=round(a["net_gamma"], 8),
                 net_vega=round(a["net_vega"], 4),
                 net_theta=round(a["net_theta"], 4),
                 risk_status=_risk_status(nd, delta_tilt),
                 legs=a["legs"],
+                price_basis=a.get("price_basis", "close_or_mark"),
             )
         )
 

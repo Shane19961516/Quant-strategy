@@ -106,6 +106,15 @@ def build_book(
 
     for p in yesterday_positions:
         sym = p["symbol"]
+        # 优先 close，其次显式 ref_price，最后才 settle（与 Excel 口径对齐）
+        ref = float(
+            p.get("close_price")
+            or p.get("ref_close")
+            or p.get("ref_price")
+            or p.get("settle_price")
+            or p.get("ref_settle")
+            or 0
+        )
         leg = PositionLegState(
             symbol=sym,
             underlying=p.get("underlying") or sym,
@@ -114,7 +123,7 @@ def build_book(
             multiplier=float(p.get("multiplier") or 10),
             long_volume=int(p.get("long_volume") or 0),
             short_volume=int(p.get("short_volume") or 0),
-            ref_settle=float(p.get("settle_price") or p.get("ref_settle") or 0),
+            ref_settle=ref,
             long_cost=float(p.get("long_avg_price") or 0),
             short_cost=float(p.get("short_avg_price") or 0),
             margin=float(p.get("margin") or 0),

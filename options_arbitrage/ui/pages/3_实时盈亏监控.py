@@ -157,6 +157,7 @@ if rows:
     df = pd.DataFrame(rows)
     show_cols = [
         "合约",
+        "汇总delta",
         "套利策略delta(张数)",
         "CTA策略delta",
         "持仓delta张数汇总",
@@ -165,16 +166,24 @@ if rows:
         "CTA策略",
         "预估损益",
         "保证金",
+        "乘数",
+        "F",
         "净卖持仓",
         "昨仓短",
         "今开短",
         "risk_status",
-        "F",
     ]
     view = df[[c for c in show_cols if c in df.columns]].copy()
     st.dataframe(view, use_container_width=True, hide_index=True, height=260)
 else:
     st.info("无分品种数据")
+
+meth = data.get("methodology") or {}
+if meth:
+    st.caption(
+        f"口径：{meth.get('price_basis', '')}｜"
+        f"{meth.get('delta_lots', '')}"
+    )
 
 # -------- 对冲明细 + 品种净持仓 --------
 h1, h2 = st.columns(2)

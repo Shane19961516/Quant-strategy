@@ -383,25 +383,36 @@ def _load_book_inputs(
     t_rows = list_today_trades(session, account_id, sess)
     marks = get_marks(session, account_id, sess)
 
-    yesterday = [
-        {
-            "symbol": p.symbol,
-            "underlying": p.underlying,
-            "option_type": p.option_type,
-            "strike": p.strike,
-            "long_volume": p.long_volume,
-            "short_volume": p.short_volume,
-            "long_avg_price": p.long_avg_price,
-            "short_avg_price": p.short_avg_price,
-            "settle_price": p.settle_price,
-            "margin": p.margin,
-            "multiplier": p.multiplier,
-        }
-        for p in y_rows
-    ]
+    yesterday = []
     for p in y_rows:
-        marks.setdefault(p.symbol, p.settle_price)
+        # 昨仓基准价：优先手工 close（__CLOSE__:symbol），否则 settle（并标记回退）
+        close_key = f"__CLOSE__:{p.symbol}"
+        close_px = marks.get(close_key)
+        yesterday.append(
+            {
+                "symbol": p.symbol,
+                "underlying": p.underlying,
+                "option_type": p.option_type,
+                "strike": p.strike,
+                "long_volume": p.long_volume,
+                "short_volume": p.short_volume,
+                "long_avg_price": p.long_avg_price,
+                "short_avg_price": p.short_avg_price,
+                "settle_price": p.settle_price,
+                "close_price": close_px,
+                "ref_price": close_px if close_px is not None else p.settle_price,
+                "margin": p.margin,
+                "multiplier": p.multiplier,
+            }
+        )
+        # 最新价：已有 mark > 今日成交价 > 不强制用 settle（避免希腊值被结算价污染）
+        if p.symbol not in marks:
+            # 仅当完全没有最新价时，才临时用 settle 占位
+            marks[p.symbol] = p.settle_price
+
     for t in t_rows:
+        # 今日成交价视为更新的最新价（若尚未手工覆盖 mark）
+        # 不覆盖用户已设 mark
         marks.setdefault(t.symbol, t.price)
 
     today = [
@@ -426,12 +437,18 @@ def _load_book_inputs(
 
 
 def _underlying_F_from_marks(session: Session, account_id: str, session_date: str) -> dict[str, float]:
-    """Reuse MarkQuote table with synthetic key __F__:{underlying} for optional F overrides."""
+    """Reuse MarkQuote table with synthetic key __F__:{underlying} for optional F overrides.
+    Also infer F from futures hedge trades' last price when available.
+    """
     all_marks = get_marks(session, account_id, session_date)
     out: dict[str, float] = {}
     for k, v in all_marks.items():
         if k.startswith("__F__:"):
             out[k.split(":", 1)[1]] = float(v)
+    # futures last as F fallback
+    for r in list_futures_trades(session, account_id, session_date):
+        if r.symbol not in out and r.last:
+            out[r.symbol] = float(r.last)
     return out
 
 

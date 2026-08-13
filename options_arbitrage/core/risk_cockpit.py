@@ -223,16 +223,18 @@ def build_risk_cockpit(
             if lg.underlying == u.underlying:
                 mult = lg.multiplier
                 break
-        delta_lots = u.net_delta  # already in "张数" units of underlying delta
+        delta_lots = u.net_delta  # 期货张数 = 汇总delta / 乘数
+        delta_value = getattr(u, "net_delta_value", delta_lots * mult)
         delta_notional += abs(delta_lots) * u.F_est * mult
         u_pnl = pnl_by_u.get(u.underlying, {})
         variety_pnl = float(u_pnl.get("total_pnl") or 0.0)
-        # 预估损益 ≈ theta + small delta carry proxy
-        est_pnl = round(u.net_theta + u.net_delta * u.F_est * 0.001 * mult, 2)
+        # 预估损益 ≈ 日theta（权利金衰减）
+        est_pnl = round(u.net_theta, 2)
         variety_rows.append(
             {
                 "合约": u.underlying,
                 "品种": u.product,
+                "汇总delta": round(delta_value, 2),
                 "套利策略delta(张数)": round(delta_lots, 4),
                 "CTA策略delta": 0.0,
                 "持仓delta张数汇总": round(delta_lots, 4),
@@ -249,6 +251,7 @@ def build_risk_cockpit(
                 "net_theta": u.net_theta,
                 "risk_status": u.risk_status,
                 "F": u.F_est,
+                "乘数": mult,
             }
         )
 
@@ -272,6 +275,12 @@ def build_risk_cockpit(
         "opening_equity": opening_equity,
         "available": available,
         "risk_degree": risk_degree,
+        "methodology": {
+            "price_basis": "昨仓盈亏基准优先 close（无 close 时才回退 settle）；希腊值用最新 mark + 标的 F(close/最新)",
+            "delta_lots": "期货张数 = 汇总delta / 品种乘数；汇总delta = Σ(单位Δ × 净手数 × 乘数)",
+            "delta_value": "汇总delta（点值）= Σ(单位Δ × 净手数 × 乘数)，即标的变动1点的权利金现金敏感度",
+            "greeks_model": "Black-76；IV 由期权最新价反推",
+        },
         "风控概览": {
             "套利策略损益": round(arb_pnl, 2),
             "CTA策略损益": round(cta_pnl, 2),
@@ -288,6 +297,7 @@ def build_risk_cockpit(
             "配置上限占比": round(max_product_margin_ratio * 100, 2),
         },
         "希腊值风控": {
+            "组合净Δ_张数": greeks.total_net_delta,
             "组合净Δ": greeks.total_net_delta,
             "组合净Γ": greeks.total_net_gamma,
             "日Theta": greeks.total_net_theta,
