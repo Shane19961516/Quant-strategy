@@ -71,6 +71,7 @@ class SyncQuotesIn(BaseModel):
     session_date: str
     provider: str = "akshare"  # akshare | ctp
     persist: bool = True
+    background: bool = True  # akshare 常 >30s，默认后台跑避免 UI 超时
     underlyings: Optional[list[str]] = None
     option_symbols: Optional[list[str]] = None
 
@@ -415,14 +416,35 @@ def set_marks_batch(body: MarksBatchIn) -> dict[str, Any]:
 @router.post("/sync-quotes")
 def sync_quotes(body: SyncQuotesIn) -> dict[str, Any]:
     """
-    从 akshare（或 CTP）拉取标的/期权行情并写入 marks：
-      - 期权最新价 → marks[symbol]
-      - 期权昨收(日盘收盘) → __PREV_CLOSE__:symbol
-      - 标的最新价 → __F__:underlying
-    夜盘口径：昨收=当天下午15:00收盘价；无夜盘品种不写最新价。
+    从 akshare（或 CTP）拉取标的/期权行情并写入 marks。
+    默认 background=True：立即返回，后台拉取（akshare 常需 1–2 分钟）。
+    轮询 GET /feed-status 查看结果。
     """
+    from data_fetcher.auto_feed import feed_status, run_auto_feed_background, sync_quotes_for_account
     from data_fetcher.quote_provider import fetch_book_quotes
 
+    if body.background:
+        # 用统一 auto-feed 路径（带 lock + status），只跑行情
+        kicked = run_auto_feed_background(
+            account_id=body.account_id,
+            include_cfmmc=False,
+            include_quotes=True,
+            session_date=body.session_date,
+            provider=body.provider,
+        )
+        return {
+            "accepted": kicked.get("accepted", True),
+            "background": True,
+            "running": kicked.get("running", True),
+            "message": kicked.get("message")
+            or "quote sync started — poll GET /api/v1/settlement/feed-status",
+            "account_id": body.account_id,
+            "session_date": body.session_date,
+            "provider": body.provider,
+            "feed": feed_status(),
+        }
+
+    # 同步路径（测试/脚本）；可能阻塞 1–2 分钟
     with Session(get_engine()) as session:
         underlyings = list(body.underlyings or [])
         options = list(body.option_symbols or [])
@@ -459,6 +481,7 @@ def sync_quotes(body: SyncQuotesIn) -> dict[str, Any]:
         payload["cleared_live"] = cleared
         payload["account_id"] = body.account_id
         payload["session_date"] = body.session_date
+        payload["background"] = False
         return payload
 
 
@@ -466,13 +489,20 @@ class AutoFeedIn(BaseModel):
     account_id: Optional[str] = None
     include_cfmmc: bool = True
     include_quotes: bool = True
+    background: bool = True
 
 
 @router.post("/auto-feed")
 def auto_feed(body: AutoFeedIn = AutoFeedIn()) -> dict[str, Any]:
-    """手动触发一次自动馈送（启动/定时任务也会跑）。"""
-    from data_fetcher.auto_feed import run_auto_feed
+    """触发自动馈送。默认后台执行，避免 HTTP 超时。"""
+    from data_fetcher.auto_feed import feed_status, run_auto_feed, run_auto_feed_background
 
+    if body.background:
+        return run_auto_feed_background(
+            account_id=body.account_id,
+            include_cfmmc=body.include_cfmmc,
+            include_quotes=body.include_quotes,
+        )
     return run_auto_feed(
         account_id=body.account_id,
         include_cfmmc=body.include_cfmmc,
@@ -485,7 +515,14 @@ def get_feed_status() -> dict[str, Any]:
     from data_fetcher.auto_feed import feed_status
     from core.session_calendar import price_basis_note
 
-    return {"price_basis": price_basis_note(), "feed": feed_status()}
+    st_ = feed_status()
+    return {
+        "price_basis": price_basis_note(),
+        "running": bool(st_.get("running")),
+        "running_since": st_.get("running_since"),
+        "last_error": st_.get("last_error"),
+        "feed": st_,
+    }
 
 
 def _load_book_inputs(

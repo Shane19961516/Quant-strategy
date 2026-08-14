@@ -212,83 +212,81 @@ with h2:
 with st.expander("行情自动同步（akshare / CTP）", expanded=True):
     st.caption(
         "系统启动后自动拉行情，默认每 2 分钟刷新。"
+        "手动同步为后台任务（akshare 常需 1–2 分钟），不会卡死页面；点完后等状态变成完成再刷新风控台。"
         "昨收=日盘15:00收盘价；夜盘21:00后昨收=当天下午收盘（不是结算价）。"
-        "无夜盘品种（AP/JD）夜盘不写最新价，浮动盈亏记 0。"
     )
     try:
         fs = requests.get(f"{api_base()}/api/v1/settlement/feed-status", timeout=5)
         if fs.ok:
             body = fs.json()
             st.info(body.get("price_basis") or "")
+            if body.get("running"):
+                st.warning(f"行情/结算正在后台同步中… 开始于 {body.get('running_since')}")
             q = (body.get("feed") or {}).get("quotes") or {}
             if q:
                 st.caption(
-                    f"最近行情：provider={q.get('provider')} written={q.get('written')} "
-                    f"cleared={q.get('cleared_live')} errors={len(q.get('errors') or [])} "
-                    f"sess={q.get('session_date')}"
+                    f"最近行情：ok={q.get('ok')} provider={q.get('provider')} "
+                    f"written={q.get('written')} cleared={q.get('cleared_live')} "
+                    f"errors={len(q.get('errors') or [])} sess={q.get('session_date')}"
                 )
+            if body.get("last_error"):
+                st.error(f"上次同步错误：{body.get('last_error')}")
     except Exception:
         pass
     prov = st.selectbox("行情源（手动补拉）", ["akshare", "ctp"], index=0)
-    c_sync1, c_sync2 = st.columns(2)
+    c_sync1, c_sync2, c_sync3 = st.columns(3)
     with c_sync1:
-        do_sync = st.button("立即同步行情并写入 marks", type="primary")
+        do_sync = st.button("立即同步行情（后台）", type="primary")
     with c_sync2:
-        do_feed = st.button("跑一轮自动馈送")
+        do_feed = st.button("跑一轮自动馈送（后台）")
+    with c_sync3:
+        do_refresh = st.button("刷新同步状态")
+    if do_refresh:
+        st.rerun()
     if do_feed:
         try:
             from ui.common import post_json
 
             r = post_json(
                 "/api/v1/settlement/auto-feed",
-                {"account_id": acct, "include_cfmmc": False, "include_quotes": True},
+                {
+                    "account_id": acct,
+                    "include_cfmmc": False,
+                    "include_quotes": True,
+                    "background": True,
+                },
+                timeout=15,
             )
-            st.success("馈送完成")
+            if r.get("accepted"):
+                st.success("已在后台启动同步，约 1–2 分钟后点「刷新同步状态」或刷新本页")
+            else:
+                st.info(r.get("message") or "已有同步在跑")
             st.json(r)
-            st.rerun()
         except Exception as exc:  # noqa: BLE001
             st.error(str(exc))
     if do_sync:
         try:
             from ui.common import post_json
 
-            with st.spinner("正在拉取行情…"):
-                r = post_json(
-                    "/api/v1/settlement/sync-quotes",
-                    {
-                        "account_id": acct,
-                        "session_date": sess,
-                        "provider": prov,
-                        "persist": True,
-                    },
-                )
-            st.success(
-                f"provider={r.get('provider')} · night={r.get('night_session')} · "
-                f"basis={r.get('day_close_ref')} · 写入 {r.get('persisted')} · "
-                f"清除无行情 {r.get('cleared_live')} · 错误 {len(r.get('errors') or [])}"
+            r = post_json(
+                "/api/v1/settlement/sync-quotes",
+                {
+                    "account_id": acct,
+                    "session_date": sess,
+                    "provider": prov,
+                    "persist": True,
+                    "background": True,
+                },
+                timeout=15,
             )
-            if r.get("price_basis"):
-                st.caption(r["price_basis"])
-            qdf = pd.DataFrame(r.get("quotes") or [])
-            if not qdf.empty:
-                show = [
-                    c
-                    for c in [
-                        "symbol",
-                        "kind",
-                        "prev_close",
-                        "last",
-                        "last_bar_date",
-                        "in_session",
-                        "source",
-                        "note",
-                    ]
-                    if c in qdf.columns
-                ]
-                st.dataframe(qdf[show], use_container_width=True, hide_index=True)
-            if r.get("errors"):
-                st.warning(pd.DataFrame(r["errors"]))
-            st.rerun()
+            if r.get("accepted") or r.get("background"):
+                st.success(
+                    r.get("message")
+                    or "已在后台拉取行情，约 1–2 分钟后刷新本页查看 written 数量"
+                )
+            else:
+                st.info(r.get("message") or str(r))
+            st.json(r)
         except Exception as exc:  # noqa: BLE001
             st.error(f"同步失败: {exc}")
 
