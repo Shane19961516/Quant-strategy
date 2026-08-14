@@ -61,7 +61,7 @@ PRODUCT_SINA_NAME: dict[str, str] = {
     "SI": "工业硅",
 }
 
-# Sina option product display names (subset supported by option_commodity_*_sina)
+# Sina option product display names (HTML menu subset; incomplete for V/JD)
 PRODUCT_OPTION_SINA: dict[str, str] = {
     "EG": "乙二醇期权",
     "M": "豆粕期权",
@@ -77,9 +77,48 @@ PRODUCT_OPTION_SINA: dict[str, str] = {
     "RU": "橡胶期权",
     "CU": "沪铜期权",
     "AU": "黄金期权",
-    "AP": "苹果期权",  # exchange hist; sina table may be limited
+    "AP": "苹果期权",
     "JD": "鸡蛋期权",
     "V": "聚氯乙烯期权",
+    "EB": "苯乙烯期权",
+    "A": "黄大豆1号期权",
+    "B": "黄大豆2号期权",
+    "Y": "豆油期权",
+    "P": "棕榈油期权",
+    "L": "聚乙烯期权",
+    "PP": "聚丙烯期权",
+}
+
+# Sina OptionService product/exchange codes (works even when HTML menu omits V/JD)
+PRODUCT_OPTION_SINA_CODE: dict[str, tuple[str, str]] = {
+    "V": ("v_o", "dce"),
+    "JD": ("jd_o", "dce"),
+    "EG": ("eg_o", "dce"),
+    "EB": ("eb_o", "dce"),
+    "M": ("m_o", "dce"),
+    "C": ("c_o", "dce"),
+    "I": ("i_o", "dce"),
+    "PG": ("pg_o", "dce"),
+    "A": ("a_o", "dce"),
+    "B": ("b_o", "dce"),
+    "Y": ("y_o", "dce"),
+    "P": ("p_o", "dce"),
+    "L": ("l_o", "dce"),
+    "PP": ("pp_o", "dce"),
+    "CF": ("cf", "czce"),
+    "SR": ("sr", "czce"),
+    "TA": ("ta", "czce"),
+    "MA": ("ma", "czce"),
+    "RM": ("rm", "czce"),
+    "OI": ("oi", "czce"),
+    "RU": ("ru_o", "shfe"),
+    "CU": ("cu_o", "shfe"),
+    "AU": ("au_o", "shfe"),
+    "AG": ("ag_o", "shfe"),
+    "RB": ("rb_o", "shfe"),
+    "AL": ("al_o", "shfe"),
+    "SI": ("si_o", "gfex"),
+    "LC": ("lc_o", "gfex"),
 }
 
 
@@ -472,37 +511,89 @@ class AkshareQuoteProvider:
         )
 
     def _option_board_last(self, info: dict[str, Any], sina: str) -> Optional[float]:
-        import akshare as ak
+        """
+        Live option last via Sina OptionService.
+        Prefer direct product codes (v_o/jd_o/…) — HTML menu omits PVC/鸡蛋 but API works.
+        """
+        import requests
 
         prod = product_code_from_underlying(info["underlying"]).upper()
-        opt_name = PRODUCT_OPTION_SINA.get(prod)
-        if not opt_name:
-            return None
         contract = to_sina_futures_symbol(info["underlying"]).lower()
+        target = to_sina_option_symbol(
+            f"{info['underlying']}-{'C' if info['option_type']=='CALL' else 'P'}-{info['strike']}"
+            if "-" not in str(info.get("underlying", ""))
+            else sina
+        )
+        # sina arg already normalized when provided
+        target = (sina or target).lower()
+
+        code_ex = PRODUCT_OPTION_SINA_CODE.get(prod)
+        if code_ex:
+            product, exchange = code_ex
+            try:
+                url = "https://stock.finance.sina.com.cn/futures/api/openapi.php/OptionService.getOptionData"
+                params = {
+                    "type": "futures",
+                    "product": product,
+                    "exchange": exchange,
+                    "pinzhong": contract,
+                }
+                headers = {
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://stock.finance.sina.com.cn/futures/view/optionsDP.php",
+                }
+                r = requests.get(url, params=params, headers=headers, timeout=15)
+                data = (((r.json() or {}).get("result") or {}).get("data") or {})
+                for side in ("up", "down"):
+                    for row in data.get(side) or []:
+                        if not row:
+                            continue
+                        code = str(row[-1]).lower()
+                        if code != target:
+                            continue
+                        # row: 买量,买价,最新价,卖价,卖量,...
+                        try:
+                            last = float(row[2])
+                        except (TypeError, ValueError):
+                            last = 0.0
+                        if last > 0:
+                            return last
+                        # fallback mid of bid/ask
+                        try:
+                            bid = float(row[1] or 0)
+                            ask = float(row[3] or 0)
+                        except (TypeError, ValueError):
+                            bid = ask = 0.0
+                        if bid > 0 and ask > 0:
+                            return (bid + ask) / 2.0
+                        if bid > 0:
+                            return bid
+                        if ask > 0:
+                            return ask
+            except Exception:
+                pass
+
+        # fallback: akshare HTML-menu table (EG/M/C/… only)
         try:
+            import akshare as ak
+
+            opt_name = PRODUCT_OPTION_SINA.get(prod)
+            if not opt_name:
+                return None
             df = ak.option_commodity_contract_table_sina(symbol=opt_name, contract=contract)
+            if df is None or df.empty or "行权价" not in df.columns:
+                return None
+            strike = float(info["strike"])
+            row = df[df["行权价"].astype(float) == strike]
+            if row.empty:
+                return None
+            r0 = row.iloc[0]
+            col = "看涨合约-最新价" if info["option_type"] == "CALL" else "看跌合约-最新价"
+            if col in r0 and r0[col] == r0[col]:
+                v = float(r0[col])
+                return v if v > 0 else None
         except Exception:
             return None
-        if df is None or df.empty:
-            return None
-        # find strike row
-        strike = float(info["strike"])
-        if "行权价" not in df.columns:
-            return None
-        row = df[df["行权价"].astype(float) == strike]
-        if row.empty:
-            return None
-        r = row.iloc[0]
-        if info["option_type"] == "CALL":
-            col = "看涨合约-最新价"
-        else:
-            col = "看跌合约-最新价"
-        if col in r and r[col] == r[col]:
-            try:
-                v = float(r[col])
-                return v if v > 0 else None
-            except (TypeError, ValueError):
-                return None
         return None
 
 
