@@ -6,13 +6,14 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ui.common import account_id, get_json, inject_sidebar, session_date
+from ui.common import account_id, api_base, get_json, inject_sidebar, session_date
 
 st.set_page_config(page_title="风控台", layout="wide")
 inject_sidebar()
@@ -208,14 +209,46 @@ with h2:
         cols = ["product", "short_volume", "long_volume", "net_volume", "net_delta", "net_vega", "net_theta", "margin", "risk_status"]
         st.dataframe(ndf[[c for c in cols if c in ndf.columns]], use_container_width=True, hide_index=True)
 
-with st.expander("行情同步（akshare / CTP）— 昨收 + 最新价", expanded=True):
+with st.expander("行情自动同步（akshare / CTP）", expanded=True):
     st.caption(
-        "数据源规则：①上一交易日收盘价(prev_close)；"
-        "②当前最新价(last)——交易时段内实时，非交易时段默认用最近已收盘交易日收盘价。"
-        "写入 marks / __PREV_CLOSE__ / __F__ 后刷新风控台。无夜盘品种请勿保留过期最新价。"
+        "系统启动后自动拉行情，默认每 2 分钟刷新。"
+        "昨收=日盘15:00收盘价；夜盘21:00后昨收=当天下午收盘（不是结算价）。"
+        "无夜盘品种（AP/JD）夜盘不写最新价，浮动盈亏记 0。"
     )
-    prov = st.selectbox("行情源", ["akshare", "ctp"], index=0)
-    if st.button("从行情源同步并写入 marks", type="primary"):
+    try:
+        fs = requests.get(f"{api_base()}/api/v1/settlement/feed-status", timeout=5)
+        if fs.ok:
+            body = fs.json()
+            st.info(body.get("price_basis") or "")
+            q = (body.get("feed") or {}).get("quotes") or {}
+            if q:
+                st.caption(
+                    f"最近行情：provider={q.get('provider')} written={q.get('written')} "
+                    f"cleared={q.get('cleared_live')} errors={len(q.get('errors') or [])} "
+                    f"sess={q.get('session_date')}"
+                )
+    except Exception:
+        pass
+    prov = st.selectbox("行情源（手动补拉）", ["akshare", "ctp"], index=0)
+    c_sync1, c_sync2 = st.columns(2)
+    with c_sync1:
+        do_sync = st.button("立即同步行情并写入 marks", type="primary")
+    with c_sync2:
+        do_feed = st.button("跑一轮自动馈送")
+    if do_feed:
+        try:
+            from ui.common import post_json
+
+            r = post_json(
+                "/api/v1/settlement/auto-feed",
+                {"account_id": acct, "include_cfmmc": False, "include_quotes": True},
+            )
+            st.success("馈送完成")
+            st.json(r)
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(str(exc))
+    if do_sync:
         try:
             from ui.common import post_json
 
@@ -230,9 +263,12 @@ with st.expander("行情同步（akshare / CTP）— 昨收 + 最新价", expand
                     },
                 )
             st.success(
-                f"provider={r.get('provider')} · in_session={r.get('in_session')} · "
-                f"写入 {r.get('persisted')} 条 · 错误 {len(r.get('errors') or [])}"
+                f"provider={r.get('provider')} · night={r.get('night_session')} · "
+                f"basis={r.get('day_close_ref')} · 写入 {r.get('persisted')} · "
+                f"清除无行情 {r.get('cleared_live')} · 错误 {len(r.get('errors') or [])}"
             )
+            if r.get("price_basis"):
+                st.caption(r["price_basis"])
             qdf = pd.DataFrame(r.get("quotes") or [])
             if not qdf.empty:
                 show = [
@@ -256,10 +292,10 @@ with st.expander("行情同步（akshare / CTP）— 昨收 + 最新价", expand
         except Exception as exc:  # noqa: BLE001
             st.error(f"同步失败: {exc}")
 
-with st.expander("导入最新价 marks（对齐 Libra rt_price）", expanded=False):
+with st.expander("手工覆盖最新价 marks（可选）", expanded=False):
     st.caption(
-        "差额主因：本系统曾把结算价当成最新价。请粘贴 Libra「数据总览」的 rt_price，"
-        "或 JSON如 {\"AP610C8200\": 30, \"__F__:AP610\": 7855}。"
+        "正常交付不需要手工改价。仅在行情源缺失时临时粘贴 JSON："
+        '{"V2610-C-4800":26,"__PREV_CLOSE__:V2610-C-4800":36,"__F__:V2610":4545}'
     )
     raw_marks = st.text_area(
         "marks JSON",

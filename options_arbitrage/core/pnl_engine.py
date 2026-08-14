@@ -105,18 +105,19 @@ class LivePnLReport:
 
 def _ref_close(p: dict[str, Any]) -> float:
     """
-    昨仓盯市基准价（昨收）:
-      1) 显式昨收 prev_close / __PREV_CLOSE__
-      2) 结算单「今结算价」settle_price（次日即昨结算，国内盯市惯例）
-    注意：不要使用被污染的 close_price/__CLOSE__（常被写成盘中最新价）。
+    昨仓浮动盈亏基准价（昨收）— Libra / 夜盘口径:
+      1) 行情日盘收盘价 prev_close / __PREV_CLOSE__（夜盘21:00后 = 当天下午15:00收盘）
+      2) 显式 ref_close / close_price（仅当来自行情收盘，勿用脏盘中价）
+      3) 回退结算单今结算价 settle_price（无行情时的交易所盯市近似）
     """
     return float(
         p.get("prev_close")
         or p.get("ref_close")
+        or p.get("day_close")
+        or p.get("close_price")
         or p.get("settle_price")
         or p.get("ref_settle")
         or p.get("ref_price")
-        or p.get("close_price")  # 最后才回退
         or 0
     )
 

@@ -20,9 +20,30 @@ st.set_page_config(page_title="结算单导入", layout="wide")
 inject_sidebar()
 
 st.title("① 昨日结算单导入")
-st.caption("上传经纪商「客户交易结算日报」.xls，或从中国期货市场监控中心自动拉取「逐日盯市」结算单作为昨仓。")
+st.caption(
+    "两条交付路径：①配置 CFMMC 账号后由系统自动登录监控中心拉取「逐日盯市」；"
+    "②或手动上传经纪商结算日报 .xls。导入后即为昨仓基线。"
+)
 
-st.subheader("从监控中心自动同步（逐日盯市）")
+# ---- auto status ----
+try:
+    fs = requests.get(f"{api_base()}/api/v1/settlement/feed-status", timeout=5)
+    if fs.ok:
+        body = fs.json()
+        st.info(f"价格口径：{body.get('price_basis')}")
+        feed = body.get("feed") or {}
+        cf = feed.get("cfmmc") or {}
+        if cf:
+            st.caption(
+                f"最近 CFMMC：ok={cf.get('ok')} skipped={cf.get('skipped')} "
+                f"date={cf.get('settlement_date') or cf.get('trade_date')} "
+                f"{cf.get('reason') or cf.get('error') or ''}"
+            )
+except Exception:
+    pass
+
+st.subheader("路径 A · 监控中心自动同步（推荐）")
+st.caption("环境变量 CFMMC_USER / CFMMC_PASSWORD / CFMMC_ACCOUNT_ID 已配置时，API 启动与每个工作日 16:30 会自动拉取。此处可手动补跑。")
 c1, c2, c3 = st.columns([1, 1, 1])
 with c1:
     cfmmc_user = st.text_input(
@@ -44,7 +65,29 @@ with c3:
         placeholder="留空=上一交易日 YYYY-MM-DD",
     )
 skip_same = st.checkbox("若已有同日有效结算单则跳过", value=True)
-if st.button("登录监控中心并导入昨仓", type="primary"):
+b1, b2 = st.columns(2)
+with b1:
+    do_cfmmc = st.button("登录监控中心并导入昨仓", type="primary")
+with b2:
+    do_auto = st.button("触发系统自动馈送（结算+行情）")
+
+if do_auto:
+    with st.spinner("自动馈送中…"):
+        try:
+            r = requests.post(
+                f"{api_base()}/api/v1/settlement/auto-feed",
+                json={"account_id": account_id() or None, "include_cfmmc": True, "include_quotes": True},
+                timeout=180,
+            )
+            if r.ok:
+                st.success("自动馈送完成")
+                st.json(r.json())
+            else:
+                st.error(r.text[:500])
+        except Exception as exc:  # noqa: BLE001
+            st.error(str(exc))
+
+if do_cfmmc:
     payload = {
         "account_id": account_id() or None,
         "trade_date": cfmmc_date or None,
@@ -85,7 +128,7 @@ if st.button("登录监控中心并导入昨仓", type="primary"):
             st.error(f"请求失败（请确认 API 已启动 {api_base()}）: {exc}")
 
 st.divider()
-st.subheader("或手动上传结算单")
+st.subheader("路径 B · 手动上传结算单")
 
 uploaded = st.file_uploader("选择结算单 (.xls)", type=["xls", "xlsx"])
 

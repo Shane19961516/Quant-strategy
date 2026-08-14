@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Generator, Iterable, Optional
 
@@ -303,6 +304,7 @@ def upsert_mark(
     ).first()
     if found:
         found.price = price
+        found.updated_at = datetime.utcnow()
         session.add(found)
         session.commit()
         session.refresh(found)
@@ -312,6 +314,30 @@ def upsert_mark(
     session.commit()
     session.refresh(row)
     return row
+
+
+def delete_marks(
+    session: Session,
+    account_id: str,
+    session_date: str,
+    symbols: list[str],
+) -> int:
+    """Delete specific mark keys (used to clear stale live lasts for no-night products)."""
+    n = 0
+    for sym in symbols:
+        rows = session.exec(
+            select(MarkQuote).where(
+                MarkQuote.account_id == account_id,
+                MarkQuote.session_date == session_date,
+                MarkQuote.symbol == sym,
+            )
+        ).all()
+        for r in rows:
+            session.delete(r)
+            n += 1
+    if n:
+        session.commit()
+    return n
 
 
 def get_marks(session: Session, account_id: str, session_date: str) -> dict[str, float]:

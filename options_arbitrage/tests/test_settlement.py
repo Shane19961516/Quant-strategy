@@ -203,8 +203,8 @@ class TestLivePnL:
         assert report.by_trade[0]["pnl"] == 0.0
         assert "*(最新" in report.by_trade[0]["formula"]
 
-    def test_eg_carry_matches_libra_settle_mtm(self, parsed):
-        """EG 昨仓 + 结算价基准 + Libra 盘中价 → 浮动 1425。"""
+    def test_eg_carry_settle_fallback_when_no_day_close(self, parsed):
+        """无行情昨收时回退结算价：EG short + settle 基准 + mark → 1425。"""
         y = [p.to_dict() for p in parsed.option_positions if p.underlying.startswith("EG")]
         report = compute_live_pnl(
             account_id="166308",

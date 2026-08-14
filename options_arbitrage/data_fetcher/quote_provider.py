@@ -1,8 +1,9 @@
 """Market quote providers: akshare (primary) + optional CTP.
 
 Provides two numbers per instrument:
-1. prev_close — previous trading day's close
-2. last — latest price; if outside trading hours, equals prev_close
+1. prev_close — **日盘 15:00 收盘价** used as 昨收 for live float PnL
+   (night session after 21:00 → same calendar day's afternoon close)
+2. last — latest price; if outside trading hours, equals session close
 """
 
 from __future__ import annotations
@@ -14,6 +15,12 @@ from datetime import date, datetime, time, timedelta
 from typing import Any, Optional, Protocol
 from zoneinfo import ZoneInfo
 
+from core.session_calendar import (
+    is_night_clock,
+    most_recent_day_close_date,
+    price_basis_note,
+    product_has_night_session,
+)
 from core.settlement_parser import parse_option_symbol, product_code_from_underlying
 
 SH_TZ = ZoneInfo("Asia/Shanghai")
@@ -198,31 +205,57 @@ class AkshareQuoteProvider:
         last_row = df.iloc[-1]
         last_bar_date = str(last_row["date"])
         last_close = float(last_row["close"])
+        close_ref_d = most_recent_day_close_date()
+        night = is_night_clock()
+        prod = product_code_from_underlying(underlying).upper()
 
-        if last_bar_date == asof.isoformat() and len(df) >= 2:
+        if night and last_bar_date == close_ref_d.isoformat():
+            prev_close = last_close
+            last = last_close
+            note = f"night_prev=day_close:{last_bar_date}"
+        elif last_bar_date == asof.isoformat() and len(df) >= 2 and not night:
             prev_close = float(df.iloc[-2]["close"])
             last = last_close
+        elif last_bar_date == close_ref_d.isoformat():
+            prev_close = last_close
+            last = last_close
+            note = f"prev=day_close:{last_bar_date}"
         elif last_bar_date == asof.isoformat():
             prev_close = last_close
             last = last_close
             note = "only one bar; prev_close=last_close"
         else:
-            # asof not yet in daily (before open / holiday) → last bar is prev close
             prev_close = last_close
             last = last_close
             note = f"no bar on {asof}; using {last_bar_date} close"
 
-        # In session on asof=today: try realtime last
+        # In session: try realtime last
         today = datetime.now(SH_TZ).date()
-        if in_sess and asof == today:
+        if in_sess and (asof == today or night):
             rt = self._realtime_last(underlying, sina)
             if rt is not None:
                 last = rt
                 note = (note + "; realtime").strip("; ")
         elif not in_sess:
-            # 非交易时段：最新价 = 最近已收盘交易日收盘（通常即 asof 当日收盘）
             last = last_close
             note = (note + "; off-session last=session_close").strip("; ")
+
+        if night and not product_has_night_session(prod):
+            last = None
+            note = (note + "; no_night_product skip_last").strip("; ")
+
+        today = datetime.now(SH_TZ).date()
+        if (
+            in_sess
+            and not night
+            and last is not None
+            and prev_close is not None
+            and abs(float(last) - float(prev_close)) < 1e-9
+            and "realtime" not in note
+            and last_bar_date != today.isoformat()
+        ):
+            last = None
+            note = (note + "; suppress_stale_last").strip("; ")
 
         return InstrumentQuote(
             symbol=underlying,
@@ -300,20 +333,35 @@ class AkshareQuoteProvider:
         last_row = df.iloc[-1]
         last_bar_date = str(last_row["date"])
         last_close = float(last_row["close"])
-        if last_bar_date == asof.isoformat() and len(df) >= 2:
+        close_ref_d = most_recent_day_close_date()
+        night = is_night_clock()
+
+        # --- 昨收 = 最近一次日盘 15:00 收盘价 ---
+        # 夜盘 21:00 后：当天下午收盘价（不是结算价，也不是再往前一天）
+        if night and last_bar_date == close_ref_d.isoformat():
+            prev_close = last_close
+            last = last_close
+            note = (note + f"; night_prev=day_close:{last_bar_date}").strip("; ")
+        elif last_bar_date == asof.isoformat() and len(df) >= 2 and not night:
+            # 日盘：昨收 = 上一交易日收盘
             prev_close = float(df.iloc[-2]["close"])
             last = last_close
+        elif last_bar_date == close_ref_d.isoformat():
+            prev_close = last_close
+            last = last_close
+            note = (note + f"; prev=day_close:{last_bar_date}").strip("; ")
         elif last_bar_date == asof.isoformat():
             prev_close = last_close
             last = last_close
         else:
+            # asof 尚无日 K：用最新已收盘日作为昨收；最新价待 RT
             prev_close = last_close
             last = last_close
-            note = (note + f"; no bar on {asof}").strip("; ")
+            note = (note + f"; no bar on {asof}; bar={last_bar_date}").strip("; ")
 
         # try sina board last while in session
         today = datetime.now(SH_TZ).date()
-        if in_sess and asof == today:
+        if in_sess and (asof == today or night):
             rt = self._option_board_last(info, sina)
             if rt is not None:
                 last = rt
@@ -321,6 +369,25 @@ class AkshareQuoteProvider:
         elif not in_sess:
             last = last_close
             note = (note + "; off-session last=session_close").strip("; ")
+
+        # 无夜盘品种在夜盘时段：不提供 last（调用方不写入 marks）
+        if night and not product_has_night_session(prod):
+            last = None
+            note = (note + "; no_night_product skip_last").strip("; ")
+
+        # 日盘交易中若无 RT、且 last 仍是昨收日盘价 → 不把陈旧收盘当「最新价」
+        today = datetime.now(SH_TZ).date()
+        if (
+            in_sess
+            and not night
+            and last is not None
+            and prev_close is not None
+            and abs(float(last) - float(prev_close)) < 1e-9
+            and "board_rt" not in note
+            and last_bar_date != today.isoformat()
+        ):
+            last = None
+            note = (note + "; suppress_stale_last").strip("; ")
 
         return InstrumentQuote(
             symbol=symbol,
@@ -484,10 +551,12 @@ def fetch_book_quotes(
     asof: Optional[str | date] = None,
     provider: str = "akshare",
 ) -> dict[str, Any]:
-    """Fetch prev_close + last for underlyings and options."""
+    """Fetch prev_close (日盘收盘) + last for underlyings and options."""
     asof_d = _parse_asof(asof)
-    prov = get_quote_provider(provider)
+    prefer = (provider or os.getenv("QUOTE_PROVIDER") or "akshare").lower()
+    prov = get_quote_provider(prefer)
     in_sess = is_cn_futures_trading_session()
+    night = is_night_clock()
     results: list[InstrumentQuote] = []
     errors: list[dict[str, str]] = []
 
@@ -505,29 +574,35 @@ def fetch_book_quotes(
 
     # Build marks payload for settlement sync
     marks: dict[str, float] = {}
+    skip_live: list[str] = []
     for q in results:
-        if q.last is None:
-            continue
         if q.kind == "underlying":
-            marks[f"__F__:{q.symbol}"] = float(q.last)
+            if q.last is not None and float(q.last) > 0:
+                marks[f"__F__:{q.symbol}"] = float(q.last)
             if q.prev_close is not None:
                 marks[f"__F_CLOSE__:{q.symbol}"] = float(q.prev_close)
         else:
-            marks[q.symbol] = float(q.last)
             if q.prev_close is not None:
                 marks[f"__PREV_CLOSE__:{q.symbol}"] = float(q.prev_close)
-                # 兼容旧键名
                 marks[f"__CLOSE__:{q.symbol}"] = float(q.prev_close)
+            if q.last is not None and float(q.last) > 0:
+                marks[q.symbol] = float(q.last)
+            else:
+                skip_live.append(q.symbol)
 
     return {
-        "provider": getattr(prov, "name", provider),
+        "provider": getattr(prov, "name", prefer),
         "asof": asof_d.isoformat(),
         "in_session": in_sess,
+        "night_session": night,
+        "day_close_ref": most_recent_day_close_date().isoformat(),
+        "price_basis": price_basis_note(),
         "quotes": [q.to_dict() for q in results],
         "marks": marks,
+        "clear_live_symbols": skip_live,
         "errors": errors,
         "rules": {
-            "prev_close": "上一交易日收盘价（用于昨仓损益基准）",
-            "last": "交易时段内为最新价；非交易时段默认用最近已收盘交易日收盘价",
+            "prev_close": "日盘15:00收盘价；夜盘21:00后=当天下午收盘价（非结算价）",
+            "last": "交易时段实时最新价；无夜盘品种夜盘不写最新价（浮动=0）",
         },
     }

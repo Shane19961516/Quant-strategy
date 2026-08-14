@@ -22,6 +22,7 @@ from database.db import (
     clear_futures_trades,
     clear_today_trades,
     delete_futures_trade,
+    delete_marks,
     delete_today_trade,
     get_active_settlement,
     get_engine,
@@ -416,10 +417,9 @@ def sync_quotes(body: SyncQuotesIn) -> dict[str, Any]:
     """
     从 akshare（或 CTP）拉取标的/期权行情并写入 marks：
       - 期权最新价 → marks[symbol]
-      - 期权昨收 → __CLOSE__:symbol
+      - 期权昨收(日盘收盘) → __PREV_CLOSE__:symbol
       - 标的最新价 → __F__:underlying
-      - 标的昨收 → __F_CLOSE__:underlying
-    规则：非交易时段最新价 = 上一交易日收盘价。
+    夜盘口径：昨收=当天下午15:00收盘价；无夜盘品种不写最新价。
     """
     from data_fetcher.quote_provider import fetch_book_quotes
 
@@ -443,14 +443,49 @@ def sync_quotes(body: SyncQuotesIn) -> dict[str, Any]:
             provider=body.provider,
         )
         written = 0
-        if body.persist and payload.get("marks"):
-            for sym, px in payload["marks"].items():
-                upsert_mark(session, body.account_id, body.session_date, sym, float(px))
-                written += 1
+        cleared = 0
+        if body.persist:
+            if payload.get("marks"):
+                for sym, px in payload["marks"].items():
+                    upsert_mark(session, body.account_id, body.session_date, sym, float(px))
+                    written += 1
+            cleared = delete_marks(
+                session,
+                body.account_id,
+                body.session_date,
+                list(payload.get("clear_live_symbols") or []),
+            )
         payload["persisted"] = written
+        payload["cleared_live"] = cleared
         payload["account_id"] = body.account_id
         payload["session_date"] = body.session_date
         return payload
+
+
+class AutoFeedIn(BaseModel):
+    account_id: Optional[str] = None
+    include_cfmmc: bool = True
+    include_quotes: bool = True
+
+
+@router.post("/auto-feed")
+def auto_feed(body: AutoFeedIn = AutoFeedIn()) -> dict[str, Any]:
+    """手动触发一次自动馈送（启动/定时任务也会跑）。"""
+    from data_fetcher.auto_feed import run_auto_feed
+
+    return run_auto_feed(
+        account_id=body.account_id,
+        include_cfmmc=body.include_cfmmc,
+        include_quotes=body.include_quotes,
+    )
+
+
+@router.get("/feed-status")
+def get_feed_status() -> dict[str, Any]:
+    from data_fetcher.auto_feed import feed_status
+    from core.session_calendar import price_basis_note
+
+    return {"price_basis": price_basis_note(), "feed": feed_status()}
 
 
 def _load_book_inputs(
@@ -461,13 +496,12 @@ def _load_book_inputs(
     imp = get_active_settlement(session, account_id)
     if not imp:
         raise HTTPException(status_code=404, detail="无有效结算单，请先上传昨日结算单")
-    sess = session_date or _next_session_date(imp.settlement_date)
+    sess = session_date or next_session_date(imp.settlement_date)
     y_rows = get_yesterday_positions(session, account_id)
     t_rows = list_today_trades(session, account_id, sess)
     stored = get_marks(session, account_id, sess)
 
-    # 最新价只来自：手工/导入 marks。绝不注入结算价，也不用成交价冒充最新价
-    # （成交价冒充会导致无夜盘品种被错误盯市，与 Libra 不一致）。
+    # 最新价只来自：自动行情/手工 marks。绝不注入结算价，也不用成交价冒充最新价。
     marks: dict[str, float] = {
         k: float(v) for k, v in stored.items() if not str(k).startswith("__")
     }
@@ -475,9 +509,11 @@ def _load_book_inputs(
     yesterday = []
     missing_live: list[str] = []
     for p in y_rows:
-        # 昨仓基准：默认结算价（次日昨结算）。仅 __PREV_CLOSE__:symbol 可覆盖为行情昨收。
+        # 昨收：优先行情日盘收盘 __PREV_CLOSE__；无则回退结算价
         prev_key = f"__PREV_CLOSE__:{p.symbol}"
         prev_px = stored.get(prev_key)
+        if prev_px is None:
+            prev_px = stored.get(f"__CLOSE__:{p.symbol}")
         if p.symbol not in marks:
             missing_live.append(p.symbol)
         yesterday.append(
@@ -516,7 +552,6 @@ def _load_book_inputs(
         }
         for t in t_rows
     ]
-    # stash missing-live hint for callers via synthetic mark key (consumed by cockpit)
     if missing_live:
         marks["__WARN_MISSING_LIVE__"] = float(len(missing_live))
     return imp, sess, yesterday, today, marks

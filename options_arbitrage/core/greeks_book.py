@@ -330,19 +330,55 @@ def compute_net_positions_and_greeks(
     for sym, leg in sorted(book.items()):
         if leg.long_volume == 0 and leg.short_volume == 0:
             continue
-        mark = float(marks.get(sym, leg.ref_settle or leg.short_cost or leg.long_cost or 0))
+        mark = float(marks.get(sym, 0) or 0)
         F = F_map.get(leg.underlying, 0.0)
         dte = dte_map.get(leg.underlying, 35)
         T = dte / float(year_days)
         opt = leg.option_type if leg.option_type in ("CALL", "PUT") else "CALL"
+        signed = leg.long_volume - leg.short_volume
+        mult = leg.multiplier
+
+        # 无有效最新价：保留持仓行，希腊值置 0（对齐 Libra 无夜盘腿）
+        if mark <= 0:
+            lg = LegGreeks(
+                symbol=sym,
+                underlying=leg.underlying,
+                product=product_code_from_underlying(leg.underlying),
+                option_type=opt,
+                strike=leg.strike,
+                net_volume=signed,
+                long_volume=leg.long_volume,
+                short_volume=leg.short_volume,
+                mark=0.0,
+                F=round(F, 4),
+                iv=0.0,
+                dte=dte,
+                delta=0.0,
+                gamma=0.0,
+                vega=0.0,
+                theta=0.0,
+                unit_delta=0.0,
+                unit_gamma=0.0,
+                unit_vega=0.0,
+                unit_theta=0.0,
+                multiplier=mult,
+                y_long=leg.y_long,
+                y_short=leg.y_short,
+                t_long=leg.t_long,
+                t_short=leg.t_short,
+                cash_vega_1pct=0.0,
+                cash_theta_daily=0.0,
+            )
+            lg.__dict__["_delta_value"] = 0.0
+            lg.__dict__["margin"] = leg.margin
+            leg_greeks.append(lg)
+            continue
+
         iv = _solve_iv(mark, F, leg.strike, T, r, opt)
         try:
             g = black76_greeks(F, leg.strike, T, r, iv, opt)  # type: ignore[arg-type]
         except Exception:
             continue
-        # signed lots: long +, short −
-        signed = leg.long_volume - leg.short_volume
-        mult = leg.multiplier
         # Libra 数据总览：不乘乘数
         delta_lots = g.delta * signed
         gamma_lots = g.gamma * signed
