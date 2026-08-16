@@ -94,24 +94,36 @@ def export_pdf():
     md_path = OUTPUT / f"{code}_fundamental_report.md"
     md_path.write_text(md, encoding="utf-8")
 
-    if builder.exists():
-        subprocess.run(
-            [
-                sys.executable,
-                str(builder),
-                "--input",
-                str(md_path),
-                "--output",
-                str(out_path),
-                "--header",
-                str(title)[:80],
-                "--date",
-                report_date,
-            ],
-            check=True,
-        )
-    else:
-        _write_simple_pdf(md, out_path, title)
+    try:
+        if builder.exists():
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(builder),
+                    "--input",
+                    str(md_path),
+                    "--output",
+                    str(out_path),
+                    "--header",
+                    str(title)[:80],
+                    "--date",
+                    report_date,
+                ],
+                check=True,
+            )
+        else:
+            _write_simple_pdf(md, out_path, title)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    f"PDF 导出失败: {exc}。"
+                    "可先用「导出 Markdown」。若缺少 reportlab，请执行: "
+                    "pip install reportlab -i https://pypi.tuna.tsinghua.edu.cn/simple"
+                ),
+            }
+        ), 500
 
     return send_file(out_path, mimetype="application/pdf", as_attachment=True, download_name=out_path.name)
 
