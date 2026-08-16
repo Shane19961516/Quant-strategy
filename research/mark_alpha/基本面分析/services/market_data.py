@@ -885,10 +885,15 @@ def load_market_bundle(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
         quote = _merge_quote(quote, fetch_us_quote_nasdaq(us_sym))
         fins = fetch_us_financials_eastmoney(us_sym)
         quote = _merge_quote(quote, fins)
-        # derive trailing PE if we have price + EPS
+        # Prefer PE derived from price / TTM EPS over noisy vendor PE fields
         price = quote.get("regularMarketPrice")
         eps = quote.get("trailingEps")
-        if quote.get("trailingPE") in (None, 0) and price and eps not in (None, 0):
+        if price and eps not in (None, 0):
+            try:
+                quote["trailingPE"] = float(price) / float(eps)
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+        elif quote.get("trailingPE") in (None, 0) and price and eps not in (None, 0):
             try:
                 quote["trailingPE"] = float(price) / float(eps)
             except (TypeError, ValueError, ZeroDivisionError):
