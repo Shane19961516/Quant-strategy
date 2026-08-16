@@ -1,0 +1,217 @@
+:root {
+  --paper: #f4edde;
+  --ink: #1b1b18;
+  --muted: #5d5a52;
+  --accent: #d9362b;
+  --rule: #c9c1b0;
+  --panel: #fffaf0;
+  --chip: #efe7d6;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #efe2c8 0%, transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, #e7d7bd 0%, transparent 50%),
+    var(--paper);
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", "Songti SC", "Noto Serif SC", Georgia, serif;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 18px;
+}
+
+.brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.mark {
+  width: 14px;
+  height: 14px;
+  margin-top: 8px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+}
+
+.brand p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search input, .search select, .search button {
+  font: inherit;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: 2px;
+}
+
+.search input {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+
+.search button {
+  cursor: pointer;
+}
+
+.search button.primary {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.search button.ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.chips button {
+  border: 1px solid var(--rule);
+  background: var(--chip);
+  color: var(--muted);
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.status {
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 14px;
+  margin: 8px 0 16px;
+}
+
+.status.error { color: var(--accent); }
+.status.ok { color: #2f5d3a; }
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.9fr);
+  gap: 16px;
+}
+
+.panel {
+  background: color-mix(in srgb, var(--panel) 88%, white);
+  border: 1px solid var(--rule);
+  padding: 14px 16px 16px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quote-bar, .stamp {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chart {
+  width: 100%;
+  height: 420px;
+}
+
+.meta-box {
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.meta-box.muted { color: var(--muted); }
+
+.rating-box {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rating-box strong {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.report-panel {
+  margin-top: 16px;
+}
+
+.report {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Iowan Old Style", "Songti SC", "Noto Serif SC", Georgia, serif;
+  font-size: 14px;
+  line-height: 1.55;
+  max-height: 640px;
+  overflow: auto;
+}
+
+.foot {
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+}
+
+.foot code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+  .brand h1 { font-size: 28px; }
+  .chart { height: 320px; }
+}

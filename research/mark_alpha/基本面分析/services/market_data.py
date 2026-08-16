@@ -1,0 +1,391 @@
+"""Fetch quotes, OHLCV and key fundamentals from Yahoo Finance."""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from typing import Any
+
+
+UA = "Mozilla/5.0 (compatible; MarkAlphaResearch/1.0)"
+
+
+def _get_json(url: str, timeout: int = 25) -> dict[str, Any]:
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"行情接口失败 HTTP {exc.code}: {url}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"行情接口不可用: {exc}") from exc
+
+
+def fetch_chart(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> dict[str, Any]:
+    qs = urllib.parse.urlencode({"range": range_, "interval": interval})
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol)}?{qs}"
+    data = _get_json(url)
+    result = (data.get("chart") or {}).get("result")
+    if not result:
+        err = (data.get("chart") or {}).get("error") or {}
+        raise RuntimeError(err.get("description") or f"未找到代码 {yahoo_symbol}")
+    r0 = result[0]
+    meta = r0.get("meta") or {}
+    ts = r0.get("timestamp") or []
+    quote = ((r0.get("indicators") or {}).get("quote") or [{}])[0]
+    opens, highs, lows, closes, volumes = (
+        quote.get("open") or [],
+        quote.get("high") or [],
+        quote.get("low") or [],
+        quote.get("close") or [],
+        quote.get("volume") or [],
+    )
+    candles = []
+    for i, t in enumerate(ts):
+        o, h, l, c = (
+            opens[i] if i < len(opens) else None,
+            highs[i] if i < len(highs) else None,
+            lows[i] if i < len(lows) else None,
+            closes[i] if i < len(closes) else None,
+        )
+        if None in (o, h, l, c):
+            continue
+        candles.append(
+            {
+                "time": datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d"),
+                "open": float(o),
+                "high": float(h),
+                "low": float(l),
+                "close": float(c),
+                "volume": int(volumes[i] or 0) if i < len(volumes) else 0,
+            }
+        )
+    return {"meta": meta, "candles": candles}
+
+
+def fetch_quote_summary(yahoo_symbol: str) -> dict[str, Any]:
+    modules = ",".join(
+        [
+            "price",
+            "summaryDetail",
+            "defaultKeyStatistics",
+            "financialData",
+            "earningsTrend",
+            "earningsHistory",
+        ]
+    )
+    qs = urllib.parse.urlencode({"modules": modules})
+    for host in ("query2", "query1"):
+        url = (
+            f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/"
+            f"{urllib.parse.quote(yahoo_symbol)}?{qs}"
+        )
+        try:
+            data = _get_json(url)
+            result = (data.get("quoteSummary") or {}).get("result")
+            if result:
+                return result[0]
+        except RuntimeError:
+            continue
+    return {}
+
+
+def fetch_quote_v7(yahoo_symbol: str) -> dict[str, Any]:
+    qs = urllib.parse.urlencode({"symbols": yahoo_symbol})
+    for host in ("query1", "query2"):
+        url = f"https://{host}.finance.yahoo.com/v7/finance/quote?{qs}"
+        try:
+            data = _get_json(url)
+            result = (data.get("quoteResponse") or {}).get("result") or []
+            if result:
+                return result[0]
+        except RuntimeError:
+            continue
+    return {}
+
+
+def fetch_cn_quote_tencent(code6: str) -> dict[str, Any]:
+    """A-share quote via Tencent qt.gtimg.cn."""
+    if not (code6.isdigit() and len(code6) == 6):
+        return {}
+    prefix = "sh" if code6.startswith(("5", "6", "9")) else "sz"
+    url = f"https://qt.gtimg.cn/q={prefix}{code6}"
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            text = resp.read().decode("gbk", errors="replace")
+    except Exception:  # noqa: BLE001
+        return {}
+    if "~" not in text:
+        return {}
+    try:
+        payload = text.split("=", 1)[1].strip().strip(";").strip('"')
+        p = payload.split("~")
+    except Exception:  # noqa: BLE001
+        return {}
+    if len(p) < 50:
+        return {}
+
+    def _f(idx: int) -> float | None:
+        if idx >= len(p) or p[idx] in ("", None):
+            return None
+        try:
+            return float(p[idx])
+        except ValueError:
+            return None
+
+    # p[45] total mkt cap in 亿 CNY; p[39] PE; p[46] PB
+    mcap_yi = _f(45)
+    return {
+        "shortName": p[1] or None,
+        "longName": p[1] or None,
+        "regularMarketPrice": _f(3),
+        "regularMarketPreviousClose": _f(4),
+        "regularMarketChange": _f(31),
+        "regularMarketChangePercent": _f(32),
+        "trailingPE": _f(39),
+        "priceToBook": _f(46),
+        "marketCap": (mcap_yi * 1e8) if mcap_yi is not None else None,
+        "source": "tencent",
+    }
+
+
+def fetch_cn_quote_eastmoney(code6: str) -> dict[str, Any]:
+    """Best-effort A-share snapshot via Eastmoney push2."""
+    if not (code6.isdigit() and len(code6) == 6):
+        return {}
+    market = "1" if code6.startswith(("5", "6", "9")) else "0"
+    fields = "f57,f58,f43,f169,f170,f46,f44,f45,f47,f48,f116,f117,f162,f167,f9,f23,f20,f18"
+    qs = urllib.parse.urlencode(
+        {
+            "secid": f"{market}.{code6}",
+            "fields": fields,
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+        }
+    )
+    url = f"https://push2.eastmoney.com/api/qt/stock/get?{qs}"
+    try:
+        data = _get_json(url)
+    except RuntimeError:
+        return {}
+    d = (data.get("data") or {}) if isinstance(data, dict) else {}
+    if not d:
+        return {}
+
+    def _scaled(v: Any, div: float = 100.0) -> float | None:
+        if v in (None, "-", ""):
+            return None
+        try:
+            return float(v) / div
+        except (TypeError, ValueError):
+            return None
+
+    price = _scaled(d.get("f43"))
+    prev = _scaled(d.get("f18") or d.get("f60"))
+    return {
+        "shortName": d.get("f58"),
+        "regularMarketPrice": price,
+        "regularMarketPreviousClose": prev,
+        "regularMarketChange": _scaled(d.get("f169")),
+        "regularMarketChangePercent": _scaled(d.get("f170")),
+        "marketCap": d.get("f116"),
+        "trailingPE": _scaled(d.get("f9"), 100.0) if d.get("f9") not in (None, "-") else None,
+        "priceToBook": _scaled(d.get("f23"), 100.0) if d.get("f23") not in (None, "-") else None,
+        "epsTrailingTwelveMonths": None,
+        "source": "eastmoney",
+        "raw": {
+            "f9": d.get("f9"),
+            "f23": d.get("f23"),
+            "f116": d.get("f116"),
+            "f20": d.get("f20"),
+        },
+    }
+
+
+def _normalize_cn_multiples(q: dict[str, Any]) -> dict[str, Any]:
+    """Eastmoney PE/PB fields are sometimes *100, sometimes plain."""
+    out = dict(q)
+    for key in ("trailingPE", "priceToBook"):
+        v = out.get(key)
+        if v is None:
+            # try raw
+            raw_key = "f9" if key == "trailingPE" else "f23"
+            raw = (out.get("raw") or {}).get(raw_key)
+            if raw in (None, "-"):
+                continue
+            try:
+                raw_f = float(raw)
+            except (TypeError, ValueError):
+                continue
+            # Heuristic: values > 1000 are almost surely *100 scaled
+            out[key] = raw_f / 100.0 if raw_f > 400 else raw_f
+        else:
+            try:
+                vf = float(v)
+                if vf > 400:
+                    out[key] = vf / 100.0
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def _raw(node: Any, default: Any = None) -> Any:
+    if node is None:
+        return default
+    if isinstance(node, dict):
+        if "raw" in node:
+            return node.get("raw", default)
+        if "fmt" in node:
+            return node.get("fmt", default)
+    return node
+
+
+def snapshot_from_sources(
+    yahoo_symbol: str,
+    chart: dict[str, Any],
+    summary: dict[str, Any],
+    quote: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    meta = chart.get("meta") or {}
+    candles = chart.get("candles") or []
+    quote = quote or {}
+    price_mod = summary.get("price") or {}
+    detail = summary.get("summaryDetail") or {}
+    stats = summary.get("defaultKeyStatistics") or {}
+    fin = summary.get("financialData") or {}
+    trend = summary.get("earningsTrend") or {}
+
+    last = candles[-1]["close"] if candles else meta.get("regularMarketPrice") or quote.get("regularMarketPrice")
+    prev = candles[-2]["close"] if len(candles) >= 2 else meta.get("chartPreviousClose") or quote.get("regularMarketPreviousClose")
+    chg = None
+    chg_pct = None
+    if last is not None and prev not in (None, 0):
+        chg = float(last) - float(prev)
+        chg_pct = chg / float(prev) * 100.0
+
+    highs = [c["high"] for c in candles] or [None]
+    lows = [c["low"] for c in candles] or [None]
+
+    shares = _raw(stats.get("sharesOutstanding")) or quote.get("sharesOutstanding")
+    market_cap = (
+        _raw(price_mod.get("marketCap"))
+        or _raw(detail.get("marketCap"))
+        or quote.get("marketCap")
+    )
+    if market_cap is None and last is not None and shares:
+        try:
+            market_cap = float(last) * float(shares)
+        except (TypeError, ValueError):
+            market_cap = None
+
+    trailing_eps = _raw(stats.get("trailingEps")) or quote.get("epsTrailingTwelveMonths")
+    forward_eps = _raw(stats.get("forwardEps")) or quote.get("epsForward")
+    trailing_pe = _raw(detail.get("trailingPE")) or _raw(stats.get("trailingPE")) or quote.get("trailingPE")
+    forward_pe = _raw(detail.get("forwardPE")) or _raw(stats.get("forwardPE")) or quote.get("forwardPE")
+    if trailing_pe is None and last and trailing_eps not in (None, 0):
+        try:
+            trailing_pe = float(last) / float(trailing_eps)
+        except (TypeError, ValueError, ZeroDivisionError):
+            trailing_pe = None
+    if forward_pe is None and last and forward_eps not in (None, 0):
+        try:
+            forward_pe = float(last) / float(forward_eps)
+        except (TypeError, ValueError, ZeroDivisionError):
+            forward_pe = None
+
+    # Earnings trend: extract 0=+0y current year, 1=+1y
+    year_estimates = []
+    for t in trend.get("trend") or []:
+        period = t.get("period")
+        if period in ("0y", "+1y"):
+            year_estimates.append(
+                {
+                    "period": period,
+                    "growth": _raw(t.get("growth")),
+                    "earningsEstimateAvg": _raw((t.get("earningsEstimate") or {}).get("avg")),
+                    "revenueEstimateAvg": _raw((t.get("revenueEstimate") or {}).get("avg")),
+                    "earningsEstimateNumAnalysts": _raw((t.get("earningsEstimate") or {}).get("numOfAnalysts")),
+                }
+            )
+
+    return {
+        "yahoo": yahoo_symbol,
+        "name": price_mod.get("longName")
+        or price_mod.get("shortName")
+        or quote.get("longName")
+        or quote.get("shortName")
+        or meta.get("shortName")
+        or yahoo_symbol,
+        "exchange": price_mod.get("exchangeName")
+        or quote.get("fullExchangeName")
+        or meta.get("fullExchangeName")
+        or meta.get("exchangeName"),
+        "currency": meta.get("currency") or price_mod.get("currency") or quote.get("currency") or "USD",
+        "price": float(last) if last is not None else None,
+        "change": chg,
+        "changePct": chg_pct,
+        "marketCap": market_cap,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "priceToBook": _raw(detail.get("priceToBook")) or _raw(stats.get("priceToBook")) or quote.get("priceToBook"),
+        "enterpriseToRevenue": _raw(stats.get("enterpriseToRevenue")),
+        "enterpriseToEbitda": _raw(stats.get("enterpriseToEbitda")),
+        "pegRatio": _raw(stats.get("pegRatio")),
+        "beta": _raw(detail.get("beta")) or _raw(stats.get("beta")) or quote.get("beta"),
+        "dividendYield": _raw(detail.get("dividendYield")) or _raw(stats.get("dividendYield")) or quote.get("trailingAnnualDividendYield"),
+        "fiftyTwoWeekHigh": _raw(detail.get("fiftyTwoWeekHigh"))
+        or meta.get("fiftyTwoWeekHigh")
+        or quote.get("fiftyTwoWeekHigh")
+        or (max(highs) if highs[0] is not None else None),
+        "fiftyTwoWeekLow": _raw(detail.get("fiftyTwoWeekLow"))
+        or meta.get("fiftyTwoWeekLow")
+        or quote.get("fiftyTwoWeekLow")
+        or (min(lows) if lows[0] is not None else None),
+        "targetMeanPrice": _raw(fin.get("targetMeanPrice")) or quote.get("targetMeanPrice"),
+        "recommendationKey": fin.get("recommendationKey") or quote.get("averageAnalystRating"),
+        "revenueGrowth": _raw(fin.get("revenueGrowth")),
+        "earningsGrowth": _raw(fin.get("earningsGrowth")),
+        "grossMargins": _raw(fin.get("grossMargins")),
+        "operatingMargins": _raw(fin.get("operatingMargins")),
+        "profitMargins": _raw(fin.get("profitMargins")),
+        "returnOnEquity": _raw(fin.get("returnOnEquity")),
+        "returnOnAssets": _raw(fin.get("returnOnAssets")),
+        "totalCash": _raw(fin.get("totalCash")),
+        "totalDebt": _raw(fin.get("totalDebt")),
+        "freeCashflow": _raw(fin.get("freeCashflow")),
+        "currentRatio": _raw(fin.get("currentRatio")),
+        "trailingEps": trailing_eps,
+        "forwardEps": forward_eps,
+        "bookValue": _raw(stats.get("bookValue")) or quote.get("bookValue"),
+        "sharesOutstanding": shares,
+        "floatShares": _raw(stats.get("floatShares")),
+        "heldPercentInsiders": _raw(stats.get("heldPercentInsiders")),
+        "heldPercentInstitutions": _raw(stats.get("heldPercentInstitutions")),
+        "yearEstimates": year_estimates,
+        "asOf": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "candleCount": len(candles),
+    }
+
+
+def load_market_bundle(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    chart = fetch_chart(yahoo_symbol, range_=range_, interval="1d")
+    summary = fetch_quote_summary(yahoo_symbol)
+    quote = fetch_quote_v7(yahoo_symbol)
+    if yahoo_symbol.endswith((".SS", ".SZ")):
+        code6 = yahoo_symbol.split(".", 1)[0]
+        cn = fetch_cn_quote_tencent(code6) or _normalize_cn_multiples(fetch_cn_quote_eastmoney(code6))
+        if cn:
+            for k, v in cn.items():
+                if k in {"raw", "source"}:
+                    continue
+                if quote.get(k) in (None, "", 0) and v not in (None, ""):
+                    quote[k] = v
+            if not quote.get("shortName") and cn.get("shortName"):
+                quote["shortName"] = cn["shortName"]
+            if not quote.get("longName") and cn.get("shortName"):
+                quote["longName"] = cn["shortName"]
+    snap = snapshot_from_sources(yahoo_symbol, chart, summary, quote)
+    return {"chart": chart, "summary": summary, "quote": quote, "snapshot": snap}

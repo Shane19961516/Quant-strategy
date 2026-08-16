@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>基本面分析 · K线与估值研报</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <span class="mark"></span>
+        <div>
+          <h1>基本面分析</h1>
+          <p>自动识别股票代码 · 最新K线 · 估值研报 · 一键导出</p>
+        </div>
+      </div>
+      <div class="search">
+        <input id="codeInput" type="text" placeholder="输入代码：TSLA / 688008 / 0700 / 6809.HK" autocomplete="off" />
+        <select id="rangeSelect" aria-label="K线区间">
+          <option value="6mo">6个月</option>
+          <option value="1y" selected>1年</option>
+          <option value="2y">2年</option>
+          <option value="5y">5年</option>
+        </select>
+        <button id="analyzeBtn" class="primary">生成分析</button>
+        <button id="exportMdBtn" class="ghost" disabled>导出 Markdown</button>
+        <button id="exportPdfBtn" class="ghost" disabled>导出 PDF</button>
+      </div>
+    </header>
+
+    <section class="chips" id="chips">
+      <button data-code="TSLA">TSLA</button>
+      <button data-code="AAPL">AAPL</button>
+      <button data-code="NVDA">NVDA</button>
+      <button data-code="688008">688008</button>
+      <button data-code="300750">300750</button>
+      <button data-code="0700">0700.HK</button>
+      <button data-code="HSBC">HSBC</button>
+    </section>
+
+    <section id="status" class="status">输入股票代码后点击「生成分析」。</section>
+
+    <section class="grid">
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <h2>K线图</h2>
+          <div id="quoteBar" class="quote-bar"></div>
+        </div>
+        <div id="chart" class="chart"></div>
+      </article>
+
+      <article class="panel side-panel">
+        <div class="panel-head"><h2>识别与快照</h2></div>
+        <div id="metaBox" class="meta-box muted">等待查询…</div>
+        <div id="ratingBox" class="rating-box"></div>
+      </article>
+    </section>
+
+    <article class="panel report-panel">
+      <div class="panel-head">
+        <h2>基本面估值分析报告</h2>
+        <span id="reportStamp" class="stamp"></span>
+      </div>
+      <pre id="reportView" class="report">尚未生成。支持美股代码（TSLA）、A股六位代码（688008）、港股数字代码（0700）。</pre>
+    </article>
+
+    <footer class="foot">
+      本地 Web · 数据来自 Yahoo Finance · 完整定性研报请用 Cursor <code>/mark-alpha-research</code>
+    </footer>
+  </div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
