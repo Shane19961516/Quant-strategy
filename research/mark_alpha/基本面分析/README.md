@@ -4,16 +4,24 @@
 
 ## 一键装到桌面
 
-### Windows
+### Windows（推荐：无需 git / 无需进仓库目录）
 
-在本机打开 PowerShell，进入本目录后执行：
+在本机打开 PowerShell，**整段粘贴回车**：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+$u = "https://raw.githubusercontent.com/Shane19961516/Quant-strategy/cursor/mark-research-688008-d5ea/research/mark_alpha/%E5%9F%BA%E6%9C%AC%E9%9D%A2%E5%88%86%E6%9E%90/%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85%E5%88%B0%E6%9C%AC%E5%9C%B0%E6%A1%8C%E9%9D%A2.ps1"
+irm $u | iex
+```
+
+装完后双击桌面 **基本面分析.bat**。
+
+若已克隆本仓库，也可以进入目录后执行：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\安装到本地桌面.ps1
 ```
-
-或在资源管理器中右键 `安装到本地桌面.ps1` → 用 PowerShell 运行。
 
 ### macOS / Linux
 
