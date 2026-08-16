@@ -166,7 +166,14 @@ def main() -> None:
         dst.write_bytes(src.read_bytes())
 
     print("基本面分析 Web: http://127.0.0.1:8765")
-    app.run(host="127.0.0.1", port=8765, debug=False)
+    print("健康检查: http://127.0.0.1:8765/api/health")
+    print("请保持此窗口开启；关闭窗口即停止服务。")
+    try:
+        app.run(host="127.0.0.1", port=8765, debug=False, use_reloader=False)
+    except OSError as exc:
+        print(f"启动失败: {exc}")
+        print("若提示端口被占用，请关闭占用 8765 的旧进程后重试。")
+        raise
 
 
 if __name__ == "__main__":
