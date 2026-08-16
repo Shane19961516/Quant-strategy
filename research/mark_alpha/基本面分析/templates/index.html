@@ -11,14 +11,14 @@
   <div class="page">
     <header class="top">
       <div class="brand">
-        <span class="mark"></span>
+        <span class="mark" aria-hidden="true"></span>
         <div>
           <h1>基本面分析</h1>
-          <p>自动识别股票代码 · 最新K线 · 估值研报 · 一键导出</p>
+          <p>自动识别代码 · 最新K线 · 结构化估值报告 · 导出 Markdown/PDF</p>
         </div>
       </div>
       <div class="search">
-        <input id="codeInput" type="text" placeholder="输入代码：TSLA / 688008 / 0700 / 6809.HK" autocomplete="off" />
+        <input id="codeInput" type="text" placeholder="TSLA / 688008 / 600519 / 0700 / 6809.HK" autocomplete="off" />
         <select id="rangeSelect" aria-label="K线区间">
           <option value="6mo">6个月</option>
           <option value="1y" selected>1年</option>
@@ -36,9 +36,9 @@
       <button data-code="AAPL">AAPL</button>
       <button data-code="NVDA">NVDA</button>
       <button data-code="688008">688008</button>
+      <button data-code="600519">600519</button>
       <button data-code="300750">300750</button>
-      <button data-code="0700">0700.HK</button>
-      <button data-code="HSBC">HSBC</button>
+      <button data-code="0700">0700</button>
     </section>
 
     <section id="status" class="status">输入股票代码后点击「生成分析」。</section>
@@ -53,7 +53,7 @@
       </article>
 
       <article class="panel side-panel">
-        <div class="panel-head"><h2>识别与快照</h2></div>
+        <div class="panel-head"><h2>识别与评级</h2></div>
         <div id="metaBox" class="meta-box muted">等待查询…</div>
         <div id="ratingBox" class="rating-box"></div>
       </article>
@@ -64,11 +64,14 @@
         <h2>基本面估值分析报告</h2>
         <span id="reportStamp" class="stamp"></span>
       </div>
-      <pre id="reportView" class="report">尚未生成。支持美股代码（TSLA）、A股六位代码（688008）、港股数字代码（0700）。</pre>
+      <div id="reportView" class="report-html">
+        <p class="placeholder">尚未生成。支持美股、A股、港股代码。</p>
+      </div>
     </article>
 
     <footer class="foot">
-      本地 Web · 数据来自 Yahoo Finance · 完整定性研报请用 Cursor <code>/mark-alpha-research</code>
+      本地 Web · 多源行情自动切换（新浪 / 腾讯 / 东财 / Nasdaq / Yahoo）· 深度定性研报请用 Cursor
+      <code>/mark-alpha-research</code>
     </footer>
   </div>
   <script src="/static/js/app.js"></script>

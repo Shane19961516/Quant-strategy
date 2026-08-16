@@ -76,46 +76,51 @@
 
   function renderChart(candles) {
     ensureChart();
-    const rows = candles.map((c) => ({
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    const vols = candles.map((c) => ({
-      time: c.time,
-      value: c.volume || 0,
-      color: c.close >= c.open ? "rgba(217,54,43,0.35)" : "rgba(27,27,24,0.28)",
-    }));
-    candleSeries.setData(rows);
-    volumeSeries.setData(vols);
+    candleSeries.setData(
+      candles.map((c) => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }))
+    );
+    volumeSeries.setData(
+      candles.map((c) => ({
+        time: c.time,
+        value: c.volume || 0,
+        color: c.close >= c.open ? "rgba(217,54,43,0.35)" : "rgba(27,27,24,0.28)",
+      }))
+    );
     chart.timeScale().fitContent();
   }
 
   function renderMeta(data) {
     const r = data.resolved;
     const s = data.snapshot;
+    const rep = data.report;
     quoteBar.textContent = `${s.name || r.display}  ${fmt(s.price)} ${s.currency || ""}  (${pct(s.changePct, false)})`;
     metaBox.classList.remove("muted");
+    const sources = (s.dataSources || []).join(" · ") || "公开行情";
     metaBox.textContent = [
-      `输入: ${r.input}`,
-      `识别: ${r.display} → Yahoo ${r.yahoo}`,
-      `市场: ${r.name_hint} / ${r.market}`,
-      `交易所: ${s.exchange || "—"}`,
+      `识别: ${r.display} → ${r.yahoo}（${r.name_hint}）`,
       `市值: ${fmt(s.marketCap)}`,
-      `TTM PE / 前瞻 PE: ${fmt(s.trailingPE, 1)}x / ${fmt(s.forwardPE, 1)}x`,
-      `PB: ${fmt(s.priceToBook, 1)}x`,
-      `ROE: ${pct(s.returnOnEquity)}`,
-      `毛利率 / 净利率: ${pct(s.grossMargins)} / ${pct(s.profitMargins)}`,
-      `收入增长 / 盈利增长: ${pct(s.revenueGrowth)} / ${pct(s.earningsGrowth)}`,
-      `目标价: ${fmt(s.targetMeanPrice)}`,
-      `数据时点: ${s.asOf}`,
+      `PE / PB: ${fmt(s.trailingPE, 1)}x / ${fmt(s.priceToBook, 1)}x`,
+      `ROE / 毛利率 / 净利率: ${pct(s.returnOnEquity)} / ${pct(s.grossMargins)} / ${pct(s.profitMargins)}`,
+      `完整度: ${rep.coverage ? rep.coverage.score + "%" : "—"}`,
+      `数据源: ${sources}`,
     ].join("\n");
 
-    ratingBox.innerHTML = `<strong>${data.report.rating}</strong><br/>仓位建议：${data.report.position}<br/>${data.report.oneLiner}`;
-    reportView.textContent = data.report.markdown;
-    reportStamp.textContent = data.report.generatedAt || "";
+    const bullets = (rep.verdict && rep.verdict.bullets) || [];
+    if (bullets.length) {
+      ratingBox.innerHTML = `<strong>${rep.rating}</strong><br/>仓位建议：${rep.position}<ul>${bullets
+        .map((b) => `<li>${b}</li>`)
+        .join("")}</ul>`;
+    } else {
+      ratingBox.innerHTML = `<strong>${rep.rating}</strong><br/>仓位建议：${rep.position}<br/>${rep.oneLiner}`;
+    }
+    reportView.innerHTML = rep.html || `<pre class="report">${rep.markdown || ""}</pre>`;
+    reportStamp.textContent = rep.generatedAt || "";
   }
 
   async function analyze() {
@@ -141,7 +146,8 @@
       renderMeta(data);
       exportMdBtn.disabled = false;
       exportPdfBtn.disabled = false;
-      setStatus(`完成：${data.resolved.display}（${data.resolved.yahoo}），K线 ${data.candles.length} 根。`, "ok");
+      const cov = data.report.coverage ? `，完整度 ${data.report.coverage.score}%` : "";
+      setStatus(`完成：${data.resolved.display}（${data.resolved.yahoo}），K线 ${data.candles.length} 根${cov}。`, "ok");
     } catch (err) {
       setStatus(err.message || String(err), "error");
     } finally {
@@ -171,7 +177,9 @@
       const blob = await resp.blob();
       const cd = resp.headers.get("Content-Disposition") || "";
       const match = /filename=([^;]+)/i.exec(cd);
-      const filename = match ? match[1].replace(/"/g, "") : `${lastPayload.resolved.display}_report.${kind === "pdf" ? "pdf" : "md"}`;
+      const filename = match
+        ? match[1].replace(/"/g, "")
+        : `${lastPayload.resolved.display}_report.${kind === "pdf" ? "pdf" : "md"}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -199,7 +207,6 @@
     });
   });
 
-  // Deep link ?code=688008
   const params = new URLSearchParams(location.search);
   if (params.get("code")) {
     codeInput.value = params.get("code");

@@ -229,10 +229,93 @@ def fetch_chart_yahoo(yahoo_symbol: str, range_: str = "1y", interval: str = "1d
     raise RuntimeError("；".join(errors) or f"Yahoo 无数据: {yahoo_symbol}")
 
 
+def _trim_candles(candles: list[dict[str, Any]], range_: str) -> list[dict[str, Any]]:
+    n = _range_to_datalen(range_)
+    if len(candles) <= n:
+        return candles
+    return candles[-n:]
+
+
+def fetch_chart_sina_us(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    sym = yahoo_symbol.split(".")[0].lower()
+    url = f"https://stock.finance.sina.com.cn/usstock/api/json.php/US_MinKService.getDailyK?symbol={sym}"
+    raw = _get_bytes(url, headers=_headers({"Referer": "https://stock.finance.sina.com.cn/"}))
+    rows = json.loads(raw.decode("utf-8", errors="replace"))
+    candles = []
+    for row in rows or []:
+        try:
+            candles.append(
+                {
+                    "time": str(row["d"])[:10],
+                    "open": float(row["o"]),
+                    "high": float(row["h"]),
+                    "low": float(row["l"]),
+                    "close": float(row["c"]),
+                    "volume": int(float(row.get("v") or 0)),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    candles = _trim_candles(candles, range_)
+    if not candles:
+        raise RuntimeError(f"新浪美股无 K 线: {yahoo_symbol}")
+    last = candles[-1]
+    return {
+        "meta": {
+            "symbol": yahoo_symbol,
+            "currency": "USD",
+            "regularMarketPrice": last["close"],
+            "dataSource": "sina_us",
+        },
+        "candles": candles,
+    }
+
+
+def fetch_chart_tencent_hk(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    code = yahoo_symbol.upper().replace(".HK", "")
+    if not code.isdigit():
+        raise RuntimeError(f"非港股数字代码: {yahoo_symbol}")
+    code5 = code.zfill(5)
+    n = _range_to_datalen(range_)
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?param=hk{code5},day,,,{n},qfq"
+    data = _get_json(url, headers=_headers({"Referer": "https://finance.qq.com/"}))
+    node = ((data.get("data") or {}).get(f"hk{code5}")) or {}
+    rows = node.get("qfqday") or node.get("day") or []
+    candles = []
+    for row in rows:
+        try:
+            candles.append(
+                {
+                    "time": str(row[0])[:10],
+                    "open": float(row[1]),
+                    "close": float(row[2]),
+                    "high": float(row[3]),
+                    "low": float(row[4]),
+                    "volume": int(float(row[5] or 0)),
+                }
+            )
+        except (IndexError, TypeError, ValueError):
+            continue
+    if not candles:
+        raise RuntimeError(f"腾讯港股无 K 线: {yahoo_symbol}")
+    last = candles[-1]
+    return {
+        "meta": {
+            "symbol": yahoo_symbol,
+            "currency": "HKD",
+            "regularMarketPrice": last["close"],
+            "dataSource": "tencent_hk",
+        },
+        "candles": candles,
+    }
+
+
 def fetch_chart(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> dict[str, Any]:
-    """Multi-source chart: A-share prefers Sina/Eastmoney; others Yahoo first."""
+    """Multi-source chart with market-aware fallbacks."""
     errors: list[str] = []
     is_cn = bool(_cn_prefix_code(yahoo_symbol))
+    is_hk = yahoo_symbol.upper().endswith(".HK")
+    is_us = (not is_cn) and (not is_hk)
     sources: list[tuple[str, Any]] = []
     if is_cn:
         sources = [
@@ -240,9 +323,15 @@ def fetch_chart(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> 
             ("eastmoney", lambda: fetch_chart_eastmoney_cn(yahoo_symbol, range_=range_)),
             ("yahoo", lambda: fetch_chart_yahoo(yahoo_symbol, range_=range_, interval=interval)),
         ]
+    elif is_hk:
+        sources = [
+            ("tencent_hk", lambda: fetch_chart_tencent_hk(yahoo_symbol, range_=range_)),
+            ("yahoo", lambda: fetch_chart_yahoo(yahoo_symbol, range_=range_, interval=interval)),
+        ]
     else:
         sources = [
             ("yahoo", lambda: fetch_chart_yahoo(yahoo_symbol, range_=range_, interval=interval)),
+            ("sina_us", lambda: fetch_chart_sina_us(yahoo_symbol, range_=range_)),
         ]
 
     for name, fn in sources:
@@ -342,28 +431,26 @@ def fetch_cn_quote_tencent(code6: str) -> dict[str, Any]:
 
 
 def fetch_cn_quote_eastmoney(code6: str) -> dict[str, Any]:
-    """Best-effort A-share snapshot via Eastmoney push2."""
+    """A-share snapshot via Eastmoney push2delay (more stable than push2)."""
     if not (code6.isdigit() and len(code6) == 6):
         return {}
     market = "1" if code6.startswith(("5", "6", "9")) else "0"
-    fields = "f57,f58,f43,f169,f170,f46,f44,f45,f47,f48,f116,f117,f162,f167,f9,f23,f20,f18"
-    qs = urllib.parse.urlencode(
-        {
-            "secid": f"{market}.{code6}",
-            "fields": fields,
-            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
-        }
-    )
-    url = f"https://push2.eastmoney.com/api/qt/stock/get?{qs}"
-    try:
-        data = _get_json(url)
-    except RuntimeError:
-        return {}
+    fields = "f57,f58,f43,f9,f23,f116,f117,f162,f167,f168,f169,f170,f46,f44,f45,f20,f18,f173,f186,f187,f188"
+    qs = urllib.parse.urlencode({"secid": f"{market}.{code6}", "fields": fields})
+    data = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        url = f"https://{host}/api/qt/stock/get?{qs}"
+        try:
+            data = _get_json(url, headers=_headers({"Referer": "https://quote.eastmoney.com/"}))
+            if data.get("data"):
+                break
+        except RuntimeError:
+            continue
     d = (data.get("data") or {}) if isinstance(data, dict) else {}
     if not d:
         return {}
 
-    def _scaled(v: Any, div: float = 100.0) -> float | None:
+    def _div(v: Any, div: float) -> float | None:
         if v in (None, "-", ""):
             return None
         try:
@@ -371,53 +458,255 @@ def fetch_cn_quote_eastmoney(code6: str) -> dict[str, Any]:
         except (TypeError, ValueError):
             return None
 
-    price = _scaled(d.get("f43"))
-    prev = _scaled(d.get("f18") or d.get("f60"))
+    price = _div(d.get("f43"), 100.0)
+    pe = _div(d.get("f162"), 100.0) or _div(d.get("f9"), 100.0)
+    pb = _div(d.get("f167"), 100.0) or _div(d.get("f23"), 100.0)
+    roe_raw = d.get("f173")
+    gm_raw = d.get("f186")
+    pm_raw = d.get("f187")
+
+    def _pct_to_ratio(v: Any) -> float | None:
+        if v in (None, "", "-"):
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f / 100.0 if abs(f) > 1 else f
+
     return {
         "shortName": d.get("f58"),
+        "longName": d.get("f58"),
         "regularMarketPrice": price,
-        "regularMarketPreviousClose": prev,
-        "regularMarketChange": _scaled(d.get("f169")),
-        "regularMarketChangePercent": _scaled(d.get("f170")),
+        "regularMarketPreviousClose": _div(d.get("f18") or d.get("f60"), 100.0),
+        "regularMarketChange": _div(d.get("f169"), 100.0),
+        "regularMarketChangePercent": _div(d.get("f170"), 100.0),
         "marketCap": d.get("f116"),
-        "trailingPE": _scaled(d.get("f9"), 100.0) if d.get("f9") not in (None, "-") else None,
-        "priceToBook": _scaled(d.get("f23"), 100.0) if d.get("f23") not in (None, "-") else None,
-        "epsTrailingTwelveMonths": None,
-        "source": "eastmoney",
-        "raw": {
-            "f9": d.get("f9"),
-            "f23": d.get("f23"),
-            "f116": d.get("f116"),
-            "f20": d.get("f20"),
-        },
+        "trailingPE": pe,
+        "priceToBook": pb,
+        "returnOnEquity": _pct_to_ratio(roe_raw),
+        "grossMargins": _pct_to_ratio(gm_raw),
+        "profitMargins": _pct_to_ratio(pm_raw),
+        "currency": "CNY",
+        "source": "eastmoney_cn",
     }
 
 
-def _normalize_cn_multiples(q: dict[str, Any]) -> dict[str, Any]:
-    """Eastmoney PE/PB fields are sometimes *100, sometimes plain."""
-    out = dict(q)
-    for key in ("trailingPE", "priceToBook"):
-        v = out.get(key)
-        if v is None:
-            # try raw
-            raw_key = "f9" if key == "trailingPE" else "f23"
-            raw = (out.get("raw") or {}).get(raw_key)
-            if raw in (None, "-"):
-                continue
-            try:
-                raw_f = float(raw)
-            except (TypeError, ValueError):
-                continue
-            # Heuristic: values > 1000 are almost surely *100 scaled
-            out[key] = raw_f / 100.0 if raw_f > 400 else raw_f
-        else:
-            try:
-                vf = float(v)
-                if vf > 400:
-                    out[key] = vf / 100.0
-            except (TypeError, ValueError):
-                pass
-    return out
+def fetch_hk_quote_tencent(code: str) -> dict[str, Any]:
+    """Hong Kong quote via Tencent."""
+    code = code.upper().replace(".HK", "")
+    code = code.zfill(5) if code.isdigit() else code
+    # Tencent often wants 5 digits without leading zero issues: 00700
+    if code.isdigit():
+        code = code.zfill(5)
+    url = f"https://qt.gtimg.cn/q=hk{code}"
+    try:
+        text = _get_bytes(url, headers=_headers({"Referer": "https://finance.qq.com/"})).decode("gbk", errors="replace")
+    except RuntimeError:
+        return {}
+    if "~" not in text:
+        return {}
+    try:
+        payload = text.split("=", 1)[1].strip().strip(";").strip('"')
+        p = payload.split("~")
+    except Exception:  # noqa: BLE001
+        return {}
+    if len(p) < 50:
+        return {}
+
+    def _f(idx: int) -> float | None:
+        if idx >= len(p) or p[idx] in ("", None):
+            return None
+        try:
+            return float(p[idx])
+        except ValueError:
+            return None
+
+    mcap_yi = _f(45) or _f(44)
+    return {
+        "shortName": p[1] or None,
+        "longName": p[1] or None,
+        "regularMarketPrice": _f(3),
+        "regularMarketPreviousClose": _f(4),
+        "regularMarketChange": _f(31),
+        "regularMarketChangePercent": _f(32),
+        "regularMarketDayHigh": _f(33),
+        "regularMarketDayLow": _f(34),
+        "trailingPE": _f(39),
+        # Tencent PB index is noisy for HK; leave empty and prefer Eastmoney.
+        "priceToBook": None,
+        "marketCap": (mcap_yi * 1e8) if mcap_yi is not None else None,
+        "fiftyTwoWeekHigh": _f(48),
+        "fiftyTwoWeekLow": _f(49),
+        "currency": "HKD",
+        "source": "tencent_hk",
+    }
+
+
+def _pct_field_to_ratio(v: Any) -> float | None:
+    """Convert Eastmoney percentage-unit fields (e.g. 16.75 → 0.1675)."""
+    if v in (None, "", "-"):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f / 100.0
+
+
+def _ratio_or_pct_to_ratio(v: Any) -> float | None:
+    """Accept either a ratio (0.25) or percent (25)."""
+    if v in (None, "", "-"):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f / 100.0 if abs(f) > 1.5 else f
+
+
+def fetch_hk_quote_eastmoney(code: str) -> dict[str, Any]:
+    """HK snapshot via Eastmoney secid 116.xxxxx."""
+    code = code.upper().replace(".HK", "")
+    if not code.isdigit():
+        return {}
+    code5 = code.zfill(5)
+    fields = "f57,f58,f43,f9,f23,f116,f117,f162,f167,f169,f170,f46,f44,f45,f18,f173,f186,f187,f51,f52"
+    qs = urllib.parse.urlencode({"secid": f"116.{code5}", "fields": fields})
+    data: dict[str, Any] = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        url = f"https://{host}/api/qt/stock/get?{qs}"
+        try:
+            data = _get_json(url, headers=_headers({"Referer": "https://quote.eastmoney.com/"}))
+            if data.get("data"):
+                break
+        except RuntimeError:
+            continue
+    d = (data.get("data") or {}) if isinstance(data, dict) else {}
+    if not d:
+        return {}
+
+    def _div(v: Any, div: float) -> float | None:
+        if v in (None, "-", ""):
+            return None
+        try:
+            return float(v) / div
+        except (TypeError, ValueError):
+            return None
+
+    pe = _div(d.get("f162"), 100.0) or _div(d.get("f9"), 100.0)
+    if pe is not None and pe <= 0:
+        pe = None
+    pb = _div(d.get("f167"), 100.0) or _div(d.get("f23"), 100.0)
+    return {
+        "shortName": d.get("f58"),
+        "longName": d.get("f58"),
+        "regularMarketPrice": _div(d.get("f43"), 1000.0),
+        "regularMarketPreviousClose": _div(d.get("f18") or d.get("f60"), 1000.0),
+        "regularMarketChange": _div(d.get("f169"), 1000.0),
+        "regularMarketChangePercent": _div(d.get("f170"), 100.0),
+        "marketCap": d.get("f116"),
+        "trailingPE": pe,
+        "priceToBook": pb,
+        "returnOnEquity": _pct_field_to_ratio(d.get("f173")),
+        "grossMargins": _pct_field_to_ratio(d.get("f186")) if d.get("f186") not in (0, 0.0, "0") else None,
+        "profitMargins": _pct_field_to_ratio(d.get("f187")) if d.get("f187") not in (0, 0.0, "0") else None,
+        "fiftyTwoWeekHigh": _div(d.get("f51"), 1000.0),
+        "fiftyTwoWeekLow": _div(d.get("f52"), 1000.0),
+        "currency": "HKD",
+        "source": "eastmoney_hk",
+    }
+
+
+def fetch_cn_f10_main(code6: str) -> dict[str, Any]:
+    """A-share main financial indicators from Eastmoney F10."""
+    if not (code6.isdigit() and len(code6) == 6):
+        return {}
+    qs = urllib.parse.urlencode(
+        {
+            "reportName": "RPT_F10_FINANCE_MAINFINADATA",
+            "columns": "ALL",
+            "filter": f'(SECURITY_CODE="{code6}")',
+            "pageNumber": "1",
+            "pageSize": "4",
+            "sortTypes": "-1",
+            "sortColumns": "REPORT_DATE",
+        }
+    )
+    url = f"https://datacenter.eastmoney.com/securities/api/data/v1/get?{qs}"
+    try:
+        data = _get_json(url, headers=_headers({"Referer": "https://emweb.securities.eastmoney.com/"}))
+    except RuntimeError:
+        return {}
+    rows = ((data.get("result") or {}).get("data")) or []
+    if not rows:
+        return {}
+    r = rows[0]
+    out: dict[str, Any] = {
+        "source": "eastmoney_cn_f10",
+        "reportDate": str(r.get("REPORT_DATE") or "")[:10],
+        "reportType": r.get("REPORT_TYPE"),
+        "trailingEps": r.get("EPSJB") or r.get("EPSXS"),
+        "bookValue": r.get("BPS"),
+        "returnOnEquity": _pct_field_to_ratio(r.get("ROEJQ")),
+        "grossMargins": _pct_field_to_ratio(r.get("XSMLL")),
+        "profitMargins": _pct_field_to_ratio(r.get("XSJLL")),
+        "revenueGrowth": _pct_field_to_ratio(r.get("TOTALOPERATEREVETZ") or r.get("DJD_TOI_YOY")),
+        "earningsGrowth": _pct_field_to_ratio(r.get("PARENTNETPROFITTZ") or r.get("DJD_DPNP_YOY")),
+        "operatingCashflow": r.get("NETCASH_OPERATE_PK") or r.get("NETCASH_OPERATE"),
+        "shortName": r.get("SECURITY_NAME_ABBR"),
+        "longName": r.get("SECURITY_NAME_ABBR"),
+    }
+    # Prefer 扣非 growth when headline NI is noisy / declining while ops intact.
+    deduct = _pct_field_to_ratio(r.get("KCFJCXSYJLRTZ") or r.get("DJD_DEDUCTDPNP_YOY"))
+    if deduct is not None and out.get("earningsGrowth") is None:
+        out["earningsGrowth"] = deduct
+    return {k: v for k, v in out.items() if v not in (None, "")}
+
+
+def fetch_hk_f10_main(code: str) -> dict[str, Any]:
+    """HK main indicators from Eastmoney HKF10."""
+    code = code.upper().replace(".HK", "")
+    if not code.isdigit():
+        return {}
+    code5 = code.zfill(5)
+    qs = urllib.parse.urlencode(
+        {
+            "reportName": "RPT_HKF10_FN_MAININDICATOR",
+            "columns": "ALL",
+            "filter": f'(SECUCODE="{code5}.HK")',
+            "pageNumber": "1",
+            "pageSize": "4",
+            "sortTypes": "-1",
+            "sortColumns": "REPORT_DATE",
+        }
+    )
+    url = f"https://datacenter.eastmoney.com/securities/api/data/v1/get?{qs}"
+    try:
+        data = _get_json(url, headers=_headers({"Referer": "https://emweb.securities.eastmoney.com/"}))
+    except RuntimeError:
+        return {}
+    rows = ((data.get("result") or {}).get("data")) or []
+    if not rows:
+        return {}
+    r = rows[0]
+    out: dict[str, Any] = {
+        "source": "eastmoney_hk_f10",
+        "reportDate": str(r.get("REPORT_DATE") or "")[:10],
+        "reportType": r.get("REPORT_TYPE"),
+        "trailingEps": r.get("EPS_TTM") or r.get("BASIC_EPS") or r.get("DILUTED_EPS"),
+        "bookValue": r.get("BPS"),
+        "returnOnEquity": _pct_field_to_ratio(r.get("ROE_YEARLY") or r.get("ROE_AVG")),
+        "grossMargins": _pct_field_to_ratio(r.get("GROSS_PROFIT_RATIO")),
+        "profitMargins": _pct_field_to_ratio(r.get("NET_PROFIT_RATIO")),
+        "revenueGrowth": _pct_field_to_ratio(r.get("OPERATE_INCOME_YOY")),
+        "earningsGrowth": _pct_field_to_ratio(r.get("HOLDER_PROFIT_YOY")),
+        "operatingCashflow": r.get("NETCASH_OPERATE"),
+        "totalDebt": r.get("TOTAL_LIABILITIES"),
+        "shortName": r.get("SECURITY_NAME_ABBR"),
+        "longName": r.get("SECURITY_NAME_ABBR"),
+    }
+    return {k: v for k, v in out.items() if v not in (None, "")}
 
 
 def _raw(node: Any, default: Any = None) -> Any:
@@ -657,13 +946,17 @@ def fetch_us_quote_eastmoney(symbol: str) -> dict[str, Any]:
     secid = fetch_us_eastmoney_secid(symbol)
     if not secid:
         return {}
-    fields = "f57,f58,f43,f44,f45,f46,f47,f51,f52,f60,f92,f116,f117,f162,f167,f169,f170,f173"
+    fields = "f57,f58,f43,f44,f45,f46,f47,f51,f52,f60,f92,f116,f117,f162,f167,f169,f170,f173,f186,f187"
     qs = urllib.parse.urlencode({"secid": secid, "fields": fields})
-    url = f"https://push2delay.eastmoney.com/api/qt/stock/get?{qs}"
-    try:
-        data = _get_json(url, headers=_headers({"Referer": "https://quote.eastmoney.com/"}))
-    except RuntimeError:
-        return {}
+    data: dict[str, Any] = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        url = f"https://{host}/api/qt/stock/get?{qs}"
+        try:
+            data = _get_json(url, headers=_headers({"Referer": "https://quote.eastmoney.com/"}))
+            if data.get("data"):
+                break
+        except RuntimeError:
+            continue
     d = data.get("data") or {}
     if not d:
         return {}
@@ -703,6 +996,7 @@ def fetch_us_quote_eastmoney(symbol: str) -> dict[str, Any]:
         "marketCap": d.get("f116"),
         "priceToBook": pb,
         "trailingPE": trailing_pe,
+        "returnOnEquity": _pct_field_to_ratio(d.get("f173")),
         "currency": "USD",
         "source": "eastmoney_us",
         "eastmoneySecid": secid,
@@ -853,14 +1147,17 @@ def fetch_us_financials_eastmoney(symbol: str) -> dict[str, Any]:
     return out
 
 
-def _merge_quote(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+def _merge_quote(base: dict[str, Any], extra: dict[str, Any], overwrite: bool = False) -> dict[str, Any]:
     if not extra:
         return base
     out = dict(base)
+    skip = {"raw", "source", "eastmoneySecid", "reportDate", "reportType"}
     for k, v in extra.items():
-        if k in {"raw", "source", "eastmoneySecid"}:
+        if k in skip:
             continue
-        if out.get(k) in (None, "", 0) and v not in (None, ""):
+        if v in (None, ""):
+            continue
+        if overwrite or out.get(k) in (None, "", 0):
             out[k] = v
     if not out.get("shortName") and extra.get("shortName"):
         out["shortName"] = extra["shortName"]
@@ -869,23 +1166,105 @@ def _merge_quote(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _derive_eps_pe(quote: dict[str, Any]) -> None:
+    """Fill missing EPS from PE (or PE from EPS). Never overwrite a sane PE with period EPS."""
+    price = quote.get("regularMarketPrice")
+    pe = quote.get("trailingPE")
+    eps = quote.get("trailingEps")
+    if eps in (None, 0) and price and pe not in (None, 0):
+        try:
+            quote["trailingEps"] = float(price) / float(pe)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+        return
+    if pe in (None, 0) and price and eps not in (None, 0):
+        try:
+            quote["trailingPE"] = float(price) / float(eps)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
+
 def load_market_bundle(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    sources: list[str] = []
     chart = fetch_chart(yahoo_symbol, range_=range_, interval="1d")
+    if (chart.get("meta") or {}).get("dataSource"):
+        sources.append(f"K线:{(chart['meta']['dataSource'])}")
+
     summary = fetch_quote_summary(yahoo_symbol)
+    if summary:
+        sources.append("Yahoo quoteSummary")
     quote = fetch_quote_v7(yahoo_symbol)
-    if yahoo_symbol.endswith((".SS", ".SZ")):
+    if quote:
+        sources.append("Yahoo quote")
+
+    sym_u = yahoo_symbol.upper()
+    if sym_u.endswith((".SS", ".SZ")):
         code6 = yahoo_symbol.split(".", 1)[0]
-        cn = fetch_cn_quote_tencent(code6) or _normalize_cn_multiples(fetch_cn_quote_eastmoney(code6))
-        quote = _merge_quote(quote, cn)
-    elif "." not in yahoo_symbol or yahoo_symbol.upper().endswith((".US",)):
-        # US ticker fallbacks when Yahoo fundamentals are blocked
+        tencent = fetch_cn_quote_tencent(code6)
+        em = fetch_cn_quote_eastmoney(code6)
+        f10 = fetch_cn_f10_main(code6)
+        if tencent:
+            quote = _merge_quote(quote, tencent)
+            sources.append("腾讯行情")
+        if em:
+            quote = _merge_quote(quote, em)
+            sources.append("东财估值")
+        if f10:
+            # Quality / growth from statements overwrite; never use period EPS as TTM.
+            quality = {
+                k: f10[k]
+                for k in (
+                    "returnOnEquity",
+                    "grossMargins",
+                    "profitMargins",
+                    "revenueGrowth",
+                    "earningsGrowth",
+                    "operatingCashflow",
+                    "bookValue",
+                    "shortName",
+                    "longName",
+                    "reportDate",
+                    "reportType",
+                )
+                if k in f10
+            }
+            quote = _merge_quote(quote, quality, overwrite=True)
+            sources.append("东财F10财报")
+        _derive_eps_pe(quote)
+    elif sym_u.endswith(".HK"):
+        code = yahoo_symbol.split(".", 1)[0]
+        hk = fetch_hk_quote_tencent(code)
+        em = fetch_hk_quote_eastmoney(code)
+        f10 = fetch_hk_f10_main(code)
+        if hk:
+            quote = _merge_quote(quote, hk)
+            sources.append("腾讯港股")
+        if em:
+            quote = _merge_quote(quote, em)
+            sources.append("东财港股")
+        if f10:
+            quote = _merge_quote(quote, f10, overwrite=True)
+            sources.append("东财港股F10")
+        _derive_eps_pe(quote)
+    elif "." not in yahoo_symbol or sym_u.endswith(".US"):
         us_sym = yahoo_symbol.split(".")[0]
-        quote = _merge_quote(quote, fetch_us_quote_sina(us_sym))
-        quote = _merge_quote(quote, fetch_us_quote_eastmoney(us_sym))
-        quote = _merge_quote(quote, fetch_us_quote_nasdaq(us_sym))
+        sina = fetch_us_quote_sina(us_sym)
+        em = fetch_us_quote_eastmoney(us_sym)
+        ndq = fetch_us_quote_nasdaq(us_sym)
         fins = fetch_us_financials_eastmoney(us_sym)
-        quote = _merge_quote(quote, fins)
-        # Prefer PE derived from price / TTM EPS over noisy vendor PE fields
+        if sina:
+            quote = _merge_quote(quote, sina)
+            sources.append("新浪美股")
+        if em:
+            quote = _merge_quote(quote, em)
+            sources.append("东财美股")
+        if ndq:
+            quote = _merge_quote(quote, ndq)
+            sources.append("Nasdaq")
+        if fins:
+            quote = _merge_quote(quote, fins, overwrite=True)
+            sources.append("东财美股财报")
+        # Prefer price/TTM EPS for trailing PE on US names.
         price = quote.get("regularMarketPrice")
         eps = quote.get("trailingEps")
         if price and eps not in (None, 0):
@@ -893,10 +1272,19 @@ def load_market_bundle(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
                 quote["trailingPE"] = float(price) / float(eps)
             except (TypeError, ValueError, ZeroDivisionError):
                 pass
-        elif quote.get("trailingPE") in (None, 0) and price and eps not in (None, 0):
-            try:
-                quote["trailingPE"] = float(price) / float(eps)
-            except (TypeError, ValueError, ZeroDivisionError):
-                pass
+
+    # de-dupe sources preserving order
+    seen = set()
+    sources = [s for s in sources if not (s in seen or seen.add(s))]
+
     snap = snapshot_from_sources(yahoo_symbol, chart, summary, quote)
+    # Keep operating cash when FCF absent.
+    if snap.get("freeCashflow") in (None, 0) and quote.get("operatingCashflow") not in (None, ""):
+        snap["freeCashflow"] = quote.get("operatingCashflow")
+        snap["cashflowIsOperating"] = True
+    if quote.get("reportDate"):
+        snap["fundamentalsAsOf"] = quote.get("reportDate")
+    if quote.get("reportType"):
+        snap["fundamentalsReportType"] = quote.get("reportType")
+    snap["dataSources"] = sources or ["公开行情"]
     return {"chart": chart, "summary": summary, "quote": quote, "snapshot": snap}
