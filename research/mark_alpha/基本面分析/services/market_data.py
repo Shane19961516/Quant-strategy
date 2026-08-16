@@ -1,8 +1,9 @@
-"""Fetch quotes, OHLCV and key fundamentals from Yahoo Finance."""
+"""Fetch quotes, OHLCV and key fundamentals (Yahoo + CN fallbacks)."""
 
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,60 +11,247 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-UA = "Mozilla/5.0 (compatible; MarkAlphaResearch/1.0)"
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
 
 
-def _get_json(url: str, timeout: int = 25) -> dict[str, Any]:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    h = {
+        "User-Agent": UA,
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    if extra:
+        h.update(extra)
+    return h
+
+
+def _get_bytes(url: str, timeout: int = 25, headers: dict[str, str] | None = None) -> bytes:
+    req = urllib.request.Request(url, headers=headers or _headers())
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return resp.read()
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"行情接口失败 HTTP {exc.code}: {url}") from exc
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"行情接口不可用: {exc}") from exc
 
 
-def fetch_chart(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> dict[str, Any]:
-    qs = urllib.parse.urlencode({"range": range_, "interval": interval})
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol)}?{qs}"
-    data = _get_json(url)
-    result = (data.get("chart") or {}).get("result")
-    if not result:
-        err = (data.get("chart") or {}).get("error") or {}
-        raise RuntimeError(err.get("description") or f"未找到代码 {yahoo_symbol}")
-    r0 = result[0]
-    meta = r0.get("meta") or {}
-    ts = r0.get("timestamp") or []
-    quote = ((r0.get("indicators") or {}).get("quote") or [{}])[0]
-    opens, highs, lows, closes, volumes = (
-        quote.get("open") or [],
-        quote.get("high") or [],
-        quote.get("low") or [],
-        quote.get("close") or [],
-        quote.get("volume") or [],
+def _get_json(url: str, timeout: int = 25, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    raw = _get_bytes(url, timeout=timeout, headers=headers)
+    return json.loads(raw.decode("utf-8"))
+
+
+def _range_to_datalen(range_: str) -> int:
+    return {
+        "1mo": 30,
+        "3mo": 70,
+        "6mo": 140,
+        "1y": 260,
+        "2y": 520,
+        "5y": 1300,
+        "max": 2000,
+    }.get(range_, 260)
+
+
+def _cn_prefix_code(yahoo_symbol: str) -> tuple[str, str] | None:
+    """Return (sina_prefix, code6) for A-shares."""
+    m = re.match(r"^(\d{6})\.(SS|SZ)$", yahoo_symbol.upper())
+    if not m:
+        return None
+    code, exch = m.group(1), m.group(2)
+    return ("sh" if exch == "SS" else "sz"), code
+
+
+def fetch_chart_sina_cn(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    parsed = _cn_prefix_code(yahoo_symbol)
+    if not parsed:
+        raise RuntimeError(f"非 A 股代码，无法用新浪 K 线: {yahoo_symbol}")
+    prefix, code = parsed
+    datalen = _range_to_datalen(range_)
+    qs = urllib.parse.urlencode(
+        {
+            "symbol": f"{prefix}{code}",
+            "scale": "240",
+            "ma": "no",
+            "datalen": str(datalen),
+        }
     )
+    url = (
+        "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        f"CN_MarketData.getKLineData?{qs}"
+    )
+    raw = _get_bytes(
+        url,
+        headers=_headers({"Referer": "https://finance.sina.com.cn/"}),
+    )
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text or text == "null":
+        raise RuntimeError(f"新浪无 K 线数据: {yahoo_symbol}")
+    rows = json.loads(text)
     candles = []
-    for i, t in enumerate(ts):
-        o, h, l, c = (
-            opens[i] if i < len(opens) else None,
-            highs[i] if i < len(highs) else None,
-            lows[i] if i < len(lows) else None,
-            closes[i] if i < len(closes) else None,
-        )
-        if None in (o, h, l, c):
+    for row in rows or []:
+        try:
+            candles.append(
+                {
+                    "time": str(row["day"])[:10],
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": int(float(row.get("volume") or 0)),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not candles:
+        raise RuntimeError(f"新浪 K 线解析为空: {yahoo_symbol}")
+    last = candles[-1]
+    meta = {
+        "symbol": yahoo_symbol,
+        "currency": "CNY",
+        "regularMarketPrice": last["close"],
+        "exchangeName": "SSE" if prefix == "sh" else "SZSE",
+        "dataSource": "sina",
+    }
+    return {"meta": meta, "candles": candles}
+
+
+def fetch_chart_eastmoney_cn(yahoo_symbol: str, range_: str = "1y") -> dict[str, Any]:
+    parsed = _cn_prefix_code(yahoo_symbol)
+    if not parsed:
+        raise RuntimeError(f"非 A 股代码: {yahoo_symbol}")
+    prefix, code = parsed
+    market = "1" if prefix == "sh" else "0"
+    lmt = _range_to_datalen(range_)
+    qs = urllib.parse.urlencode(
+        {
+            "secid": f"{market}.{code}",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+            "klt": "101",
+            "fqt": "1",
+            "end": "20500101",
+            "lmt": str(lmt),
+        }
+    )
+    url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{qs}"
+    data = _get_json(
+        url,
+        headers=_headers({"Referer": "https://finance.eastmoney.com/"}),
+    )
+    klines = ((data.get("data") or {}).get("klines")) or []
+    name = (data.get("data") or {}).get("name")
+    candles = []
+    for line in klines:
+        parts = str(line).split(",")
+        if len(parts) < 6:
             continue
         candles.append(
             {
-                "time": datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d"),
-                "open": float(o),
-                "high": float(h),
-                "low": float(l),
-                "close": float(c),
-                "volume": int(volumes[i] or 0) if i < len(volumes) else 0,
+                "time": parts[0][:10],
+                "open": float(parts[1]),
+                "high": float(parts[2]),
+                "low": float(parts[3]),
+                "close": float(parts[4]),
+                "volume": int(float(parts[5] or 0)),
             }
         )
+    if not candles:
+        raise RuntimeError(f"东财无 K 线数据: {yahoo_symbol}")
+    last = candles[-1]
+    meta = {
+        "symbol": yahoo_symbol,
+        "shortName": name,
+        "currency": "CNY",
+        "regularMarketPrice": last["close"],
+        "dataSource": "eastmoney",
+    }
     return {"meta": meta, "candles": candles}
+
+
+def fetch_chart_yahoo(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> dict[str, Any]:
+    qs = urllib.parse.urlencode({"range": range_, "interval": interval})
+    errors: list[str] = []
+    for host in ("query1", "query2"):
+        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol)}?{qs}"
+        try:
+            data = _get_json(
+                url,
+                headers=_headers({"Referer": "https://finance.yahoo.com/"}),
+            )
+        except RuntimeError as exc:
+            errors.append(str(exc))
+            continue
+        result = (data.get("chart") or {}).get("result")
+        if not result:
+            err = (data.get("chart") or {}).get("error") or {}
+            errors.append(err.get("description") or f"Yahoo 空结果 {yahoo_symbol}")
+            continue
+        r0 = result[0]
+        meta = r0.get("meta") or {}
+        meta["dataSource"] = "yahoo"
+        ts = r0.get("timestamp") or []
+        quote = ((r0.get("indicators") or {}).get("quote") or [{}])[0]
+        opens, highs, lows, closes, volumes = (
+            quote.get("open") or [],
+            quote.get("high") or [],
+            quote.get("low") or [],
+            quote.get("close") or [],
+            quote.get("volume") or [],
+        )
+        candles = []
+        for i, t in enumerate(ts):
+            o, h, l, c = (
+                opens[i] if i < len(opens) else None,
+                highs[i] if i < len(highs) else None,
+                lows[i] if i < len(lows) else None,
+                closes[i] if i < len(closes) else None,
+            )
+            if None in (o, h, l, c):
+                continue
+            candles.append(
+                {
+                    "time": datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d"),
+                    "open": float(o),
+                    "high": float(h),
+                    "low": float(l),
+                    "close": float(c),
+                    "volume": int(volumes[i] or 0) if i < len(volumes) else 0,
+                }
+            )
+        if candles:
+            return {"meta": meta, "candles": candles}
+        errors.append("Yahoo K 线为空")
+    raise RuntimeError("；".join(errors) or f"Yahoo 无数据: {yahoo_symbol}")
+
+
+def fetch_chart(yahoo_symbol: str, range_: str = "1y", interval: str = "1d") -> dict[str, Any]:
+    """Multi-source chart: A-share prefers Sina/Eastmoney; others Yahoo first."""
+    errors: list[str] = []
+    is_cn = bool(_cn_prefix_code(yahoo_symbol))
+    sources: list[tuple[str, Any]] = []
+    if is_cn:
+        sources = [
+            ("sina", lambda: fetch_chart_sina_cn(yahoo_symbol, range_=range_)),
+            ("eastmoney", lambda: fetch_chart_eastmoney_cn(yahoo_symbol, range_=range_)),
+            ("yahoo", lambda: fetch_chart_yahoo(yahoo_symbol, range_=range_, interval=interval)),
+        ]
+    else:
+        sources = [
+            ("yahoo", lambda: fetch_chart_yahoo(yahoo_symbol, range_=range_, interval=interval)),
+        ]
+
+    for name, fn in sources:
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{name}: {exc}")
+            continue
+    raise RuntimeError("全部行情源失败 -> " + " | ".join(errors))
 
 
 def fetch_quote_summary(yahoo_symbol: str) -> dict[str, Any]:
