@@ -72,16 +72,24 @@ def _money(x: Any, ccy: str) -> str:
 
 
 def _scenario_table(price: float | None, fwd_eps: float | None, trail_pe: float | None) -> list[dict[str, Any]]:
+    """Build scenarios only when we have a real EPS or PE anchor — never invent PE=25."""
     if price is None:
         return []
-    # Heuristic multiples around current trailing / forward PE
-    base_pe = fwd_eps and fwd_eps > 0 and price / fwd_eps or trail_pe or 25.0
-    try:
-        base_pe = float(base_pe)
-    except (TypeError, ValueError):
-        base_pe = 25.0
-    eps = fwd_eps if fwd_eps not in (None, 0) else (price / base_pe if base_pe else None)
-    if eps is None:
+    eps = None
+    base_pe = None
+    if fwd_eps not in (None, 0):
+        try:
+            eps = float(fwd_eps)
+            base_pe = float(price) / eps if eps else None
+        except (TypeError, ValueError, ZeroDivisionError):
+            eps = None
+    if eps is None and trail_pe not in (None, 0):
+        try:
+            base_pe = float(trail_pe)
+            eps = float(price) / base_pe if base_pe else None
+        except (TypeError, ValueError, ZeroDivisionError):
+            return []
+    if eps is None or base_pe is None or eps <= 0 or base_pe <= 0:
         return []
 
     rows = [
