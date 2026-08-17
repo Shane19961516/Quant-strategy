@@ -27,6 +27,7 @@ from reportlab.platypus import (
     Frame,
     ListFlowable,
     ListItem,
+    PageBreak,
     PageTemplate,
     Paragraph,
     Spacer,
@@ -133,8 +134,8 @@ def _styles(font: str) -> dict:
     kw = _base_kwargs(font)
     return {
         "h1": ParagraphStyle(
-            "MarkH1", parent=ss["Normal"], **kw, fontSize=16, leading=22,
-            spaceAfter=8, spaceBefore=0, textColor=INK,
+            "MarkH1", parent=ss["Normal"], **kw, fontSize=18, leading=24,
+            spaceAfter=6, spaceBefore=0, textColor=ACCENT,
         ),
         "h2": ParagraphStyle(
             "MarkH2", parent=ss["Normal"], **kw, fontSize=12, leading=16.5,
@@ -151,6 +152,10 @@ def _styles(font: str) -> dict:
         "kicker": ParagraphStyle(
             "MarkKicker", parent=ss["Normal"], **kw, fontSize=8.6, leading=12.4,
             textColor=MUTED, spaceAfter=7,
+        ),
+        "rating": ParagraphStyle(
+            "MarkRating", parent=ss["Normal"], **kw, fontSize=13, leading=18,
+            textColor=INK, spaceBefore=2, spaceAfter=6,
         ),
         "code": ParagraphStyle(
             "MarkCode", parent=ss["Normal"], **kw, fontSize=8.0, leading=11.6,
@@ -320,8 +325,12 @@ def parse_markdown(md: str, styles: dict) -> list:
             code_lines.append(line)
             i += 1
             continue
-        if line.strip() == "---":
+        if line.strip() in ("---",):
             story.append(Spacer(1, 2 * mm))
+            i += 1
+            continue
+        if line.strip().lower() in ("<!-- pagebreak -->", "\\newpage"):
+            story.append(PageBreak())
             i += 1
             continue
         if line.startswith("# "):
@@ -417,6 +426,7 @@ def parse_markdown(md: str, styles: dict) -> list:
             and not re.match(r"^\s*[-*]\s+", lines[i])
             and not re.match(r"^\s*\d+\.\s+", lines[i])
             and lines[i].strip() != "---"
+            and lines[i].strip().lower() not in ("<!-- pagebreak -->", "\\newpage")
         ):
             para.append(lines[i].strip())
             i += 1
