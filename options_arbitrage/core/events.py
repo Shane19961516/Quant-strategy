@@ -73,7 +73,9 @@ def filter_product_events(
     - MEDIUM → light_size_only recommendation
     """
     if not exclude_events:
-        return EventFilterResult(False, False, (), ("事件过滤已关闭",))
+        upcoming = upcoming_events(as_of=as_of, horizon_days=horizon_days, extra_events=extra_events)
+        notes = [f"{e.event_date} {e.title} [{e.severity}]" for e in upcoming]
+        return EventFilterResult(False, False, tuple(upcoming), tuple(notes) if notes else ("近期无标注事件",))
 
     prod = _normalize_product(product)
     events = upcoming_events(as_of=as_of, horizon_days=horizon_days, extra_events=extra_events)

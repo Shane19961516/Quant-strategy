@@ -1,0 +1,16 @@
+{
+  "rules_version": "margin_rules-v2.0.0",
+  "verified_date": "2026-08-20",
+  "sources": [
+    "DCE/DCE期权交易管理办法（摘要）",
+    "CZCE/期权交易管理办法（摘要）",
+    "SHFE/期权交易规则（摘要）"
+  ],
+  "combo_margin_status": "unclear",
+  "combo_margin_note": "宽跨组合保证金依品种、席位与期货公司开通情况而异；认定不明确时按无优惠合计评级",
+  "client_margin_addon_default": null,
+  "client_margin_note": "未提供期货公司加收比例时，客户预计保证金标为 N/A",
+  "changelog": [
+    "2026-08-20: v2.0.0 初始规则包，增加核验日期与组合认定状态"
+  ]
+}

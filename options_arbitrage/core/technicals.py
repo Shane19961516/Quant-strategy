@@ -22,6 +22,7 @@ class TechnicalSnapshot:
     range_high_30: float
     range_low_30: float
     is_ranging: bool
+    score: float
     reasons: tuple[str, ...]
 
 
@@ -161,6 +162,13 @@ def evaluate_ranging_regime(
     if not inside:
         reasons.append("价格突破近30日高低点区间")
 
+    adx_score = max(0.0, min(100.0, (25.0 - adx) / 25.0 * 100.0)) if not np.isnan(adx) else 0.0
+    bb_score = max(0.0, 100.0 - abs(pct_b - 0.5) / 0.5 * 100.0) if not np.isnan(pct_b) else 0.0
+    slope_pen = max(abs(slope20) if not np.isnan(slope20) else 0.0, abs(slope60) if not np.isnan(slope60) else 0.0)
+    ma_score = max(0.0, 100.0 - slope_pen / 1.0 * 100.0)
+    range_score = 100.0 if inside else 30.0
+    score = float(0.30 * adx_score + 0.25 * bb_score + 0.25 * ma_score + 0.20 * range_score)
+
     return TechnicalSnapshot(
         adx=adx,
         plus_di=pdi,
@@ -174,5 +182,6 @@ def evaluate_ranging_regime(
         range_high_30=range_high,
         range_low_30=range_low,
         is_ranging=ok_adx and ok_bb and ok_ma and inside,
+        score=score,
         reasons=tuple(reasons),
     )

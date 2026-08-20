@@ -10,7 +10,19 @@
 
 规约见 [`CURSOR_SPEC.md`](./CURSOR_SPEC.md)。样例结算单：`fixtures/settlement_sample_2026-08-12.xls`。
 
-## 收盘后卖出宽跨扫描
+## 收盘后 / 下一交易日扫描（v2 推荐）
+
+```bash
+cd options_arbitrage
+python run_next_day_scan.py
+python run_next_day_scan.py --equity 500000 --client-margin-addon 0.05
+```
+
+输出：`output/next_session_report.md`（**下一交易日候选**，非即时成交声明）
+
+规范文档：`docs/方法与口径.md`、`docs/交易所规则管理.md`、`docs/报告规范.md`
+
+## 收盘后扫描（v1 简化版）
 
 ```bash
 cd options_arbitrage
