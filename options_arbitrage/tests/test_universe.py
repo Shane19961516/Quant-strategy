@@ -78,3 +78,63 @@ def test_czce_underlying_symbol_expansion():
 
     assert norm_underlying_symbol("SR611", "CZCE") == "SR2611"
     assert norm_underlying_symbol("AP610", "CZCE") == "AP2610"
+
+
+def test_dce_normalize_and_map():
+    from data_fetcher.dce_client import DCE_OPTION_CODE_MAP, _normalize_df
+
+    assert "聚丙烯期权" in DCE_OPTION_CODE_MAP
+    assert "焦炭期权" not in DCE_OPTION_CODE_MAP
+    rows = [
+        {
+            "variety": "聚丙烯",
+            "contractId": "pp2610-C-10000",
+            "open": "11",
+            "high": "13.5",
+            "low": "6",
+            "close": "6",
+            "lastClear": "8",
+            "clearPrice": "9",
+            "diff": "-2",
+            "diff1": "1",
+            "delta": "0.03",
+            "volumn": 120,
+            "openInterest": 24,
+            "diffI": 1,
+            "turnover": "1.2",
+            "matchQtySum": 0,
+            "impliedVolatility": "22.5",
+        },
+        {
+            "variety": "聚丙烯",
+            "contractId": "pp2610-P-10000",
+            "open": "10",
+            "high": "12",
+            "low": "5",
+            "close": "7",
+            "lastClear": "9",
+            "clearPrice": "8",
+            "diff": "-2",
+            "diff1": "-1",
+            "delta": "-0.97",
+            "volumn": 10,
+            "openInterest": 5,
+            "diffI": 0,
+            "turnover": "0.5",
+            "matchQtySum": 0,
+            "impliedVolatility": "23.0",
+        },
+    ]
+    df = _normalize_df(rows)
+    assert len(df) == 2
+    assert "合约" in df.columns
+    assert float(df.iloc[0]["隐含波动率(%)"]) == 22.5
+
+
+def test_zc_uses_czce_source():
+    items = {i.product.upper(): i for i in load_universe()}
+    assert items["ZC"].source == "czce"
+    products = {i.product.lower() for i in load_universe()}
+    assert "j" not in products
+    assert "jm" not in products
+

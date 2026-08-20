@@ -243,6 +243,12 @@ class V2MarketFetcher:
             products_ok=[f"{s.product_name}({s.product})" for s in ok],
             products_failed=failed,
         )
+        try:
+            from data_fetcher.dce_client import close_session
+
+            close_session()
+        except Exception:
+            pass
         return ok, manifest
 
 

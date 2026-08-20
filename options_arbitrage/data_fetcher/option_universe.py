@@ -71,7 +71,7 @@ EXCHANGE_ONLY: list[dict[str, str]] = [
     {"product": "nr", "name": "20号胶", "exchange": "INE", "cn_name": "20号胶期权", "source": "shfe"},
     # GFEX
     {"product": "ps", "name": "多晶硅", "exchange": "GFEX", "cn_name": "多晶硅", "source": "gfex"},
-    # DCE (may fail when exchange API blocked; still attempted)
+    # DCE (Playwright WAF bypass — not listed on Sina)
     {"product": "pp", "name": "聚丙烯", "exchange": "DCE", "cn_name": "聚丙烯期权", "source": "dce"},
     {"product": "l", "name": "塑料", "exchange": "DCE", "cn_name": "聚乙烯期权", "source": "dce"},
     {"product": "v", "name": "PVC", "exchange": "DCE", "cn_name": "聚氯乙烯期权", "source": "dce"},
@@ -80,8 +80,6 @@ EXCHANGE_ONLY: list[dict[str, str]] = [
     {"product": "lh", "name": "生猪", "exchange": "DCE", "cn_name": "生猪期权", "source": "dce"},
     {"product": "jd", "name": "鸡蛋", "exchange": "DCE", "cn_name": "鸡蛋期权", "source": "dce"},
     {"product": "lg", "name": "原木", "exchange": "DCE", "cn_name": "原木期权", "source": "dce"},
-    {"product": "j", "name": "焦炭", "exchange": "DCE", "cn_name": "焦炭期权", "source": "dce"},
-    {"product": "jm", "name": "焦煤", "exchange": "DCE", "cn_name": "焦煤期权", "source": "dce"},
 ]
 
 # Sina cn_name → product metadata
@@ -100,7 +98,7 @@ SINA_PRODUCT_META: dict[str, dict[str, Any]] = {
     "黄金期权": {"product": "au", "name": "黄金", "exchange": "SHFE"},
     "菜籽粕期权": {"product": "RM", "name": "菜粕", "exchange": "CZCE"},
     "液化石油气期权": {"product": "pg", "name": "LPG", "exchange": "DCE"},
-    "动力煤期权": {"product": "ZC", "name": "动力煤", "exchange": "CZCE"},
+    "动力煤期权": {"product": "ZC", "name": "动力煤", "exchange": "CZCE", "prefer_source": "czce"},
     "黄大豆1号期权": {"product": "a", "name": "豆一", "exchange": "DCE"},
     "黄大豆2号期权": {"product": "b", "name": "豆二", "exchange": "DCE"},
     "豆油期权": {"product": "y", "name": "豆油", "exchange": "DCE"},
@@ -136,18 +134,16 @@ def _build_default_universe() -> list[OptionProduct]:
     for cn in SINA_CN_NAMES:
         meta = SINA_PRODUCT_META[cn]
         prod = meta["product"]
+        source = meta.get("prefer_source", "sina")
         fetch_sym = meta.get("fetch_symbol", cn)
         items[prod.upper()] = OptionProduct(
             product=prod,
             name=meta["name"],
             exchange=meta["exchange"],
             cn_name=cn,
-            source="sina",
-            fetch_symbol=cn,
+            source=source,  # type: ignore[arg-type]
+            fetch_symbol=fetch_sym,
         )
-        # CZCE exchange fetch fallback symbol for IV history etc.
-        if meta["exchange"] == "CZCE" and fetch_sym != cn:
-            pass
     for row in EXCHANGE_ONLY:
         prod = row["product"]
         key = prod.upper()

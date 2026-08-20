@@ -88,7 +88,7 @@
       "exchange": "CZCE",
       "cn_name": "二甲苯期权",
       "source": "sina",
-      "fetch_symbol": "二甲苯期权"
+      "fetch_symbol": "对二甲苯期权"
     },
     {
       "product": "RM",
@@ -159,7 +159,7 @@
       "name": "动力煤",
       "exchange": "CZCE",
       "cn_name": "动力煤期权",
-      "source": "sina",
+      "source": "czce",
       "fetch_symbol": "动力煤期权"
     },
     {
@@ -219,28 +219,12 @@
       "fetch_symbol": "铁矿石期权"
     },
     {
-      "product": "j",
-      "name": "焦炭",
-      "exchange": "DCE",
-      "cn_name": "焦炭期权",
-      "source": "dce",
-      "fetch_symbol": "焦炭期权"
-    },
-    {
       "product": "jd",
       "name": "鸡蛋",
       "exchange": "DCE",
       "cn_name": "鸡蛋期权",
       "source": "dce",
       "fetch_symbol": "鸡蛋期权"
-    },
-    {
-      "product": "jm",
-      "name": "焦煤",
-      "exchange": "DCE",
-      "cn_name": "焦煤期权",
-      "source": "dce",
-      "fetch_symbol": "焦煤期权"
     },
     {
       "product": "l",

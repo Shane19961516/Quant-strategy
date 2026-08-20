@@ -203,7 +203,9 @@ class ExchangeChainFetcher:
             gfex_sym = sym.replace("期权", "")
             return ak.option_hist_gfex(symbol=gfex_sym, trade_date=trade_date)
         if item.source == "dce":
-            return ak.option_hist_dce(symbol=sym, trade_date=trade_date)
+            from data_fetcher.dce_client import option_hist_dce_browser
+
+            return option_hist_dce_browser(symbol=sym, trade_date=trade_date)
         raise ValueError(f"unsupported exchange source: {item.source}")
 
     def _group_df(self, item: OptionProduct, df: pd.DataFrame) -> dict[str, dict[float, dict[str, Any]]]:

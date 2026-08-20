@@ -144,44 +144,86 @@ def _pick_delta_legs(
     delta_min: float = 0.15,
     delta_max: float = 0.20,
     r: float = 0.02,
-) -> tuple[Optional[LegQuote], Optional[LegQuote]]:
+) -> tuple[Optional[LegQuote], Optional[LegQuote], bool]:
+    """
+    Pick call/put legs near |Δ|∈[0.15,0.20].
+
+    Returns (call, put, used_live_book). used_live_book is False when legs
+    were built from exchange settle+IV (no real bid/ask book).
+    """
     calls: list[LegQuote] = []
     puts: list[LegQuote] = []
+    live_book = False
     for row in snap.chain:
         K = row.strike
+        # CALL
         if row.call_bid and row.call_ask:
             iv = _invert_iv(row.call_bid, row.call_ask, snap.F, K, T, "CALL", r)
-            if iv is None:
-                continue
-            g = black76_greeks(snap.F, K, T, r, iv, "CALL")
-            mid = 0.5 * (row.call_bid + row.call_ask)
-            calls.append(
-                LegQuote(
-                    row.call_symbol, K, row.call_bid, row.call_ask, mid, iv,
-                    g.delta, g.gamma, g.theta, g.vega, row.call_oi, mid - row.call_bid,
+            if iv is not None:
+                g = black76_greeks(snap.F, K, T, r, iv, "CALL")
+                mid = 0.5 * (row.call_bid + row.call_ask)
+                calls.append(
+                    LegQuote(
+                        row.call_symbol, K, row.call_bid, row.call_ask, mid, iv,
+                        g.delta, g.gamma, g.theta, g.vega, row.call_oi, mid - row.call_bid,
+                    )
                 )
-            )
+                live_book = True
+        elif row.call_mid and row.call_mid > 0:
+            iv = float(row.call_iv) if row.call_iv and row.call_iv > 0 else None
+            if iv is None:
+                try:
+                    iv = implied_volatility(float(row.call_mid), snap.F, K, T, r, "CALL")
+                except Exception:
+                    iv = None
+            if iv is not None and iv > 0:
+                g = black76_greeks(snap.F, K, T, r, iv, "CALL")
+                mid = float(row.call_mid)
+                calls.append(
+                    LegQuote(
+                        row.call_symbol, K, mid, mid, mid, iv,
+                        g.delta, g.gamma, g.theta, g.vega, row.call_oi, 0.0,
+                    )
+                )
+        # PUT
         if row.put_bid and row.put_ask:
             iv = _invert_iv(row.put_bid, row.put_ask, snap.F, K, T, "PUT", r)
-            if iv is None:
-                continue
-            g = black76_greeks(snap.F, K, T, r, iv, "PUT")
-            mid = 0.5 * (row.put_bid + row.put_ask)
-            puts.append(
-                LegQuote(
-                    row.put_symbol, K, row.put_bid, row.put_ask, mid, iv,
-                    g.delta, g.gamma, g.theta, g.vega, row.put_oi, mid - row.put_bid,
+            if iv is not None:
+                g = black76_greeks(snap.F, K, T, r, iv, "PUT")
+                mid = 0.5 * (row.put_bid + row.put_ask)
+                puts.append(
+                    LegQuote(
+                        row.put_symbol, K, row.put_bid, row.put_ask, mid, iv,
+                        g.delta, g.gamma, g.theta, g.vega, row.put_oi, mid - row.put_bid,
+                    )
                 )
-            )
+                live_book = True
+        elif row.put_mid and row.put_mid > 0:
+            iv = float(row.put_iv) if row.put_iv and row.put_iv > 0 else None
+            if iv is None:
+                try:
+                    iv = implied_volatility(float(row.put_mid), snap.F, K, T, r, "PUT")
+                except Exception:
+                    iv = None
+            if iv is not None and iv > 0:
+                g = black76_greeks(snap.F, K, T, r, iv, "PUT")
+                mid = float(row.put_mid)
+                puts.append(
+                    LegQuote(
+                        row.put_symbol, K, mid, mid, mid, iv,
+                        g.delta, g.gamma, g.theta, g.vega, row.put_oi, 0.0,
+                    )
+                )
     if not calls or not puts:
-        return None, None
+        return None, None, False
 
     def pick(pool: list[LegQuote], target: float) -> LegQuote:
         band = [x for x in pool if delta_min <= abs(x.delta or 0) <= delta_max]
         use = band or pool
         return min(use, key=lambda x: (abs(abs(x.delta or 0) - abs(target)), -((x.oi or 0))))
 
-    return pick(calls, 0.175), pick(puts, 0.175)
+    return pick(calls, 0.175), pick(puts, 0.175), live_book
+
 
 
 def _hist_breach_rate(closes: pd.Series, k_low: float, k_high: float, window: int = 60) -> Optional[float]:
@@ -243,6 +285,46 @@ def evaluate_product(
     T = max(snap.dte, 1) / 365.0
     chain_rows = _chain_dicts(snap)
 
+    if snap.F is None or snap.F <= 0:
+        reasons.append(f"标的价格无效 F={snap.F}")
+        return CandidateResult(
+            product=snap.product,
+            product_name=snap.product_name,
+            exchange=snap.exchange,
+            option_month=snap.option_month,
+            underlying_futures=snap.underlying_futures,
+            quote_date=snap.quote_date.isoformat(),
+            quote_timestamp=snap.quote_timestamp.isoformat(),
+            target_session=next_trading_day(as_of).isoformat(),
+            dte=snap.dte,
+            F=float(snap.F or 0),
+            classification="排除",
+            classification_reasons=reasons,
+            gates=gates.to_dict(),
+            sigma_star=None,
+            iv_rank=None,
+            iv_percentile=None,
+            iv_history_n=0,
+            hv30=None,
+            vrp=None,
+            skew25=None,
+            call=None,
+            put=None,
+            net_delta=None,
+            margin=None,
+            breakeven_low=None,
+            breakeven_high=None,
+            pop_risk_neutral=None,
+            pop_delta_approx=None,
+            hist_breach_rate=None,
+            technical_score=None,
+            technical_detail=None,
+            events=[],
+            stress={},
+            suggested_lots=None,
+            trace={"methods_version": METHODS_VERSION, "data_source": snap.data_source},
+        )
+
     # Fixed tenor IV (current)
     atm_iv, _ = atm_iv_from_chain(chain_rows, snap.F, T)
     tenor_pt = TenorIVPoint(snap.option_month, snap.dte, T, atm_iv or float("nan"), snap.F, "chain_atm")
@@ -295,7 +377,7 @@ def evaluate_product(
     lows = snap.futures_ohlc["low"].tolist()
     tech = evaluate_ranging_regime(snap.futures_ohlc["close"].tolist(), highs=highs, lows=lows)
 
-    call, put = _pick_delta_legs(snap, T=T)
+    call, put, live_book = _pick_delta_legs(snap, T=T)
     if call is None or put is None:
         gates.results.append(check_bid_ask_leg("call", None, None))
         gates.results.append(check_bid_ask_leg("put", None, None))
@@ -334,8 +416,18 @@ def evaluate_product(
             trace={"methods_version": METHODS_VERSION, "iv_history_source": hist_src, "data_source": snap.data_source},
         )
 
-    gates.results.append(check_bid_ask_leg("call", call.bid, call.ask))
-    gates.results.append(check_bid_ask_leg("put", put.bid, put.ask))
+    if live_book:
+        gates.results.append(check_bid_ask_leg("call", call.bid, call.ask))
+        gates.results.append(check_bid_ask_leg("put", put.bid, put.ask))
+    else:
+        gates.add(
+            "live_bid_ask_book",
+            False,
+            "交易所结算价链路（无实时买卖盘），不可作为推荐入场依据",
+            severity="hard",
+        )
+        gates.results.append(check_bid_ask_leg("call", call.bid, call.ask))
+        gates.results.append(check_bid_ask_leg("put", put.bid, put.ask))
     gates.results.append(check_iv_solved(call.iv, "call"))
     gates.results.append(check_iv_solved(put.iv, "put"))
 

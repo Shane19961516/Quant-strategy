@@ -61,9 +61,13 @@ def atm_iv_from_chain(
     strike, call_bid, call_ask, put_bid, put_ask
     Returns (atm_iv, atm_strike) or (None, None).
     """
+    if F is None or F <= 0 or T <= 0:
+        return None, None
     best: tuple[float, float, float] | None = None  # dist, iv, strike
     for row in rows:
         K = float(row["strike"])
+        if K <= 0:
+            continue
         for side, bid_k, ask_k, iv_k in (
             ("CALL", "call_bid", "call_ask", "call_iv"),
             ("PUT", "put_bid", "put_ask", "put_iv"),
