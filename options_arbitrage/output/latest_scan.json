@@ -1,0 +1,337 @@
+{
+  "meta": {
+    "data_source": "akshare_sina+futures_main",
+    "generated_at": "20260820_090055",
+    "notes": [
+      "动力煤期权: 无合适 DTE 合约",
+      "IV Rank/Percentile 使用 HV 缩放代理序列（真实 IV 历史缺失时的近似）。",
+      "失败品种: 动力煤期权"
+    ]
+  },
+  "stats": {
+    "scanned": 14,
+    "iv_passed": 6,
+    "liquidity_passed": 14,
+    "ranging_passed": 13,
+    "event_passed": 14,
+    "recommended": 0,
+    "watchlist": 1,
+    "reject_stages": {
+      "iv": 13,
+      "technical": 1
+    }
+  },
+  "iv_passed": [
+    {
+      "product": "SR",
+      "product_name": "白糖",
+      "underlying": "SR2611",
+      "current_iv": 0.212177038223321,
+      "iv_rank": 97.25254008944044,
+      "iv_percentile": 98.80952380952381,
+      "iv_hv_spread": 0.09671154939386876,
+      "hv30": 0.11546548882945225
+    },
+    {
+      "product": "CF",
+      "product_name": "棉花",
+      "underlying": "CF2611",
+      "current_iv": 0.14432272410425745,
+      "iv_rank": 71.74295208719319,
+      "iv_percentile": 75.39682539682539,
+      "iv_hv_spread": 0.003024293448598586,
+      "hv30": 0.14129843065565886
+    },
+    {
+      "product": "ru",
+      "product_name": "橡胶",
+      "underlying": "ru2610",
+      "current_iv": 0.07679371301922241,
+      "iv_rank": 69.23956176458181,
+      "iv_percentile": 82.93650793650794,
+      "iv_hv_spread": -0.15397364929984875,
+      "hv30": 0.23076736231907116
+    },
+    {
+      "product": "c",
+      "product_name": "玉米",
+      "underlying": "c2611",
+      "current_iv": 0.09072346847600964,
+      "iv_rank": 60.67149600625277,
+      "iv_percentile": 63.888888888888886,
+      "iv_hv_spread": -0.009194344417235129,
+      "hv30": 0.09991781289324476
+    },
+    {
+      "product": "RM",
+      "product_name": "菜粕",
+      "underlying": "RM2611",
+      "current_iv": 0.15181214465701245,
+      "iv_rank": 54.614945938848045,
+      "iv_percentile": 81.34920634920636,
+      "iv_hv_spread": -0.12274816428809124,
+      "hv30": 0.2745603089451037
+    },
+    {
+      "product": "pg",
+      "product_name": "LPG",
+      "underlying": "pg2610",
+      "current_iv": 0.26780336031265883,
+      "iv_rank": 48.55285045302294,
+      "iv_percentile": 74.20634920634922,
+      "iv_hv_spread": -0.20327630629685417,
+      "hv30": 0.471079666609513
+    }
+  ],
+  "recommendations": [],
+  "watchlist": [
+    {
+      "underlying": "SR2611",
+      "dte": 68,
+      "F": 5396.0,
+      "iv_rank": 97.25254008944044,
+      "iv_percentile": 98.80952380952381,
+      "iv_hv_spread": 0.09671154939386876,
+      "hv30": 0.11546548882945225,
+      "current_iv": 0.212177038223321,
+      "call_symbol": "sr2611C5700",
+      "call_strike": 5700.0,
+      "call_delta": 0.13470298321347499,
+      "call_premium": 17.5,
+      "put_symbol": "sr2611P5100",
+      "put_strike": 5100.0,
+      "put_delta": -0.19203414715101164,
+      "put_premium": 40.0,
+      "pop": 0.735505004554975,
+      "max_pairs": 7,
+      "total_margin": 27659.799999999996,
+      "total_premium": 4025.0,
+      "expected_roi": 14.551804423748546,
+      "unit_margin": 3951.3999999999996,
+      "blocked_by_margin_cap": false,
+      "risk_flags": [
+        "IV_HISTORY_PROXY"
+      ],
+      "product": "SR",
+      "product_name": "白糖",
+      "exchange": "CZCE",
+      "option_month": "sr2611",
+      "premium_cash": 575.0,
+      "premium_margin_ratio": 0.10322789127858964,
+      "net_delta": 0.05733116393753665,
+      "net_gamma": -0.0015719448332281527,
+      "net_theta": 1.1469446524804447,
+      "net_vega": -11.39573213238886,
+      "call_gamma": 0.0008247528082983747,
+      "put_gamma": 0.000747192024929778,
+      "call_theta": -0.4170657906949802,
+      "put_theta": -0.7298788617854645,
+      "call_vega": 5.04327081956511,
+      "put_vega": 6.35246131282375,
+      "adx": 30.453033229061987,
+      "bb_pct_b": 0.912996649235756,
+      "range_low_30": 5049.0,
+      "range_high_30": 5397.0,
+      "notes": "IV_HISTORY_PROXY；事件过滤已关闭；技术面部分放宽；WATCHLIST_TECH_OR_EVENT",
+      "light_size_only": false,
+      "rationale": "【观察池】IV 条件通过（IVR 97 / IVP 99，IV-HV 9.7pt），但技术面或事件过滤未过；若转入震荡可关注。胜率约 73.6%，权/保 10.3%。"
+    }
+  ],
+  "rejects": [
+    {
+      "underlying": "m2611",
+      "product": "m",
+      "product_name": "豆粕",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=68 IVR=44.3 IVP=64.7 IV-HV=-0.010",
+      "metrics": {
+        "iv_rank": 44.25860941995603,
+        "iv_percentile": 64.68253968253968,
+        "iv_hv_spread": -0.010071524600863718,
+        "hv30": 0.1528544377121111,
+        "current_iv": 0.14278291311124738
+      }
+    },
+    {
+      "underlying": "c2611",
+      "product": "c",
+      "product_name": "玉米",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=68 IVR=60.7 IVP=63.9 IV-HV=-0.009",
+      "metrics": {
+        "iv_rank": 60.67149600625277,
+        "iv_percentile": 63.888888888888886,
+        "iv_hv_spread": -0.009194344417235129,
+        "hv30": 0.09991781289324476,
+        "current_iv": 0.09072346847600964
+      }
+    },
+    {
+      "underlying": "i2610",
+      "product": "i",
+      "product_name": "铁矿石",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=54.8 IVP=65.1 IV-HV=-0.025",
+      "metrics": {
+        "iv_rank": 54.768560968461536,
+        "iv_percentile": 65.07936507936508,
+        "iv_hv_spread": -0.025025310287015073,
+        "hv30": 0.18659532545961513,
+        "current_iv": 0.16157001517260006
+      }
+    },
+    {
+      "underlying": "CF2611",
+      "product": "CF",
+      "product_name": "棉花",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=68 IVR=71.7 IVP=75.4 IV-HV=0.003",
+      "metrics": {
+        "iv_rank": 71.74295208719319,
+        "iv_percentile": 75.39682539682539,
+        "iv_hv_spread": 0.003024293448598586,
+        "hv30": 0.14129843065565886,
+        "current_iv": 0.14432272410425745
+      }
+    },
+    {
+      "underlying": "SR2611",
+      "product": "SR",
+      "product_name": "白糖",
+      "stage": "technical",
+      "reject_reason": "ADX/DI 偏强 (ADX=30.5, +DI=30.5, -DI=17.5)；偏离布林中轨 (%B=0.91)",
+      "metrics": {
+        "iv_rank": 97.25254008944044,
+        "iv_percentile": 98.80952380952381,
+        "adx": 30.453033229061987,
+        "bb_pct_b": 0.912996649235756
+      }
+    },
+    {
+      "underlying": "TA2610",
+      "product": "TA",
+      "product_name": "PTA",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=39.7 IVP=62.7 IV-HV=-0.010",
+      "metrics": {
+        "iv_rank": 39.678289286869166,
+        "iv_percentile": 62.698412698412696,
+        "iv_hv_spread": -0.010413583437596019,
+        "hv30": 0.30736815801654793,
+        "current_iv": 0.2969545745789519
+      }
+    },
+    {
+      "underlying": "MA2610",
+      "product": "MA",
+      "product_name": "甲醇",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=30.7 IVP=59.1 IV-HV=-0.119",
+      "metrics": {
+        "iv_rank": 30.72910366700331,
+        "iv_percentile": 59.12698412698413,
+        "iv_hv_spread": -0.11903163573976822,
+        "hv30": 0.36029986648415113,
+        "current_iv": 0.24126823074438292
+      }
+    },
+    {
+      "underlying": "ru2610",
+      "product": "ru",
+      "product_name": "橡胶",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=69.2 IVP=82.9 IV-HV=-0.154",
+      "metrics": {
+        "iv_rank": 69.23956176458181,
+        "iv_percentile": 82.93650793650794,
+        "iv_hv_spread": -0.15397364929984875,
+        "hv30": 0.23076736231907116,
+        "current_iv": 0.07679371301922241
+      }
+    },
+    {
+      "underlying": "cu2610",
+      "product": "cu",
+      "product_name": "沪铜",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=15.1 IVP=17.9 IV-HV=0.013",
+      "metrics": {
+        "iv_rank": 15.10270245448516,
+        "iv_percentile": 17.857142857142858,
+        "iv_hv_spread": 0.013302301261722063,
+        "hv30": 0.12143557092529368,
+        "current_iv": 0.13473787218701574
+      }
+    },
+    {
+      "underlying": "au2610",
+      "product": "au",
+      "product_name": "黄金",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=16.6 IVP=37.3 IV-HV=0.047",
+      "metrics": {
+        "iv_rank": 16.640351081821265,
+        "iv_percentile": 37.301587301587304,
+        "iv_hv_spread": 0.04686519108425957,
+        "hv30": 0.18396731107363484,
+        "current_iv": 0.23083250215789441
+      }
+    },
+    {
+      "underlying": "RM2611",
+      "product": "RM",
+      "product_name": "菜粕",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=68 IVR=54.6 IVP=81.3 IV-HV=-0.123",
+      "metrics": {
+        "iv_rank": 54.614945938848045,
+        "iv_percentile": 81.34920634920636,
+        "iv_hv_spread": -0.12274816428809124,
+        "hv30": 0.2745603089451037,
+        "current_iv": 0.15181214465701245
+      }
+    },
+    {
+      "underlying": "pg2610",
+      "product": "pg",
+      "product_name": "LPG",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=48.6 IVP=74.2 IV-HV=-0.203",
+      "metrics": {
+        "iv_rank": 48.55285045302294,
+        "iv_percentile": 74.20634920634922,
+        "iv_hv_spread": -0.20327630629685417,
+        "hv30": 0.471079666609513,
+        "current_iv": 0.26780336031265883
+      }
+    },
+    {
+      "underlying": "OI2611",
+      "product": "OI",
+      "product_name": "菜油",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=68 IVR=53.9 IVP=53.2 IV-HV=-0.010",
+      "metrics": {
+        "iv_rank": 53.856998169416705,
+        "iv_percentile": 53.17460317460318,
+        "iv_hv_spread": -0.01003611456554368,
+        "hv30": 0.16748006504900081,
+        "current_iv": 0.15744395048345713
+      }
+    },
+    {
+      "underlying": "PK2610",
+      "product": "PK",
+      "product_name": "花生",
+      "stage": "iv",
+      "reject_reason": "IV/DTE 条件未满足 DTE=36 IVR=20.7 IVP=13.9 IV-HV=0.007",
+      "metrics": {
+        "iv_rank": 20.730377722648782,
+        "iv_percentile": 13.88888888888889,
+        "iv_hv_spread": 0.006566689457364813,
+        "hv30": 0.0728997408647271,
+        "current_iv": 0.07946643032209191
+      }
+    }
+  ]
+}

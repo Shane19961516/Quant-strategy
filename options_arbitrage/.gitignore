@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .streamlit/
+output/cache/
+output/short_strangle_report_*.md

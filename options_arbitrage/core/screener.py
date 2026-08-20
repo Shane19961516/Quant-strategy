@@ -377,12 +377,14 @@ def screen_underlying(
             )
 
     T = dte / 365.0
+    # Skill step 8: estimate win rate under HV (lognormal), not ATM IV
+    pop_sigma = max(hv, 1e-6)
     pop = strangle_pop(
         snap.F,
         put.strike,
         call.strike,
         T,
-        snap.current_iv,
+        pop_sigma,
         call.delta,
         put.delta,
         method="exact",

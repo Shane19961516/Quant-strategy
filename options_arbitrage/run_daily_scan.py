@@ -81,6 +81,29 @@ def main() -> int:
         exclude_events=sc.get("exclude_events", True),
     )
 
+    # Watchlist: pass IV/liquidity/POP/margin but fail only technical or events
+    watchlist: list[dict] = []
+    if not args.relax_technicals:
+        relaxed, _, _ = run_screener_with_rejects(
+            snaps,
+            settings=settings,
+            require_ranging=False,
+            require_liquidity=not args.relax_liquidity,
+            exclude_events=False,
+        )
+        main_und = {c.underlying for c in results}
+        for c in relaxed:
+            if c.underlying in main_und:
+                continue
+            d = c.to_dict()
+            d["rationale"] = (
+                f"【观察池】IV 条件通过（IVR {c.iv_rank:.0f} / IVP {c.iv_percentile:.0f}，"
+                f"IV-HV {c.iv_hv_spread*100:.1f}pt），但技术面或事件过滤未过；"
+                f"若转入震荡可关注。胜率约 {c.pop*100:.1f}%，权/保 {c.premium_margin_ratio*100:.1f}%。"
+            )
+            d["notes"] = (d.get("notes") or "") + "；WATCHLIST_TECH_OR_EVENT"
+            watchlist.append(d)
+
     # Stats by reject stage
     stages = {}
     for r in rejects:
@@ -90,9 +113,10 @@ def main() -> int:
         "scanned": len(snaps),
         "iv_passed": len(iv_passed),
         "liquidity_passed": len(snaps) - stages.get("liquidity", 0),
-        "ranging_passed": len(snaps) - stages.get("technical", 0) - stages.get("iv", 0),
+        "ranging_passed": len(snaps) - stages.get("technical", 0),
         "event_passed": len(snaps) - stages.get("event", 0),
         "recommended": len(results),
+        "watchlist": len(watchlist),
         "reject_stages": stages,
     }
 
@@ -105,6 +129,9 @@ def main() -> int:
             f"权利金/保证金 {c.premium_margin_ratio*100:.1f}%；到期胜率约 {c.pop*100:.1f}%。"
         )
         recommendations.append(d)
+
+    # Append watchlist after formal recommendations in report detail section
+    report_recs = recommendations + watchlist
 
     params = settings.get("screener", {})
     params_summary = (
@@ -123,7 +150,7 @@ def main() -> int:
         },
         universe_stats=universe_stats,
         iv_passed=iv_passed,
-        recommendations=recommendations,
+        recommendations=report_recs,
         rejected=[r.to_dict() for r in rejects],
     )
     if fetch_notes:
@@ -142,6 +169,7 @@ def main() -> int:
                 "stats": universe_stats,
                 "iv_passed": iv_passed,
                 "recommendations": recommendations,
+                "watchlist": watchlist,
                 "rejects": [r.to_dict() for r in rejects],
             },
             ensure_ascii=False,

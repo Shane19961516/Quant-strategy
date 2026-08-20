@@ -49,6 +49,8 @@ def build_markdown_report(
     lines.append(f"- 通过震荡格局：**{universe_stats.get('ranging_passed', 0)}**")
     lines.append(f"- 事件过滤后剩余：**{universe_stats.get('event_passed', 0)}**")
     lines.append(f"- 最终推荐：**{universe_stats.get('recommended', 0)}**")
+    if universe_stats.get("watchlist"):
+        lines.append(f"- 观察池（IV 达标但技术/事件未过）：**{universe_stats.get('watchlist', 0)}**")
     lines.append("")
 
     if iv_passed:
@@ -71,13 +73,20 @@ def build_markdown_report(
         lines.append("")
 
     # 2. Recommendations
+    formal = [r for r in recommendations if "WATCHLIST" not in (r.get("notes") or "")]
+    watch = [r for r in recommendations if "WATCHLIST" in (r.get("notes") or "")]
+
     lines.append("## 2. 最终推荐品种及理由")
     lines.append("")
-    if not recommendations:
-        lines.append("今日无完全满足全部硬性条件的卖出宽跨候选。可放宽 `iv_rank_min` / 技术面阈值后复扫，或等待波动率抬升。")
+    if not formal:
+        lines.append("今日无完全满足全部硬性条件的卖出宽跨候选。")
+        if watch:
+            lines.append("以下观察池品种 IV 条件较好，但技术面或事件过滤未通过，仅供跟踪。")
+        else:
+            lines.append("可放宽 `iv_rank_min` / 技术面阈值后复扫，或等待波动率抬升。")
         lines.append("")
     else:
-        for i, rec in enumerate(recommendations, 1):
+        for i, rec in enumerate(formal, 1):
             lines.append(
                 f"### {i}. {rec.get('product_name', rec.get('product', ''))}（{rec.get('underlying', '')}）"
             )
@@ -85,16 +94,28 @@ def build_markdown_report(
             lines.append(rec.get("rationale", "高 IV 溢价 + 震荡格局 + 流动性合格。"))
             lines.append("")
 
+    if watch:
+        lines.append("### 观察池")
+        lines.append("")
+        for i, rec in enumerate(watch, 1):
+            lines.append(
+                f"#### W{i}. {rec.get('product_name', rec.get('product', ''))}（{rec.get('underlying', '')}）"
+            )
+            lines.append("")
+            lines.append(rec.get("rationale", ""))
+            lines.append("")
+
     # 3. Detail tables
     lines.append("## 3. 推荐组合明细")
     lines.append("")
-    if recommendations:
+    detail_rows = formal + watch
+    if detail_rows:
         lines.append(
             "| 品种 | 月份/DTE | 卖Call | Call权利金 | CallΔ | 卖Put | Put权利金 | PutΔ | "
             "权利金收入 | 组合保证金 | 权/保比 | 组合Δ | Γ | Θ | Vega | 胜率 |"
         )
         lines.append("|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for rec in recommendations:
+        for rec in detail_rows:
             lines.append(
                 "| {name} | {month}/{dte}d | {ck} | {cp} | {cd:.3f} | {pk} | {pp} | {pd:.3f} | "
                 "{prem} | {marg} | {ratio} | {netd:.3f} | {g:.4f} | {th:.2f} | {v:.2f} | {pop} |".format(
@@ -119,7 +140,7 @@ def build_markdown_report(
             )
         lines.append("")
 
-        for rec in recommendations:
+        for rec in detail_rows:
             lines.append(f"#### {rec.get('product_name', '')} 细节")
             lines.append("")
             lines.append(f"- 标的价格 F = **{_fmt(rec.get('F'), 2)}**")
