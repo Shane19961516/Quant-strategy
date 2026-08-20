@@ -19,24 +19,43 @@ from core.screener import OptionContract, UnderlyingSnapshot
 
 logger = logging.getLogger(__name__)
 
-# Sina-supported commodity options (AkShare option_commodity_*_sina)
-SINA_PRODUCTS: dict[str, dict[str, Any]] = {
-    "豆粕期权": {"product": "m", "exchange": "DCE", "futures": "M0", "multiplier": 10, "name": "豆粕"},
-    "玉米期权": {"product": "c", "exchange": "DCE", "futures": "C0", "multiplier": 10, "name": "玉米"},
-    "铁矿石期权": {"product": "i", "exchange": "DCE", "futures": "I0", "multiplier": 100, "name": "铁矿石"},
-    "棉花期权": {"product": "CF", "exchange": "CZCE", "futures": "CF0", "multiplier": 5, "name": "棉花"},
-    "白糖期权": {"product": "SR", "exchange": "CZCE", "futures": "SR0", "multiplier": 10, "name": "白糖"},
-    "PTA期权": {"product": "TA", "exchange": "CZCE", "futures": "TA0", "multiplier": 5, "name": "PTA"},
-    "甲醇期权": {"product": "MA", "exchange": "CZCE", "futures": "MA0", "multiplier": 10, "name": "甲醇"},
-    "橡胶期权": {"product": "ru", "exchange": "SHFE", "futures": "RU0", "multiplier": 10, "name": "橡胶"},
-    "沪铜期权": {"product": "cu", "exchange": "SHFE", "futures": "CU0", "multiplier": 5, "name": "沪铜"},
-    "黄金期权": {"product": "au", "exchange": "SHFE", "futures": "AU0", "multiplier": 1000, "name": "黄金"},
-    "菜籽粕期权": {"product": "RM", "exchange": "CZCE", "futures": "RM0", "multiplier": 10, "name": "菜粕"},
-    "液化石油气期权": {"product": "pg", "exchange": "DCE", "futures": "PG0", "multiplier": 20, "name": "LPG"},
-    "动力煤期权": {"product": "ZC", "exchange": "CZCE", "futures": "ZC0", "multiplier": 100, "name": "动力煤"},
-    "菜籽油期权": {"product": "OI", "exchange": "CZCE", "futures": "OI0", "multiplier": 10, "name": "菜油"},
-    "花生期权": {"product": "PK", "exchange": "CZCE", "futures": "PK0", "multiplier": 5, "name": "花生"},
-}
+# Backward-compatible Sina product map (built from full universe registry)
+def _build_sina_products() -> dict[str, dict[str, Any]]:
+    try:
+        from data_fetcher.option_universe import load_universe
+
+        specs_path = Path(__file__).resolve().parents[1] / "config" / "product_specs.json"
+        specs = json.loads(specs_path.read_text(encoding="utf-8")).get("products", {})
+        out: dict[str, dict[str, Any]] = {}
+        for item in load_universe():
+            if item.source != "sina":
+                continue
+            prod = item.product
+            mult = None
+            for k in (prod, prod.lower(), prod.upper()):
+                if k in specs:
+                    mult = float(specs[k]["multiplier"])
+                    break
+            fut_sym = f"{prod.upper()}0" if item.exchange == "CZCE" else f"{prod.lower()}0"
+            out[item.cn_name] = {
+                "product": prod,
+                "exchange": item.exchange,
+                "name": item.name,
+                "futures": fut_sym,
+                "multiplier": mult or 10,
+            }
+        if out:
+            return out
+    except Exception:
+        pass
+    # fallback if universe module unavailable
+    return {
+        "豆粕期权": {"product": "m", "exchange": "DCE", "name": "豆粕"},
+        "玉米期权": {"product": "c", "exchange": "DCE", "name": "玉米"},
+    }
+
+
+SINA_PRODUCTS: dict[str, dict[str, Any]] = _build_sina_products()
 
 INDEX_PRODUCTS: dict[str, dict[str, Any]] = {
     "沪深300股指期权": {"product": "IO", "exchange": "CFFEX", "multiplier": 100, "name": "沪深300"},
@@ -53,20 +72,28 @@ def estimate_option_expiry(contract: str, as_of: Optional[date] = None) -> tuple
     then roll back to a weekday if needed. Good enough for DTE bucketing.
     """
     today = as_of or date.today()
-    m = re.search(r"(\d{4})$", contract.lower())
-    if not m:
+    c = contract.strip().upper()
+    m4 = re.search(r"(\d{4})$", c)
+    m3 = re.search(r"(\d{3})$", c)
+    if m4:
+        yymm = m4.group(1)
+        year = 2000 + int(yymm[:2])
+        month = int(yymm[2:])
+    elif m3:
+        yym = m3.group(1)
+        decade = today.year // 10 * 10
+        year = decade + int(yym[0])
+        if year < today.year - 1:
+            year += 10
+        month = int(yym[1:])
+    else:
         return today + timedelta(days=45), 45
-    yymm = m.group(1)
-    year = 2000 + int(yymm[:2])
-    month = int(yymm[2:])
-    # first day of delivery month
     if month == 12:
         first = date(year + 1, 1, 1)
     else:
-        # delivery month itself
         first = date(year, month, 1)
     expiry = first - timedelta(days=5)
-    while expiry.weekday() >= 5:  # Sat/Sun
+    while expiry.weekday() >= 5:
         expiry -= timedelta(days=1)
     dte = max((expiry - today).days, 0)
     return expiry, dte

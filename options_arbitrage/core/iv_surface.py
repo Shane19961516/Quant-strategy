@@ -64,16 +64,24 @@ def atm_iv_from_chain(
     best: tuple[float, float, float] | None = None  # dist, iv, strike
     for row in rows:
         K = float(row["strike"])
-        for side, bid_k, ask_k in (
-            ("CALL", "call_bid", "call_ask"),
-            ("PUT", "put_bid", "put_ask"),
+        for side, bid_k, ask_k, iv_k in (
+            ("CALL", "call_bid", "call_ask", "call_iv"),
+            ("PUT", "put_bid", "put_ask", "put_iv"),
         ):
             bid = float(row.get(bid_k) or 0)
             ask = float(row.get(ask_k) or 0)
             iv = _safe_iv(bid, ask, F, K, T, side, r)
             if iv is None:
+                raw_iv = row.get(iv_k)
+                if raw_iv is not None:
+                    try:
+                        iv = float(raw_iv)
+                        if iv <= 0 or math.isnan(iv):
+                            iv = None
+                    except Exception:
+                        iv = None
+            if iv is None:
                 continue
-            # approximate delta distance via moneyness for ATM pick when greeks absent
             dist = abs(K / F - 1.0)
             if best is None or dist < best[0]:
                 best = (dist, iv, K)
@@ -82,11 +90,21 @@ def atm_iv_from_chain(
     # refine: average call+put IV at nearest strike if both available
     K = best[2]
     ivs = []
-    for side, bid_k, ask_k in (("CALL", "call_bid", "call_ask"), ("PUT", "put_bid", "put_ask")):
+    for side, bid_k, ask_k, iv_k in (
+        ("CALL", "call_bid", "call_ask", "call_iv"),
+        ("PUT", "put_bid", "put_ask", "put_iv"),
+    ):
         row = next((r for r in rows if float(r["strike"]) == K), None)
         if row is None:
             continue
         iv = _safe_iv(float(row.get(bid_k) or 0), float(row.get(ask_k) or 0), F, K, T, side, r)
+        if iv is None and row.get(iv_k) is not None:
+            try:
+                iv = float(row[iv_k])
+                if iv <= 0 or math.isnan(iv):
+                    iv = None
+            except Exception:
+                iv = None
         if iv is not None:
             ivs.append(iv)
     if not ivs:

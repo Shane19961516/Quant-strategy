@@ -46,12 +46,42 @@ CZCE_MAP = {
     "OI": "菜籽油期权",
     "PK": "花生期权",
     "ZC": "动力煤期权",
+    "AP": "苹果期权",
+    "CJ": "红枣期权",
+    "FG": "玻璃期权",
+    "SA": "纯碱期权",
+    "UR": "尿素期权",
+    "SF": "硅铁期权",
+    "SM": "锰硅期权",
+    "PF": "短纤期权",
+    "PR": "瓶片期权",
+    "PL": "丙烯期权",
+    "PX": "对二甲苯期权",
+    "SH": "烧碱期权",
 }
 
 SHFE_MAP = {
-    "cu": "铜",
-    "au": "黄金",
-    "ru": "天然橡胶",
+    "cu": "铜期权",
+    "au": "黄金期权",
+    "ru": "天胶期权",
+    "ag": "白银期权",
+    "al": "铝期权",
+    "rb": "螺纹钢期权",
+    "br": "丁二烯橡胶期权",
+    "sn": "锡期权",
+    "ni": "镍期权",
+    "zn": "锌期权",
+    "pb": "铅期权",
+    "ao": "氧化铝期权",
+    "sc": "原油期权",
+    "sp": "纸浆期权",
+    "nr": "20号胶期权",
+}
+
+GFEX_MAP = {
+    "si": "工业硅",
+    "lc": "碳酸锂",
+    "ps": "多晶硅",
 }
 
 
@@ -150,15 +180,18 @@ def _invert_shfe_atm(df: pd.DataFrame, F: float, trade_date: date) -> float | No
 def seed_shfe(product: str, days: int, end: date, workers: int = 8) -> int:
     import akshare as ak
 
+    cn_name = SHFE_MAP.get(product.lower())
+    if not cn_name:
+        logger.warning("no SHFE map for %s", product)
+        return 0
     store = IVHistoryStore()
     existing = store.load(product)
     have = set(existing.dates) if existing else set()
     targets = [d for d in _trading_days(end, days) if d.isoformat() not in have]
     logger.info("%s SHFE: need %d days", product, len(targets))
-    # underlying continuous for F
-    fut_map = {"cu": "CU0", "au": "AU0", "ru": "RU0"}
+    fut_sym = f"{product.upper()}0" if product.lower() in {"cu", "au", "ag", "al", "rb"} else f"{product.lower()}0"
     try:
-        fut = ak.futures_main_sina(symbol=fut_map[product], start_date="20240101", end_date=end.strftime("%Y%m%d"))
+        fut = ak.futures_main_sina(symbol=fut_sym, start_date="20240101", end_date=end.strftime("%Y%m%d"))
         fut["日期"] = pd.to_datetime(fut["日期"])
         fut = fut.set_index("日期")
     except Exception as exc:
@@ -171,15 +204,12 @@ def seed_shfe(product: str, days: int, end: date, workers: int = 8) -> int:
     def one(d: date):
         ds = d.strftime("%Y%m%d")
         try:
-            df = ak.option_hist_shfe(trade_date=ds)
+            df = ak.option_hist_shfe(symbol=cn_name, trade_date=ds)
             if df.empty:
                 return d.isoformat(), None
-            # filter product
-            df = df[df["合约代码"].astype(str).str.lower().str.startswith(product.lower())]
             if d.isoformat()[:10] in fut.index.strftime("%Y-%m-%d"):
                 F = float(fut.loc[fut.index.strftime("%Y-%m-%d") == d.isoformat()]["收盘价"].iloc[-1])
             else:
-                # nearest prior
                 prior = fut[fut.index.date <= d]
                 if prior.empty:
                     return d.isoformat(), None
@@ -277,6 +307,8 @@ def main() -> int:
             seed_czce(prod.upper(), args.days, end, workers=args.workers)
         elif prod.lower() in SHFE_MAP:
             seed_shfe(prod.lower(), args.days, end, workers=max(4, args.workers // 2))
+        elif prod.lower() in GFEX_MAP:
+            logger.warning("GFEX IV seed via exchange hist not implemented for %s; use --import-csv", prod)
         else:
             logger.warning("skip unsupported product %s (use --import-csv or --seed-dce-csv)", prod)
 

@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
 from core.iv_history_store import IVHistoryStore
 from core.next_day_screener import evaluate_product, run_next_session_scan
 from data_fetcher.csv_loader import load_snapshot_bundle
-from data_fetcher.v2_fetcher import V2MarketFetcher
+from data_fetcher.option_universe import load_universe, universe_product_codes
 from report.next_day_report import build_next_session_report
 from core.next_day_screener import next_trading_day
 from core.exchange_rules import load_rules_meta
@@ -48,7 +48,10 @@ def ensure_iv_history(products: list[str], days: int, seed: bool) -> dict[str, i
         if n < 252:
             missing.append(p)
     if missing and seed:
-        czce = [p for p in missing if p.upper() in {"SR", "CF", "TA", "MA", "RM", "OI", "PK", "ZC"}]
+        czce = [p for p in missing if p.upper() in {
+            "SR", "CF", "TA", "MA", "RM", "OI", "PK", "ZC", "AP", "CJ", "FG", "SA", "UR",
+            "SF", "SM", "PF", "PR", "PL", "PX", "SH",
+        }]
         if czce:
             cmd = [
                 sys.executable,
@@ -95,7 +98,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--products-seed",
         type=str,
-        default="SR,CF,TA,MA,RM,OI,m,c,i,pg,cu,au,ru",
+        default="all",
+        help="Comma-separated product codes, or 'all' for full universe",
     )
     return p.parse_args()
 
@@ -103,7 +107,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     as_of = date.fromisoformat(args.as_of) if args.as_of else date.today()
-    products = [x.strip() for x in args.products_seed.split(",") if x.strip()]
+    if args.products_seed.strip().lower() == "all":
+        products = universe_product_codes()
+    else:
+        products = [x.strip() for x in args.products_seed.split(",") if x.strip()]
 
     iv_status = ensure_iv_history(products, args.seed_days, seed=not args.no_seed)
     print("IV history status:", iv_status, flush=True)

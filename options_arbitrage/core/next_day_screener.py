@@ -120,6 +120,8 @@ def _chain_dicts(snap: ProductSnapshotV2) -> list[dict[str, Any]]:
             "call_ask": r.call_ask,
             "put_bid": r.put_bid,
             "put_ask": r.put_ask,
+            "call_iv": r.call_iv,
+            "put_iv": r.put_iv,
         }
         for r in snap.chain
     ]

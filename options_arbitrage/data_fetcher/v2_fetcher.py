@@ -5,14 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
 
-from data_fetcher.akshare_fetcher import SINA_PRODUCTS, estimate_option_expiry, pick_contract_by_dte
+from data_fetcher.akshare_fetcher import pick_contract_by_dte
+from data_fetcher.option_universe import OptionProduct, load_universe
+from data_fetcher.snapshot_models import ChainRow, FetchManifest, ProductSnapshotV2, norm_underlying_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -23,68 +24,22 @@ def _load_json(name: str) -> dict:
         return json.load(f)
 
 
-def _norm_underlying_symbol(contract: str, exchange: str) -> str:
-    c = contract.strip()
-    if exchange == "CZCE":
-        # czce uses uppercase letters + digits e.g. SR2611
-        m = re.match(r"([A-Za-z]+)(\d+)", c)
-        if m:
-            return m.group(1).upper() + m.group(2)
-    return c.lower()
-
-
-@dataclass
-class ChainRow:
-    strike: float
-    call_symbol: str
-    put_symbol: str
-    call_bid: Optional[float]
-    call_ask: Optional[float]
-    call_mid: Optional[float]
-    call_oi: Optional[float]
-    put_bid: Optional[float]
-    put_ask: Optional[float]
-    put_mid: Optional[float]
-    put_oi: Optional[float]
-
-
-@dataclass
-class ProductSnapshotV2:
-    product: str
-    product_name: str
-    exchange: str
-    option_month: str
-    underlying_futures: str
-    quote_date: date
-    quote_timestamp: datetime
-    data_source: str
-    F: float
-    settle: Optional[float]
-    multiplier: float
-    tick_size: float
-    expiry_date: date
-    dte: int
-    chain: list[ChainRow]
-    futures_ohlc: pd.DataFrame
-    all_months: list[str] = field(default_factory=list)
-    tenor_points: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class FetchManifest:
-    data_source: str
-    quote_asof: str
-    products_ok: list[str]
-    products_failed: list[dict[str, str]]
-    methods_version: str = "methods-v2.0.0"
-
-
 class V2MarketFetcher:
-    """Fetch live snapshots via AkShare Sina chain + specific underlying futures."""
+    """Fetch live snapshots via Sina (bid/ask) or exchange daily settle chains."""
 
     def __init__(self) -> None:
         self.specs = _load_json("product_specs.json")
         self.ticks = _load_json("tick_sizes.json")
+        self._exchange = None
+
+    def _get_exchange(self):
+        if self._exchange is None:
+            from data_fetcher.exchange_fetcher import ExchangeChainFetcher
+
+            self._exchange = ExchangeChainFetcher(
+                self.specs, self.ticks, self.fetch_underlying_futures
+            )
+        return self._exchange
 
     def _tick(self, product: str) -> Optional[float]:
         prods = self.ticks.get("products", {})
@@ -103,26 +58,46 @@ class V2MarketFetcher:
     def fetch_underlying_futures(self, symbol: str) -> pd.DataFrame:
         import akshare as ak
 
-        df = ak.futures_zh_daily_sina(symbol=symbol)
-        df = df.rename(
-            columns={
-                "date": "date",
-                "open": "open",
-                "high": "high",
-                "low": "low",
-                "close": "close",
-                "volume": "volume",
-                "hold": "open_interest",
-                "settle": "settle",
-            }
-        )
-        df["date"] = pd.to_datetime(df["date"])
-        for c in ("open", "high", "low", "close", "settle"):
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        return df.sort_values("date").reset_index(drop=True)
+        def _pull(sym: str) -> pd.DataFrame:
+            df = ak.futures_zh_daily_sina(symbol=sym)
+            df = df.rename(
+                columns={
+                    "date": "date",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "volume": "volume",
+                    "hold": "open_interest",
+                    "settle": "settle",
+                }
+            )
+            df["date"] = pd.to_datetime(df["date"])
+            for c in ("open", "high", "low", "close", "settle"):
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            return df.sort_values("date").reset_index(drop=True)
 
-    def fetch_product(
+        try:
+            df = _pull(symbol)
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+        # fallback: continuous main contract XX0
+        letters = re.match(r"^([A-Za-z]+)", symbol)
+        if letters:
+            root = letters.group(1)
+            for alt in (root.upper() + "0", root.lower() + "0"):
+                try:
+                    df = _pull(alt)
+                    if not df.empty:
+                        return df
+                except Exception:
+                    continue
+        return pd.DataFrame()
+
+    def fetch_product_sina(
         self,
         cn_name: str,
         meta: dict[str, Any],
@@ -146,7 +121,7 @@ class V2MarketFetcher:
         if picked is None:
             raise ValueError("no option month in DTE window")
         option_month, expiry, dte = picked
-        underlying = _norm_underlying_symbol(option_month, meta["exchange"])
+        underlying = norm_underlying_symbol(option_month, meta["exchange"])
 
         fut = self.fetch_underlying_futures(underlying)
         if fut.empty:
@@ -211,27 +186,70 @@ class V2MarketFetcher:
             all_months=months,
         )
 
+    def fetch_product(
+        self,
+        item: OptionProduct,
+        *,
+        dte_min: int = 30,
+        dte_max: int = 60,
+        as_of: Optional[date] = None,
+    ) -> ProductSnapshotV2:
+        if item.source == "sina":
+            meta = {
+                "product": item.product,
+                "name": item.name,
+                "exchange": item.exchange,
+            }
+            return self.fetch_product_sina(
+                item.cn_name, meta, dte_min=dte_min, dte_max=dte_max, as_of=as_of
+            )
+        return self._get_exchange().fetch_product(
+            item, dte_min=dte_min, dte_max=dte_max, as_of=as_of
+        )
+
     def fetch_all(
         self,
         *,
         dte_min: int = 30,
         dte_max: int = 60,
         as_of: Optional[date] = None,
+        universe: Optional[list[OptionProduct]] = None,
     ) -> tuple[list[ProductSnapshotV2], FetchManifest]:
         as_of = as_of or date.today()
+        items = universe or load_universe()
         ok: list[ProductSnapshotV2] = []
         failed: list[dict[str, str]] = []
-        for cn_name, meta in SINA_PRODUCTS.items():
+        sources: set[str] = set()
+        for item in items:
             try:
-                ok.append(self.fetch_product(cn_name, meta, dte_min=dte_min, dte_max=dte_max, as_of=as_of))
+                snap = self.fetch_product(item, dte_min=dte_min, dte_max=dte_max, as_of=as_of)
+                ok.append(snap)
+                sources.add(snap.data_source)
             except Exception as exc:
-                logger.exception("fetch %s", cn_name)
-                failed.append({"product": cn_name, "error": f"{type(exc).__name__}: {exc}"})
+                logger.exception("fetch %s (%s)", item.cn_name, item.product)
+                failed.append(
+                    {
+                        "product": item.product,
+                        "name": item.name,
+                        "cn_name": item.cn_name,
+                        "source": item.source,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
 
         manifest = FetchManifest(
-            data_source="akshare_sina_chain+futures_zh_daily",
+            data_source="multi:" + "+".join(sorted(sources)) if sources else "none",
             quote_asof=datetime.now().isoformat(timespec="seconds"),
-            products_ok=[s.product_name for s in ok],
+            products_ok=[f"{s.product_name}({s.product})" for s in ok],
             products_failed=failed,
         )
         return ok, manifest
+
+
+# Re-export for backward compatibility
+__all__ = [
+    "ChainRow",
+    "FetchManifest",
+    "ProductSnapshotV2",
+    "V2MarketFetcher",
+]
