@@ -74,6 +74,8 @@ class GreeksSummaryResponse(BaseModel):
 
 
 class ScreenerCandidateOut(BaseModel):
+    model_config = {"extra": "ignore"}
+
     underlying: str
     dte: int
     F: float
@@ -98,6 +100,15 @@ class ScreenerCandidateOut(BaseModel):
     unit_margin: float
     blocked_by_margin_cap: bool = False
     risk_flags: list[str] = Field(default_factory=list)
+    product: str = ""
+    product_name: str = ""
+    premium_cash: float = 0.0
+    premium_margin_ratio: float = 0.0
+    net_delta: float = 0.0
+    net_gamma: float = 0.0
+    net_theta: float = 0.0
+    net_vega: float = 0.0
+    notes: str = ""
 
 
 class ScreenerRunResponse(BaseModel):
