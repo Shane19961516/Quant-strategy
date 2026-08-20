@@ -114,6 +114,7 @@ def main() -> int:
 
     iv_status = ensure_iv_history(products, args.seed_days, seed=not args.no_seed)
     print("IV history status:", iv_status, flush=True)
+    print("[e2e] starting live/csv scan (full universe may take 5–10 minutes) …", flush=True)
 
     if args.csv_dir:
         snaps, manifest = load_snapshot_bundle(Path(args.csv_dir))

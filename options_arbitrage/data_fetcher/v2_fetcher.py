@@ -220,11 +220,18 @@ class V2MarketFetcher:
         ok: list[ProductSnapshotV2] = []
         failed: list[dict[str, str]] = []
         sources: set[str] = set()
-        for item in items:
+        total = len(items)
+        print(f"[fetch] scanning {total} products …", flush=True)
+        for idx, item in enumerate(items, 1):
             try:
                 snap = self.fetch_product(item, dte_min=dte_min, dte_max=dte_max, as_of=as_of)
                 ok.append(snap)
                 sources.add(snap.data_source)
+                print(
+                    f"[fetch] {idx}/{total} OK  {item.product} ({item.name}) "
+                    f"via {item.source} month={snap.option_month} F={snap.F:.2f}",
+                    flush=True,
+                )
             except Exception as exc:
                 logger.exception("fetch %s (%s)", item.cn_name, item.product)
                 failed.append(
@@ -236,6 +243,16 @@ class V2MarketFetcher:
                         "error": f"{type(exc).__name__}: {exc}",
                     }
                 )
+                print(
+                    f"[fetch] {idx}/{total} FAIL {item.product} ({item.name}): "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+
+        print(
+            f"[fetch] done: ok={len(ok)} failed={len(failed)}",
+            flush=True,
+        )
 
         manifest = FetchManifest(
             data_source="multi:" + "+".join(sorted(sources)) if sources else "none",
