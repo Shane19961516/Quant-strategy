@@ -79,7 +79,10 @@ def build_next_session_report(meta: dict[str, Any], results: Sequence[dict[str, 
             c, p = r.get("call"), r.get("put")
             m = r.get("margin") or {}
             lots = r.get("suggested_lots")
-            lots_s = str(lots) if lots is not None else "N/A(缺权益)"
+            if r.get("classification") == "推荐":
+                lots_s = str(lots) if lots is not None else "N/A(缺权益)"
+            else:
+                lots_s = "—"
             lines.append(
                 f"| {r.get('classification')} | {r.get('product_name')} | {r.get('underlying_futures')} | "
                 f"{r.get('option_month')}/{r.get('dte')}d | "

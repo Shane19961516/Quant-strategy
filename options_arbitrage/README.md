@@ -10,7 +10,26 @@
 
 规约见 [`CURSOR_SPEC.md`](./CURSOR_SPEC.md)。样例结算单：`fixtures/settlement_sample_2026-08-12.xls`。
 
-## 收盘后 / 下一交易日扫描（v2 推荐）
+## 全流程 E2E（推荐入口）
+
+```bash
+cd options_arbitrage
+pip install -r requirements.txt
+
+# 1) 回填 ≥252 日 ATM IV（CZCE 交易所 / DCE 可用 user_csv）
+python scripts/seed_iv_history.py --days 320 --products SR,CF,TA,MA,RM,OI
+
+# 2) 一带账户参数跑通下一交易日扫描
+python run_e2e.py --equity 500000 --client-margin-addon 0.05
+
+# 离线快照
+python run_e2e.py --csv-dir ./data/snapshots/20260820 --equity 500000 --client-margin-addon 0.05
+```
+
+输出：`output/next_session_report.md`、`output/next_session_scan.json`  
+文档：`docs/方法与口径.md`、`docs/交易所规则管理.md`、`docs/报告规范.md`、`docs/数据规范.md`
+
+## 收盘后 / 下一交易日扫描（v2）
 
 ```bash
 cd options_arbitrage

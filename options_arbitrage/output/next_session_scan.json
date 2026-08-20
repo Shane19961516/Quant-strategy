@@ -3,14 +3,14 @@
     "report_version": "report-v2.0.0",
     "methods_version": "methods-v2.0.0",
     "rules_version": "margin_rules-v2.0.0",
-    "quote_asof": "2026-08-20T09:11:43",
+    "quote_asof": "2026-08-20T09:52:38",
     "target_session": "2026-08-21",
     "data_source": "akshare_sina_chain+futures_zh_daily",
     "model": "Black-76 (American risk flagged)",
-    "account_equity": null,
+    "account_equity": 500000.0,
     "fetch": {
       "data_source": "akshare_sina_chain+futures_zh_daily",
-      "quote_asof": "2026-08-20T09:11:43",
+      "quote_asof": "2026-08-20T09:52:38",
       "products_ok": [
         "豆粕",
         "玉米",
@@ -24,28 +24,203 @@
         "黄金",
         "菜粕",
         "LPG",
-        "菜油"
+        "菜油",
+        "花生"
       ],
       "products_failed": [
         {
           "product": "动力煤期权",
-          "error": "ValueError: missing multiplier for ZC"
-        },
-        {
-          "product": "花生期权",
-          "error": "ValueError: missing multiplier for PK"
+          "error": "ValueError: no option month in DTE window"
         }
       ],
       "methods_version": "methods-v2.0.0"
     },
     "counts": {
-      "scanned": 13,
-      "推荐": 0,
+      "scanned": 14,
+      "推荐": 1,
       "观察": 13,
       "排除": 0
+    },
+    "client_margin_addon": 0.05,
+    "iv_history_status": {
+      "SR": 300,
+      "CF": 300,
+      "TA": 300,
+      "MA": 300,
+      "RM": 300,
+      "OI": 299,
+      "m": 280,
+      "c": 280,
+      "i": 280,
+      "pg": 280,
+      "cu": 0,
+      "au": 0,
+      "ru": 0
     }
   },
   "results": [
+    {
+      "product": "RM",
+      "product_name": "菜粕",
+      "exchange": "CZCE",
+      "option_month": "rm2611",
+      "underlying_futures": "RM2611",
+      "quote_date": "2026-08-20",
+      "quote_timestamp": "2026-08-20T09:52:21.929794",
+      "target_session": "2026-08-21",
+      "dte": 68,
+      "F": 2277.0,
+      "classification": "推荐",
+      "classification_reasons": [
+        "全部硬闸门通过且评分达标"
+      ],
+      "gates": [
+        {
+          "name": "quote_same_day",
+          "passed": true,
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:21.929794",
+          "severity": "hard"
+        },
+        {
+          "name": "mapping_clear",
+          "passed": true,
+          "detail": "期权月=rm2611 标的=RM2611 mult=10.0 tick=1.0",
+          "severity": "hard"
+        },
+        {
+          "name": "rules_verified",
+          "passed": true,
+          "detail": "rules=margin_rules-v2.0.0 verified=2026-08-20",
+          "severity": "hard"
+        },
+        {
+          "name": "events_checked",
+          "passed": true,
+          "detail": "source=static_calendar_v2 updated=2026-08-20 events=2",
+          "severity": "hard"
+        },
+        {
+          "name": "client_margin_known",
+          "passed": true,
+          "detail": "client_addon=0.05",
+          "severity": "hard"
+        },
+        {
+          "name": "account_equity",
+          "passed": true,
+          "detail": "equity=500000.0",
+          "severity": "soft"
+        },
+        {
+          "name": "iv_history_252",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 300 日 source=exchange_czce_atm",
+          "severity": "hard"
+        },
+        {
+          "name": "bid_ask_call",
+          "passed": true,
+          "detail": "call bid=14.5 ask=18.5",
+          "severity": "hard"
+        },
+        {
+          "name": "bid_ask_put",
+          "passed": true,
+          "detail": "put bid=14.0 ask=16.5",
+          "severity": "hard"
+        },
+        {
+          "name": "iv_solved_call",
+          "passed": true,
+          "detail": "call iv=0.1782",
+          "severity": "hard"
+        },
+        {
+          "name": "iv_solved_put",
+          "passed": true,
+          "detail": "put iv=0.1327",
+          "severity": "hard"
+        }
+      ],
+      "sigma_star": 0.22365758758347806,
+      "iv_rank": 55.07695522478934,
+      "iv_percentile": 96.0,
+      "iv_history_n": 300,
+      "hv30": 0.207645165647219,
+      "vrp": 0.01601242193625907,
+      "skew25": -0.04308068590622052,
+      "call": {
+        "symbol": "rm2611C2450",
+        "strike": 2450.0,
+        "bid": 14.5,
+        "ask": 18.5,
+        "mid": 16.5,
+        "iv": 0.17820250840003954,
+        "delta": 0.17979291170640968,
+        "gamma": 0.001495073794190656,
+        "theta": -0.33630046378251016,
+        "vega": 2.5734666919242764,
+        "oi": 1064.0,
+        "slippage": 2.0
+      },
+      "put": {
+        "symbol": "rm2611P2175",
+        "strike": 2175.0,
+        "bid": 14.0,
+        "ask": 16.5,
+        "mid": 15.25,
+        "iv": 0.13267314586911066,
+        "delta": -0.2028104534021589,
+        "gamma": 0.002161846325347035,
+        "theta": -0.2694320389222864,
+        "vega": 2.7704476959731044,
+        "oi": 3240.0,
+        "slippage": 1.25
+      },
+      "net_delta": 0.02301754169574921,
+      "margin": {
+        "call_exchange": 1557.0,
+        "put_exchange": 1907.0,
+        "no_combo_total": 3464.0,
+        "combo_theoretical": 2052.0,
+        "combo_status": "unclear",
+        "client_estimated": 3637.2000000000003,
+        "premium_bid_cash": 285.0,
+        "premium_margin_ratio_no_combo": 0.08227482678983834,
+        "rules_version": "margin_rules-v2.0.0",
+        "verified_date": "2026-08-20"
+      },
+      "breakeven_low": 2146.5,
+      "breakeven_high": 2478.5,
+      "pop_risk_neutral": 0.4852073417926683,
+      "pop_delta_approx": 0.6173966348914315,
+      "hist_breach_rate": 0.15,
+      "technical_score": 62.95222504673326,
+      "technical_detail": {
+        "adx": 18.58739999776514,
+        "bb_pct_b": 0.784270644371602,
+        "reasons": []
+      },
+      "events": [
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
+      ],
+      "stress": {
+        "margin_iv_up50_no_combo": 3983.5999999999995,
+        "margin_iv_up50_combo": 3276.0000000000005,
+        "underlying_up3pct_note": "需入场前重算",
+        "underlying_down3pct_note": "需入场前重算",
+        "combo_fail_use_no_combo": 3464.0
+      },
+      "suggested_lots": 41,
+      "trace": {
+        "methods_version": "methods-v2.0.0",
+        "iv_history_source": "exchange_czce_atm",
+        "data_source": "akshare_sina_chain+futures_zh_daily",
+        "american_risk_flag": true,
+        "premium_uses_bid": true
+      }
+    },
     {
       "product": "m",
       "product_name": "豆粕",
@@ -53,20 +228,19 @@
       "option_month": "m2611",
       "underlying_futures": "m2611",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:10:40.410941",
+      "quote_timestamp": "2026-08-20T09:51:23.413744",
       "target_session": "2026-08-21",
       "dte": 68,
       "F": 3277.0,
       "classification": "观察",
       "classification_reasons": [
-        "权/保比(无优惠) 7.9% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "权/保比(无优惠) 7.9% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:10:40.410941",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:23.413744",
           "severity": "hard"
         },
         {
@@ -89,20 +263,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 156 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 280 日 source=user_csv",
           "severity": "hard"
         },
         {
@@ -131,9 +305,9 @@
         }
       ],
       "sigma_star": 0.2195157090660404,
-      "iv_rank": 95.98021538897127,
-      "iv_percentile": 93.58974358974359,
-      "iv_history_n": 156,
+      "iv_rank": 91.92382309388381,
+      "iv_percentile": 93.57142857142857,
+      "iv_history_n": 280,
       "hv30": 0.14034288329941158,
       "vrp": 0.07917282576662882,
       "skew25": -0.0342368455232977,
@@ -172,7 +346,7 @@
         "no_combo_total": 4944.0,
         "combo_theoretical": 2782.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 5191.2,
         "premium_bid_cash": 390.0,
         "premium_margin_ratio_no_combo": 0.07888349514563107,
         "rules_version": "margin_rules-v2.0.0",
@@ -193,7 +367,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 5685.599999999999,
@@ -205,7 +380,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "user_csv",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -218,20 +393,17 @@
       "option_month": "oi2611",
       "underlying_futures": "OI2611",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:43.696233",
+      "quote_timestamp": "2026-08-20T09:52:33.350783",
       "target_session": "2026-08-21",
       "dte": 68,
       "F": 10655.0,
       "classification": "观察",
-      "classification_reasons": [
-        "IVR/IVP 未达标 (IVR=46.351552853514264, IVP=32.6797385620915)",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
-      ],
+      "classification_reasons": [],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:43.696233",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:33.350783",
           "severity": "hard"
         },
         {
@@ -254,20 +426,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 153 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 299 日 source=exchange_czce_atm",
           "severity": "hard"
         },
         {
@@ -296,9 +468,9 @@
         }
       ],
       "sigma_star": 0.23946068018160474,
-      "iv_rank": 46.351552853514264,
-      "iv_percentile": 32.6797385620915,
-      "iv_history_n": 153,
+      "iv_rank": 78.80454206341454,
+      "iv_percentile": 99.33110367892976,
+      "iv_history_n": 299,
       "hv30": 0.16163993492389792,
       "vrp": 0.07782074525770682,
       "skew25": -0.01852300275163349,
@@ -337,7 +509,7 @@
         "no_combo_total": 14710.0,
         "combo_theoretical": 8780.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 15445.5,
         "premium_bid_cash": 1400.0,
         "premium_margin_ratio_no_combo": 0.09517335146159075,
         "rules_version": "margin_rules-v2.0.0",
@@ -358,7 +530,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 16916.5,
@@ -370,7 +543,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "exchange_czce_atm",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -383,21 +556,19 @@
       "option_month": "sr2611",
       "underlying_futures": "SR2611",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:02.919178",
+      "quote_timestamp": "2026-08-20T09:51:44.747448",
       "target_session": "2026-08-21",
       "dte": 68,
       "F": 5202.0,
       "classification": "观察",
       "classification_reasons": [
-        "IVR/IVP 未达标 (IVR=29.213075764588602, IVP=28.205128205128204)",
-        "权/保比(无优惠) 6.4% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "权/保比(无优惠) 6.4% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:02.919178",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:44.747448",
           "severity": "hard"
         },
         {
@@ -420,20 +591,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 156 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 300 日 source=exchange_czce_atm",
           "severity": "hard"
         },
         {
@@ -462,9 +633,9 @@
         }
       ],
       "sigma_star": 0.15883082199277607,
-      "iv_rank": 29.213075764588602,
-      "iv_percentile": 28.205128205128204,
-      "iv_history_n": 156,
+      "iv_rank": 63.68612002138035,
+      "iv_percentile": 99.33333333333333,
+      "iv_history_n": 300,
       "hv30": 0.08498326446565893,
       "vrp": 0.07384755752711714,
       "skew25": -0.038331720325699176,
@@ -503,7 +674,7 @@
         "no_combo_total": 7333.6,
         "combo_theoretical": 4141.8,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 7700.280000000001,
         "premium_bid_cash": 470.0,
         "premium_margin_ratio_no_combo": 0.06408857859714191,
         "rules_version": "margin_rules-v2.0.0",
@@ -523,7 +694,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 8433.64,
@@ -535,7 +707,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "exchange_czce_atm",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -548,21 +720,19 @@
       "option_month": "cf2611",
       "underlying_futures": "CF2611",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:10:57.459328",
+      "quote_timestamp": "2026-08-20T09:51:39.522616",
       "target_session": "2026-08-21",
       "dte": 68,
       "F": 16720.0,
       "classification": "观察",
       "classification_reasons": [
-        "IVR/IVP 未达标 (IVR=41.430682145575545, IVP=12.903225806451612)",
-        "权/保比(无优惠) 6.0% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "权/保比(无优惠) 6.0% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:10:57.459328",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:39.522616",
           "severity": "hard"
         },
         {
@@ -585,20 +755,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 155 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 300 日 source=exchange_czce_atm",
           "severity": "hard"
         },
         {
@@ -627,9 +797,9 @@
         }
       ],
       "sigma_star": 0.17962985494200984,
-      "iv_rank": 41.430682145575545,
-      "iv_percentile": 12.903225806451612,
-      "iv_history_n": 155,
+      "iv_rank": 67.1938153156915,
+      "iv_percentile": 99.66666666666667,
+      "iv_history_n": 300,
       "hv30": 0.10795151795808809,
       "vrp": 0.07167833698392174,
       "skew25": -0.015017805751584928,
@@ -668,7 +838,7 @@
         "no_combo_total": 11758.0,
         "combo_theoretical": 6434.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 12345.9,
         "premium_bid_cash": 710.0,
         "premium_margin_ratio_no_combo": 0.06038441911889777,
         "rules_version": "margin_rules-v2.0.0",
@@ -688,7 +858,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 13521.699999999999,
@@ -700,7 +871,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "exchange_czce_atm",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -713,7 +884,7 @@
       "option_month": "au2610",
       "underlying_futures": "au2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:28.158674",
+      "quote_timestamp": "2026-08-20T09:52:15.651794",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 969.62,
@@ -721,13 +892,13 @@
       "classification_reasons": [
         "IVR/IVP 未达标 (IVR=8.618625127602122, IVP=27.31958762886598)",
         "单腿持仓量不足 Call=428.0 Put=389.0",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "数据闸门未全部通过: iv_history_252"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:28.158674",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:15.651794",
           "severity": "hard"
         },
         {
@@ -750,20 +921,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
           "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 194 日，需要 252 日",
+          "detail": "固定期限 ATM IV 历史仅 194 日，需要 252 日 source=hv_scaled_proxy_not_for_ivr_gate",
           "severity": "hard"
         },
         {
@@ -833,7 +1004,7 @@
         "no_combo_total": 100764.40000000001,
         "combo_theoretical": 61979.600000000006,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 105802.62000000001,
         "premium_bid_cash": 13219.999999999998,
         "premium_margin_ratio_no_combo": 0.131197129144817,
         "rules_version": "margin_rules-v2.0.0",
@@ -854,7 +1025,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 115879.06,
@@ -879,7 +1051,7 @@
       "option_month": "ru2610",
       "underlying_futures": "ru2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:17.075334",
+      "quote_timestamp": "2026-08-20T09:52:01.222145",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 17420.0,
@@ -888,13 +1060,13 @@
         "IVR/IVP 未达标 (IVR=15.422980940304607, IVP=15.976331360946746)",
         "单腿持仓量不足 Call=29.0 Put=46.0",
         "权/保比(无优惠) 3.8% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "数据闸门未全部通过: iv_history_252"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:17.075334",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:01.222145",
           "severity": "hard"
         },
         {
@@ -917,20 +1089,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
           "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 169 日，需要 252 日",
+          "detail": "固定期限 ATM IV 历史仅 169 日，需要 252 日 source=hv_scaled_proxy_not_for_ivr_gate",
           "severity": "hard"
         },
         {
@@ -1000,7 +1172,7 @@
         "no_combo_total": 30458.0,
         "combo_theoretical": 16654.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 31980.9,
         "premium_bid_cash": 1150.0,
         "premium_margin_ratio_no_combo": 0.03775691115634645,
         "rules_version": "margin_rules-v2.0.0",
@@ -1020,7 +1192,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 35026.7,
@@ -1045,20 +1218,19 @@
       "option_month": "c2611",
       "underlying_futures": "c2611",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:10:44.796383",
+      "quote_timestamp": "2026-08-20T09:51:28.688090",
       "target_session": "2026-08-21",
       "dte": 68,
       "F": 2261.0,
       "classification": "观察",
       "classification_reasons": [
-        "权/保比(无优惠) 4.1% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "权/保比(无优惠) 4.1% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:10:44.796383",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:28.688090",
           "severity": "hard"
         },
         {
@@ -1081,20 +1253,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 156 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 280 日 source=user_csv",
           "severity": "hard"
         },
         {
@@ -1124,8 +1296,8 @@
       ],
       "sigma_star": 0.1344242047332127,
       "iv_rank": 100.0,
-      "iv_percentile": 98.71794871794873,
-      "iv_history_n": 156,
+      "iv_percentile": 99.64285714285714,
+      "iv_history_n": 280,
       "hv30": 0.0892521495226684,
       "vrp": 0.04517205521054431,
       "skew25": -0.0007728384571701191,
@@ -1164,7 +1336,7 @@
         "no_combo_total": 3777.0,
         "combo_theoretical": 2011.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 3965.8500000000004,
         "premium_bid_cash": 155.0,
         "premium_margin_ratio_no_combo": 0.04103786073603389,
         "rules_version": "margin_rules-v2.0.0",
@@ -1185,7 +1357,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 4343.549999999999,
@@ -1197,38 +1370,40 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "user_csv",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
       }
     },
     {
-      "product": "RM",
-      "product_name": "菜粕",
+      "product": "PK",
+      "product_name": "花生",
       "exchange": "CZCE",
-      "option_month": "rm2611",
-      "underlying_futures": "RM2611",
+      "option_month": "pk2610",
+      "underlying_futures": "PK2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:33.155077",
+      "quote_timestamp": "2026-08-20T09:52:38.542027",
       "target_session": "2026-08-21",
-      "dte": 68,
-      "F": 2277.0,
+      "dte": 36,
+      "F": 8166.0,
       "classification": "观察",
       "classification_reasons": [
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "IVR/IVP 未达标 (IVR=47.961586315990864, IVP=52.601156069364166)",
+        "权/保比(无优惠) 2.6% < 8%",
+        "数据闸门未全部通过: iv_history_252"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:33.155077",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:38.542027",
           "severity": "hard"
         },
         {
           "name": "mapping_clear",
           "passed": true,
-          "detail": "期权月=rm2611 标的=RM2611 mult=10.0 tick=1.0",
+          "detail": "期权月=pk2610 标的=PK2610 mult=5.0 tick=2.0",
           "severity": "hard"
         },
         {
@@ -1245,115 +1420,119 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
           "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 156 日，需要 252 日",
+          "detail": "固定期限 ATM IV 历史仅 173 日，需要 252 日 source=hv_scaled_proxy_not_for_ivr_gate",
           "severity": "hard"
         },
         {
           "name": "bid_ask_call",
           "passed": true,
-          "detail": "call bid=14.5 ask=18.5",
+          "detail": "call bid=18.5 ask=20.0",
           "severity": "hard"
         },
         {
           "name": "bid_ask_put",
           "passed": true,
-          "detail": "put bid=14.0 ask=16.5",
+          "detail": "put bid=20.5 ask=22.0",
           "severity": "hard"
         },
         {
           "name": "iv_solved_call",
           "passed": true,
-          "detail": "call iv=0.1782",
+          "detail": "call iv=0.0896",
           "severity": "hard"
         },
         {
           "name": "iv_solved_put",
           "passed": true,
-          "detail": "put iv=0.1327",
+          "detail": "put iv=0.0767",
           "severity": "hard"
         }
       ],
-      "sigma_star": 0.22365758758347806,
-      "iv_rank": 94.38027817480832,
-      "iv_percentile": 94.23076923076923,
-      "iv_history_n": 156,
-      "hv30": 0.207645165647219,
-      "vrp": 0.01601242193625907,
-      "skew25": -0.04308068590622052,
+      "sigma_star": 0.0838583332453274,
+      "iv_rank": 47.961586315990864,
+      "iv_percentile": 52.601156069364166,
+      "iv_history_n": 173,
+      "hv30": 0.06406772121924212,
+      "vrp": 0.019790612026085286,
+      "skew25": -0.004294995174423402,
       "call": {
-        "symbol": "rm2611C2450",
-        "strike": 2450.0,
-        "bid": 14.5,
-        "ask": 18.5,
-        "mid": 16.5,
-        "iv": 0.17820250840003954,
-        "delta": 0.17979291170640968,
-        "gamma": 0.001495073794190656,
-        "theta": -0.33630046378251016,
-        "vega": 2.5734666919242764,
-        "oi": 1064.0,
-        "slippage": 2.0
+        "symbol": "pk2610C8400",
+        "strike": 8400.0,
+        "bid": 18.5,
+        "ask": 20.0,
+        "mid": 19.25,
+        "iv": 0.08963276141129521,
+        "delta": 0.16087143709523968,
+        "gamma": 0.0010615142101815381,
+        "theta": -0.7779771315357168,
+        "vega": 6.257789874248419,
+        "oi": 6801.0,
+        "slippage": 0.75
       },
       "put": {
-        "symbol": "rm2611P2175",
-        "strike": 2175.0,
-        "bid": 14.0,
-        "ask": 16.5,
-        "mid": 15.25,
-        "iv": 0.13267314586911066,
-        "delta": -0.2028104534021589,
-        "gamma": 0.002161846325347035,
-        "theta": -0.2694320389222864,
-        "vega": 2.7704476959731044,
-        "oi": 3240.0,
-        "slippage": 1.25
+        "symbol": "pk2610P8000",
+        "strike": 8000.0,
+        "bid": 20.5,
+        "ask": 22.0,
+        "mid": 21.25,
+        "iv": 0.07667508130072351,
+        "delta": -0.19315789265956965,
+        "gamma": 0.0013929552938655655,
+        "theta": -0.7469044469724311,
+        "vega": 7.024571071172682,
+        "oi": 5221.0,
+        "slippage": 0.75
       },
-      "net_delta": 0.02301754169574921,
+      "net_delta": 0.03228645556432996,
       "margin": {
-        "call_exchange": 1557.0,
-        "put_exchange": 1907.0,
-        "no_combo_total": 3464.0,
-        "combo_theoretical": 2052.0,
+        "call_exchange": 3590.5,
+        "put_exchange": 3770.5,
+        "no_combo_total": 7361.0,
+        "combo_theoretical": 3863.0,
         "combo_status": "unclear",
-        "client_estimated": null,
-        "premium_bid_cash": 285.0,
-        "premium_margin_ratio_no_combo": 0.08227482678983834,
+        "client_estimated": 7729.05,
+        "premium_bid_cash": 195.0,
+        "premium_margin_ratio_no_combo": 0.026490965901372097,
         "rules_version": "margin_rules-v2.0.0",
         "verified_date": "2026-08-20"
       },
-      "breakeven_low": 2146.5,
-      "breakeven_high": 2478.5,
-      "pop_risk_neutral": 0.4852073417926683,
-      "pop_delta_approx": 0.6173966348914315,
+      "breakeven_low": 7961.0,
+      "breakeven_high": 8439.0,
+      "pop_risk_neutral": 0.7652600304084374,
+      "pop_delta_approx": 0.6459706702451907,
       "hist_breach_rate": 0.15,
-      "technical_score": 62.95222504673326,
+      "technical_score": 50.25640314415656,
       "technical_detail": {
-        "adx": 18.58739999776514,
-        "bb_pct_b": 0.784270644371602,
-        "reasons": []
+        "adx": 22.910240083593834,
+        "bb_pct_b": 0.0717672535477335,
+        "reasons": [
+          "ADX/DI 偏强 (ADX=22.9, +DI=13.2, -DI=23.5)",
+          "偏离布林中轨 (%B=0.07)"
+        ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
-        "margin_iv_up50_no_combo": 3983.5999999999995,
-        "margin_iv_up50_combo": 3276.0000000000005,
+        "margin_iv_up50_no_combo": 8465.15,
+        "margin_iv_up50_combo": 5963.000000000001,
         "underlying_up3pct_note": "需入场前重算",
         "underlying_down3pct_note": "需入场前重算",
-        "combo_fail_use_no_combo": 3464.0
+        "combo_fail_use_no_combo": 7361.0
       },
       "suggested_lots": null,
       "trace": {
@@ -1371,7 +1550,7 @@
       "option_month": "cu2610",
       "underlying_futures": "cu2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:23.070046",
+      "quote_timestamp": "2026-08-20T09:52:08.301192",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 106860.0,
@@ -1379,13 +1558,13 @@
       "classification_reasons": [
         "IVR/IVP 未达标 (IVR=9.341169544935966, IVP=5.617977528089887)",
         "权/保比(无优惠) 4.6% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "数据闸门未全部通过: iv_history_252"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:23.070046",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:08.301192",
           "severity": "hard"
         },
         {
@@ -1408,20 +1587,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
           "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 178 日，需要 252 日",
+          "detail": "固定期限 ATM IV 历史仅 178 日，需要 252 日 source=hv_scaled_proxy_not_for_ivr_gate",
           "severity": "hard"
         },
         {
@@ -1491,7 +1670,7 @@
         "no_combo_total": 85800.0,
         "combo_theoretical": 45380.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 90090.0,
         "premium_bid_cash": 3940.0,
         "premium_margin_ratio_no_combo": 0.04592074592074592,
         "rules_version": "margin_rules-v2.0.0",
@@ -1511,7 +1690,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 98669.99999999999,
@@ -1536,21 +1716,20 @@
       "option_month": "i2610",
       "underlying_futures": "i2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:10:48.907819",
+      "quote_timestamp": "2026-08-20T09:51:34.998956",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 715.5,
       "classification": "观察",
       "classification_reasons": [
-        "IVR/IVP 未达标 (IVR=58.3205996643914, IVP=66.47398843930635)",
-        "权/保比(无优惠) 5.0% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "IVR/IVP 未达标 (IVR=56.66260260858977, IVP=67.14285714285714)",
+        "权/保比(无优惠) 5.0% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:10:48.907819",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:34.998956",
           "severity": "hard"
         },
         {
@@ -1573,20 +1752,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 173 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 280 日 source=user_csv",
           "severity": "hard"
         },
         {
@@ -1615,9 +1794,9 @@
         }
       ],
       "sigma_star": 0.16084945510827925,
-      "iv_rank": 58.3205996643914,
-      "iv_percentile": 66.47398843930635,
-      "iv_history_n": 173,
+      "iv_rank": 56.66260260858977,
+      "iv_percentile": 67.14285714285714,
+      "iv_history_n": 280,
       "hv30": 0.1592186012298894,
       "vrp": 0.0016308538783898485,
       "skew25": -0.014416338699277692,
@@ -1656,7 +1835,7 @@
         "no_combo_total": 14922.0,
         "combo_theoretical": 8061.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 15668.1,
         "premium_bid_cash": 750.0,
         "premium_margin_ratio_no_combo": 0.050261359067149174,
         "rules_version": "margin_rules-v2.0.0",
@@ -1676,7 +1855,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 17160.3,
@@ -1688,7 +1868,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "user_csv",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -1701,22 +1881,21 @@
       "option_month": "ta2610",
       "underlying_futures": "TA2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:07.727505",
+      "quote_timestamp": "2026-08-20T09:51:50.319042",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 5848.0,
       "classification": "观察",
       "classification_reasons": [
-        "IVR/IVP 未达标 (IVR=30.63424466571312, IVP=36.024844720496894)",
+        "IVR/IVP 未达标 (IVR=16.444139830383833, IVP=50.66666666666667)",
         "VRP≤0 (-0.066)",
-        "权/保比(无优惠) 7.8% < 8%",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "权/保比(无优惠) 7.8% < 8%"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:07.727505",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:50.319042",
           "severity": "hard"
         },
         {
@@ -1739,20 +1918,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 161 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 300 日 source=exchange_czce_atm",
           "severity": "hard"
         },
         {
@@ -1781,9 +1960,9 @@
         }
       ],
       "sigma_star": 0.22852527489755373,
-      "iv_rank": 30.63424466571312,
-      "iv_percentile": 36.024844720496894,
-      "iv_history_n": 161,
+      "iv_rank": 16.444139830383833,
+      "iv_percentile": 50.66666666666667,
+      "iv_history_n": 300,
       "hv30": 0.2949360039228051,
       "vrp": -0.06641072902525139,
       "skew25": -0.055496976343495874,
@@ -1822,7 +2001,7 @@
         "no_combo_total": 4173.0,
         "combo_theoretical": 2379.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 4381.650000000001,
         "premium_bid_cash": 325.0,
         "premium_margin_ratio_no_combo": 0.0778816199376947,
         "rules_version": "margin_rules-v2.0.0",
@@ -1840,7 +2019,8 @@
         "reasons": []
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 4798.95,
@@ -1852,7 +2032,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "exchange_czce_atm",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -1865,20 +2045,20 @@
       "option_month": "ma2610",
       "underlying_futures": "MA2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:12.993634",
+      "quote_timestamp": "2026-08-20T09:51:54.787222",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 2829.0,
       "classification": "观察",
       "classification_reasons": [
-        "VRP≤0 (-0.087)",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "IVR/IVP 未达标 (IVR=14.389239269137741, IVP=65.33333333333333)",
+        "VRP≤0 (-0.087)"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:12.993634",
+          "detail": "行情日一致 timestamp=2026-08-20T09:51:54.787222",
           "severity": "hard"
         },
         {
@@ -1901,20 +2081,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 173 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 300 日 source=exchange_czce_atm",
           "severity": "hard"
         },
         {
@@ -1943,9 +2123,9 @@
         }
       ],
       "sigma_star": 0.2637474577145846,
-      "iv_rank": 61.96496516847856,
-      "iv_percentile": 61.27167630057804,
-      "iv_history_n": 173,
+      "iv_rank": 14.389239269137741,
+      "iv_percentile": 65.33333333333333,
+      "iv_history_n": 300,
       "hv30": 0.3505197842530798,
       "vrp": -0.0867723265384952,
       "skew25": -0.03456828977355242,
@@ -1984,7 +2164,7 @@
         "no_combo_total": 3813.0,
         "combo_theoretical": 2339.0,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 4003.65,
         "premium_bid_cash": 405.0,
         "premium_margin_ratio_no_combo": 0.10621557828481511,
         "rules_version": "margin_rules-v2.0.0",
@@ -2005,7 +2185,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 4384.95,
@@ -2017,7 +2198,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "exchange_czce_atm",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true
@@ -2030,21 +2211,21 @@
       "option_month": "pg2610",
       "underlying_futures": "pg2610",
       "quote_date": "2026-08-20",
-      "quote_timestamp": "2026-08-20T09:11:39.009414",
+      "quote_timestamp": "2026-08-20T09:52:26.533389",
       "target_session": "2026-08-21",
       "dte": 36,
       "F": 5654.0,
       "classification": "观察",
       "classification_reasons": [
+        "IVR/IVP 未达标 (IVR=34.745864431057974, IVP=55.35714285714286)",
         "VRP≤0 (-0.116)",
-        "单腿持仓量不足 Call=274.0 Put=154.0",
-        "数据闸门未全部通过: client_margin_known; iv_history_252"
+        "单腿持仓量不足 Call=274.0 Put=154.0"
       ],
       "gates": [
         {
           "name": "quote_same_day",
           "passed": true,
-          "detail": "行情日一致 timestamp=2026-08-20T09:11:39.009414",
+          "detail": "行情日一致 timestamp=2026-08-20T09:52:26.533389",
           "severity": "hard"
         },
         {
@@ -2067,20 +2248,20 @@
         },
         {
           "name": "client_margin_known",
-          "passed": false,
-          "detail": "未提供客户/期货公司保证金加收比例",
+          "passed": true,
+          "detail": "client_addon=0.05",
           "severity": "hard"
         },
         {
           "name": "account_equity",
-          "passed": false,
-          "detail": "未提供账户权益，不建议手数",
+          "passed": true,
+          "detail": "equity=500000.0",
           "severity": "soft"
         },
         {
           "name": "iv_history_252",
-          "passed": false,
-          "detail": "固定期限 ATM IV 历史仅 165 日，需要 252 日",
+          "passed": true,
+          "detail": "固定期限 ATM IV 历史 280 日 source=user_csv",
           "severity": "hard"
         },
         {
@@ -2109,9 +2290,9 @@
         }
       ],
       "sigma_star": 0.29030997029896094,
-      "iv_rank": 60.499797265617126,
-      "iv_percentile": 72.72727272727273,
-      "iv_history_n": 165,
+      "iv_rank": 34.745864431057974,
+      "iv_percentile": 55.35714285714286,
+      "iv_history_n": 280,
       "hv30": 0.40674902908509414,
       "vrp": -0.1164390587861332,
       "skew25": -0.018950671103723393,
@@ -2150,7 +2331,7 @@
         "no_combo_total": 19259.2,
         "combo_theoretical": 11149.6,
         "combo_status": "unclear",
-        "client_estimated": null,
+        "client_estimated": 20222.16,
         "premium_bid_cash": 1620.0,
         "premium_margin_ratio_no_combo": 0.08411564343274902,
         "rules_version": "margin_rules-v2.0.0",
@@ -2171,7 +2352,8 @@
         ]
       },
       "events": [
-        "事件过滤已关闭"
+        "2026-08-21 美国初请失业金 / 周度宏观 [MEDIUM]",
+        "2026-08-22 美国制造业/服务业 PMI 初值窗口 [MEDIUM]"
       ],
       "stress": {
         "margin_iv_up50_no_combo": 22148.079999999998,
@@ -2183,7 +2365,7 @@
       "suggested_lots": null,
       "trace": {
         "methods_version": "methods-v2.0.0",
-        "iv_history_source": "hv_scaled_proxy_not_for_ivr_gate",
+        "iv_history_source": "user_csv",
         "data_source": "akshare_sina_chain+futures_zh_daily",
         "american_risk_flag": true,
         "premium_uses_bid": true

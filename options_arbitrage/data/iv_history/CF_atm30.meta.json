@@ -1,0 +1,8 @@
+{
+  "product": "CF",
+  "tenor_days": 30,
+  "source": "exchange_czce_atm",
+  "n": 300,
+  "updated_at": "2026-08-20T09:52:39",
+  "valid_for_recommend": true
+}

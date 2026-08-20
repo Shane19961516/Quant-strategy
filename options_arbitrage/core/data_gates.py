@@ -102,13 +102,28 @@ def check_iv_solved(iv: Optional[float], leg: str) -> GateResult:
     return GateResult(f"iv_solved_{leg}", True, f"{leg} iv={iv:.4f}", "hard")
 
 
-def check_iv_history(n_obs: int, required: int = 252) -> GateResult:
-    if n_obs >= required:
-        return GateResult("iv_history_252", True, f"固定期限 ATM IV 历史 {n_obs} 日", "hard")
+def check_iv_history(n_obs: int, required: int = 252, *, source: str = "") -> GateResult:
+    valid = source in {
+        "exchange_czce_atm",
+        "exchange_shfe_inverted",
+        "exchange_dce_inverted",
+        "exchange_gfex",
+        "csv_import",
+        "user_csv",
+    } or source.startswith("user_csv") or source.startswith("csv")
+    if n_obs >= required and valid:
+        return GateResult("iv_history_252", True, f"固定期限 ATM IV 历史 {n_obs} 日 source={source}", "hard")
+    if n_obs >= required and not valid:
+        return GateResult(
+            "iv_history_252",
+            False,
+            f"有 {n_obs} 日但来源无效 source={source}（禁止 HV 代理）",
+            "hard",
+        )
     return GateResult(
         "iv_history_252",
         False,
-        f"固定期限 ATM IV 历史仅 {n_obs} 日，需要 {required} 日",
+        f"固定期限 ATM IV 历史仅 {n_obs} 日，需要 {required} 日 source={source or 'none'}",
         "hard",
     )
 

@@ -25,6 +25,7 @@ from core.data_gates import (
 )
 from core.events import filter_product_events, upcoming_events
 from core.exchange_rules import compute_margin_breakdown, load_rules_meta
+from core.iv_history_store import IVHistoryStore, VALID_SOURCES
 from core.iv_surface import (
     TenorIVPoint,
     atm_iv_from_chain,
@@ -246,12 +247,40 @@ def evaluate_product(
     fixed = interpolate_fixed_tenor_iv([tenor_pt], target_tenor_days)
     sigma_star = fixed.sigma_star if atm_iv is not None else None
 
-    # IV history — proxy only; gate fails for 推荐
-    hist, hist_src = _build_iv_history_proxy_from_hv(snap.futures_ohlc["close"].tolist(), sigma_star or 0.2)
-    ivr, ivp, n_hist = (None, None, 0)
+    # Prefer persisted fixed-tenor ATM IV history (exchange / user_csv)
+    store = IVHistoryStore(tenor_days=target_tenor_days)
+    stored = store.load(snap.product)
+    hist: list[float] = []
+    hist_src = "none"
+    n_hist = 0
+    if stored and stored.n > 0:
+        hist = stored.as_floats()
+        hist_src = stored.source
+        n_hist = stored.n
+        if sigma_star is not None:
+            # persist today's ATM point so the series grows day by day
+            try:
+                store.save(
+                    snap.product,
+                    [snap.quote_date.isoformat()],
+                    [float(sigma_star)],
+                    source=hist_src,
+                    merge=True,
+                )
+                stored2 = store.load(snap.product)
+                if stored2:
+                    hist = stored2.as_floats()
+                    n_hist = stored2.n
+            except Exception:
+                pass
+    elif sigma_star is not None:
+        hist, hist_src = _build_iv_history_proxy_from_hv(snap.futures_ohlc["close"].tolist(), sigma_star)
+        n_hist = len(hist)
+
+    ivr, ivp = (None, None)
     if sigma_star is not None and hist:
-        ivr, ivp, n_hist = compute_iv_rank_percentile(sigma_star, hist)
-    gates.results.append(check_iv_history(n_hist, 252))
+        ivr, ivp, _ = compute_iv_rank_percentile(sigma_star, hist)
+    gates.results.append(check_iv_history(n_hist, 252, source=hist_src))
 
     try:
         hv = hv30(snap.futures_ohlc["close"].tolist())
@@ -344,6 +373,8 @@ def evaluate_product(
         reasons.append(f"IVR/IVP 未达标 (IVR={ivr}, IVP={ivp})")
     if vrp is not None and vrp <= 0:
         reasons.append(f"VRP≤0 ({vrp:.3f})")
+    if tech.score < tech_watch_below:
+        reasons.append(f"技术面评分 {tech.score:.0f} < {tech_watch_below}")
     if (call.oi or 0) < min_oi or (put.oi or 0) < min_oi:
         reasons.append(f"单腿持仓量不足 Call={call.oi} Put={put.oi}")
 

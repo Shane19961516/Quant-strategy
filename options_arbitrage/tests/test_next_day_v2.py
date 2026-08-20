@@ -16,8 +16,18 @@ from report.next_day_report import build_next_session_report
 
 
 def test_iv_history_gate_fails_under_252():
-    g = check_iv_history(60, 252)
+    g = check_iv_history(60, 252, source="exchange_czce_atm")
     assert not g.passed
+
+
+def test_iv_history_gate_rejects_proxy_even_if_long():
+    g = check_iv_history(300, 252, source="hv_scaled_proxy_not_for_ivr_gate")
+    assert not g.passed
+
+
+def test_iv_history_gate_accepts_user_csv():
+    g = check_iv_history(252, 252, source="user_csv")
+    assert g.passed
 
 
 def test_bid_ask_gate_requires_positive():
