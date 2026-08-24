@@ -88,7 +88,8 @@ def pop_lognormal(
     discounted measure uses d2-style terms). With futures measure, ln(F_T/F) ~ N(-0.5 σ²T, σ²T).
     """
     if K_put >= K_call:
-        raise ValueError("K_put must be less than K_call")
+        # inverted / crossed strikes → zero RN POP (caller should treat as invalid pair)
+        return 0.0
     if T <= 0 or sigma <= 0:
         return 1.0 if K_put < F < K_call else 0.0
 

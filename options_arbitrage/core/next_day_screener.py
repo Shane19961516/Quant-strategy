@@ -439,7 +439,13 @@ def evaluate_product(
     )
     be_low = put.strike - (call.bid + put.bid)
     be_high = call.strike + (call.bid + put.bid)
-    pop_rn = pop_lognormal(snap.F, put.strike, call.strike, T, hv or sigma_star or 0.2) if hv or sigma_star else None
+    if put.strike >= call.strike:
+        reasons.append(f"行权价交叉 Put K={put.strike} ≥ Call K={call.strike}")
+        pop_rn = None
+    elif hv or sigma_star:
+        pop_rn = pop_lognormal(snap.F, put.strike, call.strike, T, hv or sigma_star or 0.2)
+    else:
+        pop_rn = None
     pop_d = pop_approx(call.delta or 0, put.delta or 0)
     breach = _hist_breach_rate(snap.futures_ohlc["close"], put.strike, call.strike)
 
