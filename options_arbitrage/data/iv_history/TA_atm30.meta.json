@@ -2,7 +2,7 @@
   "product": "TA",
   "tenor_days": 30,
   "source": "exchange_czce_atm",
-  "n": 300,
-  "updated_at": "2026-08-20T13:34:50",
+  "n": 301,
+  "updated_at": "2026-08-24T09:47:51",
   "valid_for_recommend": true
 }
