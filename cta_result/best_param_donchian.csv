@@ -1,0 +1,2 @@
+,label,entry,exit,atr_mult,trail_mult,method,p_entry,p_exit,p_atr_mult,p_trail_mult,train_sharpe,train_cagr,train_total,train_maxdd,valid_sharpe,valid_cagr,valid_total,valid_maxdd,pos_asset_frac,local_sharpe_std,score
+0,"donchian|entry=20,exit=10,atr_mult=3,trail_mult=4",20,10,3,4,donchian,20,10,3.0,4.0,0.09746689343796137,0.0045868435046647615,0.01782685379600979,-0.12012826476848193,0.25481454039843215,0.019525901386794775,0.03783902822973273,-0.13507774446097887,0.5384615384615384,0.0,0.1723248273440074

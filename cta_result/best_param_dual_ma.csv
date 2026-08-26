@@ -1,0 +1,2 @@
+,label,fast,slow,atr_mult,trail_mult,method,p_fast,p_slow,p_atr_mult,p_trail_mult,train_sharpe,train_cagr,train_total,train_maxdd,valid_sharpe,valid_cagr,valid_total,valid_maxdd,pos_asset_frac,local_sharpe_std,score
+0,"dual_ma|fast=10,slow=60,atr_mult=2,trail_mult=3",10,60,2,3,dual_ma,10,60,2.0,3.0,0.3244320514016878,0.025173368987540634,0.10075238877001458,-0.1273842908730245,0.17252403178687753,0.014210926093529253,0.027472478769686504,-0.11834385408812698,0.5384615384615384,0.11797021716229077,0.18442561267060872
