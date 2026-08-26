@@ -17,7 +17,7 @@ import pandas as pd
 
 from backtest import run_backtest
 from config import CODES, PARAMS, STRATEGY_START, UNIVERSE
-from data import build_panels, load_universe
+from data import build_panels, last_raw_dates, load_universe, stale_codes_on
 from metrics import perf_stats
 from strategy import generate_target_weights
 
@@ -371,7 +371,9 @@ def build_daily_report(
             chars[int((p - lo) / (hi - lo + 1e-12) * (len(chars) - 1))] for p in pts
         )
 
-    data_end = {c: str(close[c].dropna().index.max().date()) for c in CODES if c in close}
+    # 真实最后行情日（ffill 前）。面板 ffill 后 close 末日会把港股/美股“看起来”已更新。
+    raw_last = last_raw_dates(raw)
+    data_end = {c: str(raw_last[c].date()) for c in CODES if c in raw_last}
     phone_line = f"接收人：{phone_hint}" if phone_hint else ""
 
     # 周五收盘后：表头醒目红色标明「下周一策略调仓目标建议！」
@@ -382,6 +384,8 @@ def build_daily_report(
     monday_target = None
     monday_exec = None
     monday_signal = None
+    monday_data_warning = ""
+    monday_fallback_hold = False
     if is_friday_close:
         # 1) pending（exec 仍在报告日之后）且信号落在本周五
         # 2) 否则取报告日/数据日当天（或该周五）的信号权重
@@ -406,6 +410,33 @@ def build_daily_report(
                     monday_exec = r["exec"]
                     monday_signal = r["signal"]
                     break
+
+        # 关键：周五 19:00 港股/美股源常未齐，面板 ffill 会用昨收冒充今日，
+        # 导致汇丰等被误剔除、债券吃残差（2026-08-21 实盘推送事故）。
+        # 若境外行情在信号日无真实收盘价，则下周一目标强制沿用「本周已生效持仓」，并醒目标注。
+        stale_ox = stale_codes_on(raw, fri_anchor, markets=("hk", "us"))
+        if stale_ox and monday_target is not None:
+            prev_hold = None
+            for r in reversed(sig_rows):
+                if r["signal"].normalize() < fri_anchor:
+                    prev_hold = r
+                    break
+            if prev_hold is not None:
+                proposed = monday_target.reindex(CODES).fillna(0.0)
+                kept = prev_hold["weights"].reindex(CODES).fillna(0.0)
+                turn = float((proposed - kept).abs().sum()) / 2.0
+                stale_names = ",".join(
+                    f"{c}/{UNIVERSE.get(c, {}).get('name', c)}" for c in stale_ox
+                )
+                monday_data_warning = (
+                    f"⚠ 境外行情未齐（{stale_names} 真实收盘早于 {fri_anchor.date()}），"
+                    f"新信号不可靠（若强行计算换手≈{turn*100:.1f}%）。"
+                    "下周一目标暂沿用上周已生效持仓；请以周一数据齐全后的日报复核为准。"
+                )
+                monday_target = kept
+                monday_signal = prev_hold["signal"]
+                monday_exec = _planned_exec(fri_anchor, close.index)
+                monday_fallback_hold = True
 
     status_line = (
         f"本周持仓：信号 {effective['signal'].date()} → 已于 {effective['exec'].date()} 执行"
@@ -448,6 +479,10 @@ def build_daily_report(
             f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（本周五收盘）",
             f"建议执行：{monday_exec.date() if monday_exec is not None else '下周一开盘'}",
         ]
+        if monday_data_warning:
+            lines.append(monday_data_warning)
+            if monday_fallback_hold:
+                lines.append("（数据未齐：目标=上周已生效持仓，勿按不完整新信号调仓）")
         lines.extend(_weight_lines(monday_target) or ["（全债券/空仓）"])
 
     lines += [
@@ -473,10 +508,16 @@ def build_daily_report(
         f"净值 {float(nav.iloc[-1]):.4f}｜年化 {_pct(stats.get('ann_return'))}",
         f"Sharpe {stats.get('sharpe_rf0', float('nan')):.3f}｜MDD {_pct(stats.get('max_drawdown'))}",
         "",
-        "四、数据日期",
+        "四、数据日期（原始行情，未 ffill）",
     ]
     for c, d in data_end.items():
-        lines.append(f"{c} {UNIVERSE[c]['name']}:{d}")
+        mark = ""
+        if is_friday_close and pd.Timestamp(d) < report_day.normalize() and UNIVERSE.get(c, {}).get("market") in (
+            "hk",
+            "us",
+        ):
+            mark = " ⚠未齐"
+        lines.append(f"{c} {UNIVERSE[c]['name']}:{d}{mark}")
     lines += ["", "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。"]
     text = "\n".join([x for x in lines if x is not None])
 
@@ -485,19 +526,32 @@ def build_daily_report(
     friday_banner = ""
     friday_target_block = ""
     if is_friday_close:
-        friday_banner = """
+        sub = (
+            "境外数据未齐：下方目标暂沿用上周持仓，周一复核后再调仓"
+            if monday_fallback_hold
+            else "请按下方红色卡片目标，于下周一开盘差额调仓"
+        )
+        friday_banner = f"""
   <div style="margin:0 0 14px 0;padding:14px 12px;border-radius:12px;background:#dc2626;color:#fff;text-align:center;border:3px solid #fecaca;">
     <div style="font-size:12px;letter-spacing:2px;opacity:.95;">FRIDAY CLOSE ALERT</div>
     <div style="font-size:24px;font-weight:900;line-height:1.35;margin-top:4px;">下周一策略调仓目标建议！</div>
-    <div style="font-size:13px;margin-top:6px;opacity:.95;">请按下方红色卡片目标，于下周一开盘差额调仓</div>
+    <div style="font-size:13px;margin-top:6px;opacity:.95;">{sub}</div>
   </div>"""
+        warn_html = (
+            f"<div style='margin:8px 0;padding:8px 10px;background:#fff7ed;border:1px solid #f59e0b;"
+            f"border-radius:8px;color:#9a3412;font-size:12px;line-height:1.5;'>{monday_data_warning}</div>"
+            if monday_data_warning
+            else ""
+        )
         friday_target_block = f"""
   <div style="margin-top:12px;background:#fff1f2;color:#0f172a;border-radius:12px;padding:12px;border:2px solid #dc2626;">
     <div style="font-size:16px;font-weight:900;color:#dc2626;margin-bottom:6px;">下周一调仓目标建议</div>
     <div style="font-size:12px;color:#7f1d1d;margin-bottom:8px;">
-      信号日 {monday_signal.date() if monday_signal is not None else "—"}（周五收盘）
+      信号日 {monday_signal.date() if monday_signal is not None else "—"}
       → 建议执行 {monday_exec.date() if monday_exec is not None else "下周一开盘"}
+      {"｜数据未齐·沿用上周" if monday_fallback_hold else "（周五收盘）"}
     </div>
+    {warn_html}
     {_weight_bars_html(monday_target)}
   </div>"""
 
@@ -581,6 +635,9 @@ def build_daily_report(
             for c in CODES
             if monday_target is not None and abs(float(monday_target[c])) > 1e-4
         },
+        "monday_data_warning": monday_data_warning or None,
+        "monday_fallback_hold": bool(monday_fallback_hold),
+        "raw_data_end": data_end,
         "week_note": week_note,
         "week_return": week_ret,
         "day_return": day_ret,
