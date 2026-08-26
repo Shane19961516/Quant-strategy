@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# CTA generated synthetic futures (reproducible via --seed)
+cta_data/
+cta_data_contracts/
+cta_data_calendar/
