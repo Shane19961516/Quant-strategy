@@ -1,9 +1,12 @@
 name: Daily Strategy WeChat Notify
 
-# 中国时间工作日约 19:00 收盘后推送 ≈ UTC 11:00
+# 北京时间约 19:00：
+# - 周一至周五：本周持仓 + 盈亏
+# - 周六：加推下周一调仓目标（周五收盘信号更可能齐全）
+# UTC 11:00 = Asia/Shanghai 19:00
 on:
   schedule:
-    - cron: "0 11 * * 1-5"
+    - cron: "0 11 * * 1-6"
   workflow_dispatch:
 
 jobs:

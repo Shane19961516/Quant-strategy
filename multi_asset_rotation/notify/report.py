@@ -376,20 +376,33 @@ def build_daily_report(
     data_end = {c: str(raw_last[c].date()) for c in CODES if c in raw_last}
     phone_line = f"接收人：{phone_hint}" if phone_hint else ""
 
-    # 周五收盘后：表头醒目红色标明「下周一策略调仓目标建议！」
-    # 判定：报告日为周五；或（未指定 REPORT_DAY 时）最新数据日为周五且报告日同周周末
-    is_friday_close = int(report_day.dayofweek) == 4
-    if not report_day_env and int(data_asof.dayofweek) == 4 and int(report_day.dayofweek) >= 4:
-        is_friday_close = True
+    # 推送节奏（与回测一致）：
+    # - 周一～周五：只推「本周已生效持仓 + 今日/本周盈亏」，不在周五抢发下周一目标
+    #   （周五 19:00 港股/美股常未齐，2026-08-21 曾误推债券）
+    # - 周六：加推「下周一调仓目标建议」（此时周五收盘更可能齐全）
+    # 可用 REBALANCE_ADVISORY=1 强制进入调仓建议模式（测试）
+    force_advisory = os.environ.get("REBALANCE_ADVISORY", "").strip() in {"1", "true", "TRUE", "yes"}
+    is_rebalance_advisory = force_advisory or int(report_day.dayofweek) == 5
     monday_target = None
     monday_exec = None
     monday_signal = None
     monday_data_warning = ""
     monday_fallback_hold = False
-    if is_friday_close:
-        # 1) pending（exec 仍在报告日之后）且信号落在本周五
-        # 2) 否则取报告日/数据日当天（或该周五）的信号权重
-        fri_anchor = report_day.normalize() if int(report_day.dayofweek) == 4 else data_asof.normalize()
+    fri_anchor = None
+    if is_rebalance_advisory:
+        # 锚定最近周五信号日
+        if int(report_day.dayofweek) == 5:
+            fri_anchor = report_day.normalize() - pd.Timedelta(days=1)
+        elif int(report_day.dayofweek) == 4:
+            fri_anchor = report_day.normalize()
+        else:
+            fri_anchor = report_day.normalize() - pd.Timedelta(days=int(report_day.dayofweek) - 4)
+            if fri_anchor > report_day.normalize():
+                fri_anchor = fri_anchor - pd.Timedelta(days=7)
+        if fri_anchor not in close.index:
+            avail = close.index[close.index <= fri_anchor]
+            fri_anchor = pd.Timestamp(avail.max()).normalize() if len(avail) else fri_anchor
+
         if pending is not None and pending["signal"].normalize() == fri_anchor:
             monday_target = pending["weights"]
             monday_exec = pending["exec"]
@@ -403,7 +416,6 @@ def build_daily_report(
             monday_exec = pending["exec"]
             monday_signal = pending["signal"]
         else:
-            # 回退：不晚于周五锚点的最近周信号
             for r in reversed(sig_rows):
                 if r["signal"].normalize() <= fri_anchor:
                     monday_target = r["weights"]
@@ -411,9 +423,7 @@ def build_daily_report(
                     monday_signal = r["signal"]
                     break
 
-        # 关键：周五 19:00 港股/美股源常未齐，面板 ffill 会用昨收冒充今日，
-        # 导致汇丰等被误剔除、债券吃残差（2026-08-21 实盘推送事故）。
-        # 若境外行情在信号日无真实收盘价，则下周一目标强制沿用「本周已生效持仓」，并醒目标注。
+        # 双保险：周六若境外周五收盘仍未入库，沿用上周持仓并警告
         stale_ox = stale_codes_on(raw, fri_anchor, markets=("hk", "us"))
         if stale_ox and monday_target is not None:
             prev_hold = None
@@ -429,9 +439,9 @@ def build_daily_report(
                     f"{c}/{UNIVERSE.get(c, {}).get('name', c)}" for c in stale_ox
                 )
                 monday_data_warning = (
-                    f"⚠ 境外行情未齐（{stale_names} 真实收盘早于 {fri_anchor.date()}），"
+                    f"⚠ 境外行情仍未齐（{stale_names} 真实收盘早于 {fri_anchor.date()}），"
                     f"新信号不可靠（若强行计算换手≈{turn*100:.1f}%）。"
-                    "下周一目标暂沿用上周已生效持仓；请以周一数据齐全后的日报复核为准。"
+                    "下周一目标暂沿用上周已生效持仓；请以周一开盘前复核为准。"
                 )
                 monday_target = kept
                 monday_signal = prev_hold["signal"]
@@ -445,7 +455,7 @@ def build_daily_report(
     )
 
     title = f"📈 策略日报 {report_day.date()}｜日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
-    if is_friday_close:
+    if is_rebalance_advisory:
         title = (
             f"🔴下周一调仓目标建议！｜{report_day.date()} "
             f"日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
@@ -453,7 +463,7 @@ def build_daily_report(
 
     # -------- TEXT --------
     lines = ["【多资产轮动策略日报】"]
-    if is_friday_close:
+    if is_rebalance_advisory:
         lines += [
             "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
             "【下周一策略调仓目标建议！】",
@@ -462,8 +472,9 @@ def build_daily_report(
     lines.append(f"生成：{asof_str}")
     if phone_line:
         lines.append(phone_line)
+    mode_note = "周六调仓建议" if is_rebalance_advisory else "周一至周五持仓/盈亏"
     lines += [
-        f"报告日：{report_day.date()}（约19:00收盘后｜数据截至 {data_asof.date()}）",
+        f"报告日：{report_day.date()}（约19:00｜{mode_note}｜数据截至 {data_asof.date()}）",
         "",
         "【今日盈亏】" + _signed_pct(day_ret),
         "【本周至今盈亏】" + _signed_pct(week_ret) + f"（{week_from or '—'} → {week_to}）",
@@ -472,11 +483,11 @@ def build_daily_report(
     if week_note:
         lines.append(f"备注：{week_note}")
 
-    if is_friday_close and monday_target is not None:
+    if is_rebalance_advisory and monday_target is not None:
         lines += [
             "",
             "★★★ 下周一策略调仓目标建议 ★★★",
-            f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（本周五收盘）",
+            f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（周五收盘）",
             f"建议执行：{monday_exec.date() if monday_exec is not None else '下周一开盘'}",
         ]
         if monday_data_warning:
@@ -512,28 +523,34 @@ def build_daily_report(
     ]
     for c, d in data_end.items():
         mark = ""
-        if is_friday_close and pd.Timestamp(d) < report_day.normalize() and UNIVERSE.get(c, {}).get("market") in (
-            "hk",
-            "us",
+        if (
+            is_rebalance_advisory
+            and fri_anchor is not None
+            and pd.Timestamp(d) < fri_anchor
+            and UNIVERSE.get(c, {}).get("market") in ("hk", "us")
         ):
             mark = " ⚠未齐"
         lines.append(f"{c} {UNIVERSE[c]['name']}:{d}{mark}")
-    lines += ["", "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。"]
+    lines += [
+        "",
+        "推送说明：周一至周五=本周持仓与盈亏；周六=下周一调仓目标（对齐回测：周五信号→下交易日执行）。",
+        "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。",
+    ]
     text = "\n".join([x for x in lines if x is not None])
 
     # -------- HTML --------
     ytd_ret = ytd.get("ytd_return") if ytd else None
     friday_banner = ""
     friday_target_block = ""
-    if is_friday_close:
+    if is_rebalance_advisory:
         sub = (
-            "境外数据未齐：下方目标暂沿用上周持仓，周一复核后再调仓"
+            "境外数据未齐：下方目标暂沿用上周持仓，周一开盘前请复核"
             if monday_fallback_hold
             else "请按下方红色卡片目标，于下周一开盘差额调仓"
         )
         friday_banner = f"""
   <div style="margin:0 0 14px 0;padding:14px 12px;border-radius:12px;background:#dc2626;color:#fff;text-align:center;border:3px solid #fecaca;">
-    <div style="font-size:12px;letter-spacing:2px;opacity:.95;">FRIDAY CLOSE ALERT</div>
+    <div style="font-size:12px;letter-spacing:2px;opacity:.95;">SATURDAY REBALANCE ADVISORY</div>
     <div style="font-size:24px;font-weight:900;line-height:1.35;margin-top:4px;">下周一策略调仓目标建议！</div>
     <div style="font-size:13px;margin-top:6px;opacity:.95;">{sub}</div>
   </div>"""
@@ -547,9 +564,9 @@ def build_daily_report(
   <div style="margin-top:12px;background:#fff1f2;color:#0f172a;border-radius:12px;padding:12px;border:2px solid #dc2626;">
     <div style="font-size:16px;font-weight:900;color:#dc2626;margin-bottom:6px;">下周一调仓目标建议</div>
     <div style="font-size:12px;color:#7f1d1d;margin-bottom:8px;">
-      信号日 {monday_signal.date() if monday_signal is not None else "—"}
+      信号日 {monday_signal.date() if monday_signal is not None else "—"}（周五收盘）
       → 建议执行 {monday_exec.date() if monday_exec is not None else "下周一开盘"}
-      {"｜数据未齐·沿用上周" if monday_fallback_hold else "（周五收盘）"}
+      {"｜数据未齐·沿用上周" if monday_fallback_hold else ""}
     </div>
     {warn_html}
     {_weight_bars_html(monday_target)}
@@ -616,7 +633,7 @@ def build_daily_report(
   </div>
 
   <div style="margin-top:12px;font-size:11px;color:#94a3b8;line-height:1.5;">
-    推送节奏：交易日约 19:00（北京时间）收盘后发送。周五含下周一调仓目标。
+    推送节奏：周一至周五约 19:00 推持仓/盈亏；周六约 19:00 加推下周一调仓目标。
   </div>
 </div>
 """
@@ -625,7 +642,9 @@ def build_daily_report(
         "asof": asof_str,
         "report_day": str(report_day.date()),
         "data_asof": str(data_asof.date()),
-        "is_friday_close": bool(is_friday_close),
+        "is_friday_close": False,
+        "is_rebalance_advisory": bool(is_rebalance_advisory),
+        "fri_anchor": str(fri_anchor.date()) if fri_anchor is not None else None,
         "effective_signal": str(effective["signal"].date()) if effective else None,
         "effective_exec": str(effective["exec"].date()) if effective else None,
         "monday_signal": str(monday_signal.date()) if monday_signal is not None else None,
