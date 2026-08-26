@@ -17,7 +17,7 @@ import pandas as pd
 
 from backtest import run_backtest
 from config import CODES, PARAMS, STRATEGY_START, UNIVERSE
-from data import build_panels, load_universe
+from data import build_panels, last_raw_dates, load_universe, stale_codes_on
 from metrics import perf_stats
 from strategy import generate_target_weights
 
@@ -176,33 +176,206 @@ def _monthly_ytd(nav: pd.Series, year: int) -> pd.Series:
     return pd.Series(out)
 
 
-def _save_ytd_chart(nav: pd.Series, year: int, path) -> str:
+def _ytd_cumret_pct(nav: pd.Series, year: int) -> pd.Series:
+    """年初至今累计收益率（%），用于折线图。"""
     pre = nav[nav.index.year < year]
     ynav = nav[nav.index.year == year]
     if len(ynav) < 2:
-        return ""
-    if len(pre):
-        series = pd.concat([pre.iloc[-1:], ynav])
-        series = series / float(series.iloc[0])
-        series = series.iloc[1:]  # start year at ~1.0 from first year day relative to prev close
-        # Better: normalize so first day of year equals nav_year_start/prev_close
-        base = float(pre.iloc[-1])
-        series = ynav / base
-    else:
-        series = ynav / float(ynav.iloc[0])
+        return pd.Series(dtype=float)
+    base = float(pre.iloc[-1]) if len(pre) else float(ynav.iloc[0])
+    if base == 0:
+        return pd.Series(dtype=float)
+    return (ynav / base - 1.0) * 100.0
 
-    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=140)
-    ax.plot(series.index, series.values, color="#2563eb", lw=2.0, label="Strategy YTD NAV")
-    ax.fill_between(series.index, series.values, series.values.min() * 0.98, color="#2563eb", alpha=0.12)
-    ax.axhline(1.0, color="#94a3b8", lw=1, ls="--")
-    ax.set_title(f"{year} YTD Strategy NAV (rebased)", fontsize=11)
-    ax.grid(True, alpha=0.25)
-    ax.legend(loc="upper left", fontsize=8)
-    fig.autofmt_xdate()
+
+def _save_ytd_chart(nav: pd.Series, year: int, path) -> str:
+    """生成高清累计收益率折线图 PNG（落盘 + 可供上传图床）。"""
+    series = _ytd_cumret_pct(nav, year)
+    if len(series) < 2:
+        return ""
+
+    plt.rcParams["font.sans-serif"] = [
+        "PingFang SC",
+        "Heiti SC",
+        "Microsoft YaHei",
+        "Noto Sans CJK SC",
+        "DejaVu Sans",
+        "Arial Unicode MS",
+        "sans-serif",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
+    fig, ax = plt.subplots(figsize=(8.4, 4.2), dpi=180)
+    ax.plot(series.index, series.values, color="#1d4ed8", lw=2.4, solid_capstyle="round")
+    ax.fill_between(series.index, series.values, 0.0, color="#3b82f6", alpha=0.12)
+    ax.axhline(0.0, color="#94a3b8", lw=1.0, ls="--")
+    last_x, last_y = series.index[-1], float(series.iloc[-1])
+    ax.scatter([last_x], [last_y], color="#dc2626", s=36, zorder=5)
+    ax.annotate(
+        f"{last_y:+.2f}%",
+        xy=(last_x, last_y),
+        xytext=(-8, 12),
+        textcoords="offset points",
+        ha="right",
+        fontsize=11,
+        fontweight="bold",
+        color="#dc2626" if last_y < 0 else "#15803d",
+    )
+    ax.set_title(f"{year}年策略累计收益率（折线）", fontsize=14, pad=10)
+    ax.set_ylabel("累计收益 (%)", fontsize=11)
+    ax.grid(True, alpha=0.28, linestyle=":")
+    ax.tick_params(axis="both", labelsize=9)
+    fig.autofmt_xdate(rotation=20, ha="right")
     fig.tight_layout()
-    fig.savefig(path, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, bbox_inches="tight", facecolor="white", edgecolor="none")
     plt.close(fig)
     return str(path)
+
+
+def _downsample_series(series: pd.Series, max_points: int = 72) -> pd.Series:
+    if len(series) <= max_points:
+        return series
+    idx = np.linspace(0, len(series) - 1, max_points).astype(int)
+    idx = sorted(set(idx.tolist() + [len(series) - 1]))
+    return series.iloc[idx]
+
+
+def _quickchart_url(series: pd.Series, year: int, ytd_ret: float | None) -> str:
+    """通过 QuickChart 生成可公开访问的 HTTPS 折线图 URL（PushPlus 可嵌 img）。"""
+    import json
+    import urllib.error
+    import urllib.request
+
+    s = _downsample_series(series, 64)
+    if len(s) < 2:
+        return ""
+    labels = [pd.Timestamp(t).strftime("%m/%d") for t in s.index]
+    values = [round(float(v), 3) for v in s.values]
+    ytd_txt = _signed_pct(ytd_ret) if ytd_ret is not None else ""
+    chart = {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": "累计收益率%",
+                    "data": values,
+                    "fill": True,
+                    "borderColor": "#1d4ed8",
+                    "backgroundColor": "rgba(59,130,246,0.15)",
+                    "borderWidth": 3,
+                    "pointRadius": 0,
+                    "pointHoverRadius": 3,
+                    "tension": 0.12,
+                }
+            ],
+        },
+        "options": {
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": f"{year}年策略累计收益率 {ytd_txt}".strip(),
+                    "font": {"size": 16, "weight": "bold"},
+                    "color": "#0f172a",
+                },
+                "legend": {"display": False},
+                "tooltip": {"callbacks": {}},
+            },
+            "layout": {"padding": {"top": 8, "right": 12, "bottom": 4, "left": 4}},
+            "scales": {
+                "x": {
+                    "ticks": {"maxTicksLimit": 8, "color": "#475569", "font": {"size": 11}},
+                    "grid": {"display": False},
+                },
+                "y": {
+                    "ticks": {"color": "#475569", "font": {"size": 11}},
+                    "grid": {"color": "#e2e8f0"},
+                    "title": {"display": True, "text": "累计收益 (%)", "color": "#334155"},
+                },
+            },
+        },
+    }
+    payload = {
+        "chart": chart,
+        "width": 760,
+        "height": 380,
+        "backgroundColor": "#ffffff",
+        "devicePixelRatio": 2.0,
+        "format": "png",
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://quickchart.io/chart/create",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+        url = str(body.get("url") or "")
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://") :]
+        return url if url.startswith("https://") else ""
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] quickchart create failed: {e}")
+        return ""
+
+
+def _upload_png_tmp_host(path) -> str:
+    """备用：把本地 PNG 传到临时图床，拿 HTTPS 链接。"""
+    import json
+    import mimetypes
+    import uuid
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.exists():
+        return ""
+    boundary = f"----cursor{uuid.uuid4().hex}"
+    file_bytes = p.read_bytes()
+    filename = p.name
+    body = b""
+    body += f"--{boundary}\r\n".encode()
+    body += (
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {mimetypes.guess_type(filename)[0] or 'image/png'}\r\n\r\n"
+    ).encode()
+    body += file_bytes + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+
+    # tmpfiles.org
+    req = urllib.request.Request(
+        "https://tmpfiles.org/api/v1/upload",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = json.loads(resp.read().decode("utf-8", errors="replace"))
+        url = (((raw or {}).get("data") or {}).get("url")) or ""
+        # tmpfiles returns http://tmpfiles.org/xxx/file -> direct link needs /dl/
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://") :]
+        if "tmpfiles.org/" in url and "/dl/" not in url:
+            url = url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+        return url if url.startswith("https://") else ""
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] tmpfiles upload failed: {e}")
+        return ""
+
+
+def _publish_ytd_chart_url(nav: pd.Series, year: int, ytd_ret: float | None, png_path: str) -> str:
+    series = _ytd_cumret_pct(nav, year)
+    url = _quickchart_url(series, year, ytd_ret)
+    if url:
+        return url
+    if png_path:
+        return _upload_png_tmp_host(png_path)
+    return ""
 
 
 def _month_bars_html(monthly: pd.Series) -> str:
@@ -354,8 +527,14 @@ def build_daily_report(
     monthly = _monthly_ytd(nav, year)
     chart_path = OUT / f"ytd_nav_{year}.png"
     _save_ytd_chart(nav, year, chart_path)
+    ytd_ret_preview = ytd.get("ytd_return") if ytd else None
+    chart_url = _publish_ytd_chart_url(nav, year, ytd_ret_preview, str(chart_path))
+    if chart_url:
+        print(f"[daily_notify] ytd chart url: {chart_url}", flush=True)
+    else:
+        print("[warn] ytd chart url unavailable; WeChat may show bars only", flush=True)
 
-    # ASCII sparkline for text channel
+    # ASCII sparkline for text channel only (微信HTML改用真实折线图)
     ynav = nav[nav.index.year == year]
     spark = ""
     if len(ynav) >= 2:
@@ -371,21 +550,38 @@ def build_daily_report(
             chars[int((p - lo) / (hi - lo + 1e-12) * (len(chars) - 1))] for p in pts
         )
 
-    data_end = {c: str(close[c].dropna().index.max().date()) for c in CODES if c in close}
+    # 真实最后行情日（ffill 前）。面板 ffill 后 close 末日会把港股/美股“看起来”已更新。
+    raw_last = last_raw_dates(raw)
+    data_end = {c: str(raw_last[c].date()) for c in CODES if c in raw_last}
     phone_line = f"接收人：{phone_hint}" if phone_hint else ""
 
-    # 周五收盘后：表头醒目红色标明「下周一策略调仓目标建议！」
-    # 判定：报告日为周五；或（未指定 REPORT_DAY 时）最新数据日为周五且报告日同周周末
-    is_friday_close = int(report_day.dayofweek) == 4
-    if not report_day_env and int(data_asof.dayofweek) == 4 and int(report_day.dayofweek) >= 4:
-        is_friday_close = True
+    # 推送节奏（与回测一致）：
+    # - 周一～周五：只推「本周已生效持仓 + 今日/本周盈亏」，不在周五抢发下周一目标
+    #   （周五 19:00 港股/美股常未齐，2026-08-21 曾误推债券）
+    # - 周六：加推「下周一调仓目标建议」（此时周五收盘更可能齐全）
+    # 可用 REBALANCE_ADVISORY=1 强制进入调仓建议模式（测试）
+    force_advisory = os.environ.get("REBALANCE_ADVISORY", "").strip() in {"1", "true", "TRUE", "yes"}
+    is_rebalance_advisory = force_advisory or int(report_day.dayofweek) == 5
     monday_target = None
     monday_exec = None
     monday_signal = None
-    if is_friday_close:
-        # 1) pending（exec 仍在报告日之后）且信号落在本周五
-        # 2) 否则取报告日/数据日当天（或该周五）的信号权重
-        fri_anchor = report_day.normalize() if int(report_day.dayofweek) == 4 else data_asof.normalize()
+    monday_data_warning = ""
+    monday_fallback_hold = False
+    fri_anchor = None
+    if is_rebalance_advisory:
+        # 锚定最近周五信号日
+        if int(report_day.dayofweek) == 5:
+            fri_anchor = report_day.normalize() - pd.Timedelta(days=1)
+        elif int(report_day.dayofweek) == 4:
+            fri_anchor = report_day.normalize()
+        else:
+            fri_anchor = report_day.normalize() - pd.Timedelta(days=int(report_day.dayofweek) - 4)
+            if fri_anchor > report_day.normalize():
+                fri_anchor = fri_anchor - pd.Timedelta(days=7)
+        if fri_anchor not in close.index:
+            avail = close.index[close.index <= fri_anchor]
+            fri_anchor = pd.Timestamp(avail.max()).normalize() if len(avail) else fri_anchor
+
         if pending is not None and pending["signal"].normalize() == fri_anchor:
             monday_target = pending["weights"]
             monday_exec = pending["exec"]
@@ -399,13 +595,37 @@ def build_daily_report(
             monday_exec = pending["exec"]
             monday_signal = pending["signal"]
         else:
-            # 回退：不晚于周五锚点的最近周信号
             for r in reversed(sig_rows):
                 if r["signal"].normalize() <= fri_anchor:
                     monday_target = r["weights"]
                     monday_exec = r["exec"]
                     monday_signal = r["signal"]
                     break
+
+        # 双保险：周六若境外周五收盘仍未入库，沿用上周持仓并警告
+        stale_ox = stale_codes_on(raw, fri_anchor, markets=("hk", "us"))
+        if stale_ox and monday_target is not None:
+            prev_hold = None
+            for r in reversed(sig_rows):
+                if r["signal"].normalize() < fri_anchor:
+                    prev_hold = r
+                    break
+            if prev_hold is not None:
+                proposed = monday_target.reindex(CODES).fillna(0.0)
+                kept = prev_hold["weights"].reindex(CODES).fillna(0.0)
+                turn = float((proposed - kept).abs().sum()) / 2.0
+                stale_names = ",".join(
+                    f"{c}/{UNIVERSE.get(c, {}).get('name', c)}" for c in stale_ox
+                )
+                monday_data_warning = (
+                    f"⚠ 境外行情仍未齐（{stale_names} 真实收盘早于 {fri_anchor.date()}），"
+                    f"新信号不可靠（若强行计算换手≈{turn*100:.1f}%）。"
+                    "下周一目标暂沿用上周已生效持仓；请以周一开盘前复核为准。"
+                )
+                monday_target = kept
+                monday_signal = prev_hold["signal"]
+                monday_exec = _planned_exec(fri_anchor, close.index)
+                monday_fallback_hold = True
 
     status_line = (
         f"本周持仓：信号 {effective['signal'].date()} → 已于 {effective['exec'].date()} 执行"
@@ -414,7 +634,7 @@ def build_daily_report(
     )
 
     title = f"📈 策略日报 {report_day.date()}｜日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
-    if is_friday_close:
+    if is_rebalance_advisory:
         title = (
             f"🔴下周一调仓目标建议！｜{report_day.date()} "
             f"日{_signed_pct(day_ret)} 周{_signed_pct(week_ret)}"
@@ -422,7 +642,7 @@ def build_daily_report(
 
     # -------- TEXT --------
     lines = ["【多资产轮动策略日报】"]
-    if is_friday_close:
+    if is_rebalance_advisory:
         lines += [
             "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
             "【下周一策略调仓目标建议！】",
@@ -431,8 +651,9 @@ def build_daily_report(
     lines.append(f"生成：{asof_str}")
     if phone_line:
         lines.append(phone_line)
+    mode_note = "周六调仓建议" if is_rebalance_advisory else "周一至周五持仓/盈亏"
     lines += [
-        f"报告日：{report_day.date()}（约19:00收盘后｜数据截至 {data_asof.date()}）",
+        f"报告日：{report_day.date()}（约19:00｜{mode_note}｜数据截至 {data_asof.date()}）",
         "",
         "【今日盈亏】" + _signed_pct(day_ret),
         "【本周至今盈亏】" + _signed_pct(week_ret) + f"（{week_from or '—'} → {week_to}）",
@@ -441,13 +662,17 @@ def build_daily_report(
     if week_note:
         lines.append(f"备注：{week_note}")
 
-    if is_friday_close and monday_target is not None:
+    if is_rebalance_advisory and monday_target is not None:
         lines += [
             "",
             "★★★ 下周一策略调仓目标建议 ★★★",
-            f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（本周五收盘）",
+            f"信号日：{monday_signal.date() if monday_signal is not None else '—'}（周五收盘）",
             f"建议执行：{monday_exec.date() if monday_exec is not None else '下周一开盘'}",
         ]
+        if monday_data_warning:
+            lines.append(monday_data_warning)
+            if monday_fallback_hold:
+                lines.append("（数据未齐：目标=上周已生效持仓，勿按不完整新信号调仓）")
         lines.extend(_weight_lines(monday_target) or ["（全债券/空仓）"])
 
     lines += [
@@ -467,37 +692,62 @@ def build_daily_report(
         f"回撤：{_pct(ytd.get('max_drawdown'))}｜Sharpe：{ytd.get('sharpe', float('nan')):.2f}"
         if ytd
         else "YTD：—",
-        f"曲线：{spark}" if spark else "",
+        f"折线图：{chart_url}" if chart_url else (f"曲线：{spark}" if spark else ""),
         "",
         "三、全样本",
         f"净值 {float(nav.iloc[-1]):.4f}｜年化 {_pct(stats.get('ann_return'))}",
         f"Sharpe {stats.get('sharpe_rf0', float('nan')):.3f}｜MDD {_pct(stats.get('max_drawdown'))}",
         "",
-        "四、数据日期",
+        "四、数据日期（原始行情，未 ffill）",
     ]
     for c, d in data_end.items():
-        lines.append(f"{c} {UNIVERSE[c]['name']}:{d}")
-    lines += ["", "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。"]
+        mark = ""
+        if (
+            is_rebalance_advisory
+            and fri_anchor is not None
+            and pd.Timestamp(d) < fri_anchor
+            and UNIVERSE.get(c, {}).get("market") in ("hk", "us")
+        ):
+            mark = " ⚠未齐"
+        lines.append(f"{c} {UNIVERSE[c]['name']}:{d}{mark}")
+    lines += [
+        "",
+        "推送说明：周一至周五=本周持仓与盈亏；周六=下周一调仓目标（对齐回测：周五信号→下交易日执行）。",
+        "风险提示：历史不代表未来；QDII溢折价/汇率/融资未完全计入。",
+    ]
     text = "\n".join([x for x in lines if x is not None])
 
     # -------- HTML --------
     ytd_ret = ytd.get("ytd_return") if ytd else None
     friday_banner = ""
     friday_target_block = ""
-    if is_friday_close:
-        friday_banner = """
+    if is_rebalance_advisory:
+        sub = (
+            "境外数据未齐：下方目标暂沿用上周持仓，周一开盘前请复核"
+            if monday_fallback_hold
+            else "请按下方红色卡片目标，于下周一开盘差额调仓"
+        )
+        friday_banner = f"""
   <div style="margin:0 0 14px 0;padding:14px 12px;border-radius:12px;background:#dc2626;color:#fff;text-align:center;border:3px solid #fecaca;">
-    <div style="font-size:12px;letter-spacing:2px;opacity:.95;">FRIDAY CLOSE ALERT</div>
+    <div style="font-size:12px;letter-spacing:2px;opacity:.95;">SATURDAY REBALANCE ADVISORY</div>
     <div style="font-size:24px;font-weight:900;line-height:1.35;margin-top:4px;">下周一策略调仓目标建议！</div>
-    <div style="font-size:13px;margin-top:6px;opacity:.95;">请按下方红色卡片目标，于下周一开盘差额调仓</div>
+    <div style="font-size:13px;margin-top:6px;opacity:.95;">{sub}</div>
   </div>"""
+        warn_html = (
+            f"<div style='margin:8px 0;padding:8px 10px;background:#fff7ed;border:1px solid #f59e0b;"
+            f"border-radius:8px;color:#9a3412;font-size:12px;line-height:1.5;'>{monday_data_warning}</div>"
+            if monday_data_warning
+            else ""
+        )
         friday_target_block = f"""
   <div style="margin-top:12px;background:#fff1f2;color:#0f172a;border-radius:12px;padding:12px;border:2px solid #dc2626;">
     <div style="font-size:16px;font-weight:900;color:#dc2626;margin-bottom:6px;">下周一调仓目标建议</div>
     <div style="font-size:12px;color:#7f1d1d;margin-bottom:8px;">
       信号日 {monday_signal.date() if monday_signal is not None else "—"}（周五收盘）
       → 建议执行 {monday_exec.date() if monday_exec is not None else "下周一开盘"}
+      {"｜数据未齐·沿用上周" if monday_fallback_hold else ""}
     </div>
+    {warn_html}
     {_weight_bars_html(monday_target)}
   </div>"""
 
@@ -540,14 +790,25 @@ def build_daily_report(
   </div>
 
   <div style="margin-top:12px;background:#f8fafc;color:#0f172a;border-radius:12px;padding:12px;">
-    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">{year} YTD</div>
+    <div style="font-size:15px;font-weight:750;margin-bottom:8px;">{year} 累计收益率折线图</div>
     <div style="font-size:13px;margin-bottom:8px;">
       YTD <b style="color:{_color(ytd_ret)};">{_signed_pct(ytd_ret)}</b>
       ｜波动 {_pct(ytd.get('ann_vol') if ytd else None)}
       ｜回撤 <span style="color:{_color(ytd.get('max_drawdown') if ytd else None)};">{_pct(ytd.get('max_drawdown') if ytd else None)}</span>
       ｜Sharpe {(f"{ytd.get('sharpe'):.2f}" if ytd and np.isfinite(ytd.get('sharpe', np.nan)) else "—")}
     </div>
-    <div style="font-size:12px;color:#64748b;margin-bottom:6px;">曲线：<span style="font-size:16px;">{spark or "—"}</span></div>
+    {
+      (
+        f"<div style='text-align:center;margin:8px 0 10px 0;'>"
+        f"<img src='{chart_url}' alt='{year}累计收益率折线图' "
+        f"style='width:100%;max-width:720px;height:auto;border:1px solid #e2e8f0;"
+        f"border-radius:10px;background:#fff;display:block;margin:0 auto;'/>"
+        f"</div>"
+      )
+      if chart_url
+      else "<div style='font-size:12px;color:#b45309;margin:6px 0;'>折线图暂未能上传外链，请查看月度条形图。</div>"
+    }
+    <div style="font-size:12px;color:#64748b;margin:8px 0 6px 0;">月度收益</div>
     {_month_bars_html(monthly)}
   </div>
 
@@ -562,7 +823,7 @@ def build_daily_report(
   </div>
 
   <div style="margin-top:12px;font-size:11px;color:#94a3b8;line-height:1.5;">
-    推送节奏：交易日约 19:00（北京时间）收盘后发送。周五含下周一调仓目标。
+    推送节奏：周一至周五约 19:00 推持仓/盈亏；周六约 19:00 加推下周一调仓目标。
   </div>
 </div>
 """
@@ -571,7 +832,9 @@ def build_daily_report(
         "asof": asof_str,
         "report_day": str(report_day.date()),
         "data_asof": str(data_asof.date()),
-        "is_friday_close": bool(is_friday_close),
+        "is_friday_close": False,
+        "is_rebalance_advisory": bool(is_rebalance_advisory),
+        "fri_anchor": str(fri_anchor.date()) if fri_anchor is not None else None,
         "effective_signal": str(effective["signal"].date()) if effective else None,
         "effective_exec": str(effective["exec"].date()) if effective else None,
         "monday_signal": str(monday_signal.date()) if monday_signal is not None else None,
@@ -581,6 +844,9 @@ def build_daily_report(
             for c in CODES
             if monday_target is not None and abs(float(monday_target[c])) > 1e-4
         },
+        "monday_data_warning": monday_data_warning or None,
+        "monday_fallback_hold": bool(monday_fallback_hold),
+        "raw_data_end": data_end,
         "week_note": week_note,
         "week_return": week_ret,
         "day_return": day_ret,
@@ -595,6 +861,7 @@ def build_daily_report(
         "eligible": elig,
         "gross": gross,
         "chart": str(chart_path),
+        "chart_url": chart_url or None,
     }
 
     return DailyReport(asof=asof_str, title=title, text=text, html=html, payload=payload)

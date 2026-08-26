@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 本地/云主机 cron 示例（中国时区）
-# 建议：交易日 19:00 发送（收盘后跑策略并推送盈亏/周五调仓目标）
+# 周一至周五 19:00：本周持仓 + 盈亏
+# 周六 19:00：加推下周一调仓目标
 # crontab -e 添加：
-#   0 19 * * 1-5 cd /path/to/multi_asset_rotation && /usr/bin/bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
+#   0 19 * * 1-6 cd /path/to/multi_asset_rotation && /usr/bin/bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

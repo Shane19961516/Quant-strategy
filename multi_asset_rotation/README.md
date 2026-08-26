@@ -112,12 +112,15 @@ borrow_rate=0.02, cost_bps=2.0
 ## 每日微信推送（云端定时 · 约 19:00）
 
 程序：`daily_notify.py`  
-每个交易日收盘后约 **19:00（北京时间）** 按策略逻辑重跑一遍，推送：
 
-- **今日策略盈亏**
-- **本周至今盈亏**（周一前收盘 → 今日/最新数据日收盘）
-- 本周已生效持仓、YTD 曲线与全样本指标
-- **若为周五收盘**：表头用醒目红色标明 **「下周一策略调仓目标建议！」**，并附下周一开盘执行目标权重
+为与回测一致（**周五收盘出信号 → 下周一执行**），并避免周五 19:00 港股/美股行情未齐误推：
+
+| 时间 | 推送内容 |
+|---|---|
+| **周一～周五 19:00** | 今日盈亏、本周至今盈亏、本周已生效持仓、YTD **累计收益率折线图** |
+| **周六 19:00** | 在以上基础上，**加推**红色表头「下周一策略调仓目标建议！」 |
+
+- **数据齐全校验（双保险）**：周六若港股/美股周五原始收盘仍未入库，目标会强制沿用上周持仓并醒目提示（2026-08-21 事故复盘）
 
 > 重要：微信**不能**只凭手机号直发。需要你用微信扫码绑定推送平台拿到 `token`，再由云端调用 API 推到你的微信。手机号只用于消息抬头展示（或 PushPlus 短信渠道）。
 
@@ -136,16 +139,17 @@ borrow_rate=0.02, cost_bps=2.0
 cd multi_asset_rotation
 cp .env.example .env
 # 编辑 .env：填入 PUSHPLUS_TOKEN，确认 WECHAT_PHONE
-python daily_notify.py --dry-run          # 只生成报告
-REPORT_DAY=2026-08-07 python daily_notify.py --dry-run   # 测周五红色调仓文案
-python daily_notify.py                    # 真正推送
+python daily_notify.py --dry-run                              # 按今天星期几生成
+REPORT_DAY=2026-08-21 python daily_notify.py --dry-run        # 测周五：应无调仓红条
+REPORT_DAY=2026-08-22 python daily_notify.py --dry-run        # 测周六：应有下周一调仓建议
+python daily_notify.py                                        # 真正推送
 ```
 
 报告落盘：`output/daily_notify_latest.txt|html|json`
 
-### 3) GitHub Actions 云端定时（中国时间工作日 19:00）
+### 3) GitHub Actions 云端定时（周一至周六 19:00）
 
-仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`（UTC 11:00 = 北京 19:00）。
+仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`（UTC 11:00 = 北京 19:00，`1-6`）。
 
 在 GitHub → Settings → Secrets and variables → Actions 添加：
 
@@ -163,5 +167,5 @@ python daily_notify.py                    # 真正推送
 
 ```bash
 # crontab -e（机器时区设为 Asia/Shanghai）
-0 19 * * 1-5 cd /path/to/multi_asset_rotation && bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
+0 19 * * 1-6 cd /path/to/multi_asset_rotation && bash scripts/run_daily_notify.sh >> output/daily_notify_cron.log 2>&1
 ```

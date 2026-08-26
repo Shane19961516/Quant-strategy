@@ -192,6 +192,35 @@ def load_universe(force: bool = False) -> Dict[str, pd.DataFrame]:
     return out
 
 
+def last_raw_dates(raw: Dict[str, pd.DataFrame]) -> Dict[str, pd.Timestamp]:
+    """各标的原始行情最后交易日（ffill 之前），用于周五推送时判断数据是否齐全。"""
+    out: Dict[str, pd.Timestamp] = {}
+    for code, df in raw.items():
+        if df is None or len(df) == 0 or "date" not in df.columns:
+            continue
+        out[code] = pd.Timestamp(pd.to_datetime(df["date"]).max()).normalize()
+    return out
+
+
+def stale_codes_on(
+    raw: Dict[str, pd.DataFrame],
+    asof: pd.Timestamp,
+    markets: tuple[str, ...] = ("hk", "us"),
+) -> list[str]:
+    """返回在 asof 日尚无真实收盘价（仅可能被 ffill）的标的。"""
+    asof = pd.Timestamp(asof).normalize()
+    last = last_raw_dates(raw)
+    stale: list[str] = []
+    for code in CODES:
+        mkt = UNIVERSE.get(code, {}).get("market")
+        if markets and mkt not in markets:
+            continue
+        d = last.get(code)
+        if d is None or d < asof:
+            stale.append(code)
+    return stale
+
+
 def build_panels(raw: Dict[str, pd.DataFrame]):
     """对齐交易日历，返回 close/open DataFrame。
 
