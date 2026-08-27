@@ -1,13 +1,25 @@
 name: Daily Strategy WeChat Notify
 
-# 北京时间约 19:00：
-# - 周一至周五：本周持仓 + 盈亏
-# - 周六：加推下周一调仓目标（周五收盘信号更可能齐全）
-# UTC 11:00 = Asia/Shanghai 19:00
+# 北京时间：
+# - 周一至周五约 19:00：本周持仓 + 盈亏 + 折线图
+# - 周六约 19:00：加推下周一调仓目标
+# GitHub cron 偶尔漏跑，故增加 19:20 / 20:00 备份；
+# 若当天已有成功推送则自动跳过，避免重复骚扰。
+# UTC: 11:00 / 11:20 / 12:00 = CST 19:00 / 19:20 / 20:00
 on:
   schedule:
     - cron: "0 11 * * 1-6"
+    - cron: "20 11 * * 1-6"
+    - cron: "0 12 * * 1-6"
   workflow_dispatch:
+
+concurrency:
+  group: daily-strategy-wechat-notify
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   notify:
@@ -20,7 +32,60 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Skip if already succeeded today (schedule only)
+        id: gate
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json, os, subprocess
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+          cur = int(os.environ["GITHUB_RUN_ID"])
+          repo = os.environ["GITHUB_REPOSITORY"]
+          raw = subprocess.check_output(
+              [
+                  "gh",
+                  "run",
+                  "list",
+                  "-R",
+                  repo,
+                  "--workflow",
+                  "Daily Strategy WeChat Notify",
+                  "--branch",
+                  "master",
+                  "--limit",
+                  "40",
+                  "--json",
+                  "databaseId,conclusion,createdAt,status,event",
+              ],
+              text=True,
+          )
+          runs = json.loads(raw)
+          success_today = 0
+          for r in runs:
+              if int(r["databaseId"]) == cur:
+                  continue
+              if r.get("conclusion") != "success":
+                  continue
+              created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
+              local = created.astimezone(ZoneInfo("Asia/Shanghai"))
+              if local.date().isoformat() == today:
+                  success_today += 1
+          skip = success_today > 0
+          print(f"[gate] shanghai_today={today} prior_success_today={success_today} skip={skip}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"skip={'true' if skip else 'false'}\n")
+          PY
+
       - name: Setup Python
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -28,11 +93,13 @@ jobs:
           cache-dependency-path: multi_asset_rotation/requirements.txt
 
       - name: Install deps
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
 
       - name: Run daily notify
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         env:
           TZ: Asia/Shanghai
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
@@ -47,7 +114,7 @@ jobs:
           python daily_notify.py
 
       - name: Upload report artifact
-        if: always()
+        if: (github.event_name != 'schedule' || steps.gate.outputs.skip != 'true') && always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-notify-${{ github.run_id }}
@@ -58,3 +125,7 @@ jobs:
             multi_asset_rotation/output/daily_notify_push_result.json
             multi_asset_rotation/output/ytd_nav_*.png
           if-no-files-found: warn
+
+      - name: Already sent today
+        if: github.event_name == 'schedule' && steps.gate.outputs.skip == 'true'
+        run: echo "Skip backup slot — already successfully notified earlier today (Asia/Shanghai)."
