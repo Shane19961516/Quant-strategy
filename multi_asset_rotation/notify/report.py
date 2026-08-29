@@ -17,7 +17,7 @@ import pandas as pd
 
 from backtest import run_backtest
 from config import CODES, PARAMS, STRATEGY_START, UNIVERSE
-from data import build_panels, last_raw_dates, load_universe, stale_codes_on
+from data import build_panels, last_raw_dates, load_universe, stale_rebalance_codes
 from metrics import perf_stats
 from strategy import generate_target_weights
 
@@ -431,11 +431,15 @@ def build_daily_report(
         week_last = max(same)
         if sig_dt.normalize() != week_last.normalize():
             return False
-        # 当前周且还没到周五：数据截断产生的伪信号，忽略
-        report_week = report_day.strftime("%Y-%W")
-        if week == report_week and int(report_day.dayofweek) < 4 and int(sig_dt.dayofweek) < 4:
+        cutoff = min(report_day, data_asof).normalize()
+        # 当前 ISO 周内、非周五：数据截断把周四/周三当成 week_end 的伪信号
+        sig_week = sig_dt.strftime("%Y-%W")
+        cutoff_week = cutoff.strftime("%Y-%W")
+        if sig_week == cutoff_week and int(sig_dt.dayofweek) != 4:
             return False
-        # 历史周：若该周最后一个交易日不是周五，但确实是假期缩短周，则接受
+        if int(sig_dt.dayofweek) != 4 and sig_week >= cutoff_week:
+            return False
+        # 历史缩短交易周（末交易日非周五且该周已结束）可接受
         return True
 
     sig_rows = []
@@ -451,10 +455,11 @@ def build_daily_report(
             }
         )
 
-    # 本周生效：执行日 <= 报告日的最近一条周信号；整周适用直到下次执行
+    # 本周生效：执行日 <= min(报告日, 数据日)；避免凌晨/截断数据把「尚未执行」的下交易日误当已生效
+    effective_cutoff = min(report_day, data_asof).normalize()
     effective = None
     for r in reversed(sig_rows):
-        if r["exec"].normalize() <= report_day.normalize():
+        if r["exec"].normalize() <= effective_cutoff:
             effective = r
             break
     pending = None
@@ -602,8 +607,13 @@ def build_daily_report(
                     monday_signal = r["signal"]
                     break
 
-        # 双保险：周六若境外周五收盘仍未入库，沿用上周持仓并警告
-        stale_ox = stale_codes_on(raw, fri_anchor, markets=("hk", "us"))
+        # 双保险：仅当「目标仓位里的 hk/us 原生标的」周五收盘未入库时才回退
+        target_codes = [
+            c
+            for c in CODES
+            if monday_target is not None and abs(float(monday_target.get(c, 0.0))) > 1e-4
+        ]
+        stale_ox = stale_rebalance_codes(raw, fri_anchor, target_codes)
         if stale_ox and monday_target is not None:
             prev_hold = None
             for r in reversed(sig_rows):

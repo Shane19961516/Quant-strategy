@@ -147,13 +147,13 @@ python daily_notify.py                                        # 真正推送
 
 报告落盘：`output/daily_notify_latest.txt|html|json`
 
-### 3) GitHub Actions 云端定时（周一至周六 19:00，含备份）
+### 3) GitHub Actions 云端定时（周一至周六 19:00–22:00）
 
 仓库已含工作流：`.github/workflows/daily_strategy_notify.yml`
 
-- 主定时：北京 **19:00**（UTC 11:00）
-- 备份定时：北京 **19:20 / 20:00**（防 GitHub cron 漏跑）
-- 同一天若已成功推送，备份时段会自动跳过，避免重复消息
+- 主窗口：北京 **19:00–22:00** 每小时尝试（防 GitHub cron 延迟到凌晨误推）
+- **19:00 前不发送**；当天已成功则跳过后续时段
+- 周六加推下周一调仓目标
 
 在 GitHub → Settings → Secrets and variables → Actions 添加：
 
