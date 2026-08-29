@@ -221,6 +221,31 @@ def stale_codes_on(
     return stale
 
 
+def stale_rebalance_codes(
+    raw: Dict[str, pd.DataFrame],
+    asof: pd.Timestamp,
+    weight_codes: list[str] | tuple[str, ...],
+) -> list[str]:
+    """调仓目标新鲜度：只检查目标仓位里、且为境外原生市场(hk/us)的标的。
+
+    513500/513110/513400 等 QDII 在 UNIVERSE 中为 sh/sz，跟 A 股日历入库，不在此列。
+    VIG 等未进入目标权重的候选不会误触发「沿用上周持仓」。
+    """
+    asof = pd.Timestamp(asof).normalize()
+    last = last_raw_dates(raw)
+    stale: list[str] = []
+    for code in weight_codes:
+        if code not in CODES:
+            continue
+        mkt = UNIVERSE.get(code, {}).get("market")
+        if mkt not in ("hk", "us"):
+            continue
+        d = last.get(code)
+        if d is None or d < asof:
+            stale.append(code)
+    return stale
+
+
 def build_panels(raw: Dict[str, pd.DataFrame]):
     """对齐交易日历，返回 close/open DataFrame。
 

@@ -1,16 +1,13 @@
 name: Daily Strategy WeChat Notify
 
-# 北京时间：
-# - 周一至周五约 19:00：本周持仓 + 盈亏 + 折线图
-# - 周六约 19:00：加推下周一调仓目标
-# GitHub cron 偶尔漏跑，故增加 19:20 / 20:00 备份；
-# 若当天已有成功推送则自动跳过，避免重复骚扰。
-# UTC: 11:00 / 11:20 / 12:00 = CST 19:00 / 19:20 / 20:00
+# 北京时间 19:00–22:00 每小时尝试（GitHub cron 常延迟，避免凌晨误推）：
+# - 周一至周五：本周持仓 + 盈亏 + 折线图
+# - 周六：加推下周一调仓目标
+# 规则：schedule 仅在 CST>=19:00 且当天尚未成功推送时发送；手动 Run 不受限
+# UTC 11–14 = CST 19:00–22:00
 on:
   schedule:
-    - cron: "0 11 * * 1-6"
-    - cron: "20 11 * * 1-6"
-    - cron: "0 12 * * 1-6"
+    - cron: "0 11-14 * * 1-6"
   workflow_dispatch:
 
 concurrency:
@@ -32,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Skip if already succeeded today (schedule only)
+      - name: Gate schedule slot (after 19:00 CST, once per day)
         id: gate
         if: github.event_name == 'schedule'
         env:
@@ -46,40 +43,49 @@ jobs:
           from datetime import datetime
           from zoneinfo import ZoneInfo
 
-          today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+          now = datetime.now(ZoneInfo("Asia/Shanghai"))
+          today = now.date().isoformat()
           cur = int(os.environ["GITHUB_RUN_ID"])
           repo = os.environ["GITHUB_REPOSITORY"]
-          raw = subprocess.check_output(
-              [
-                  "gh",
-                  "run",
-                  "list",
-                  "-R",
-                  repo,
-                  "--workflow",
-                  "Daily Strategy WeChat Notify",
-                  "--branch",
-                  "master",
-                  "--limit",
-                  "40",
-                  "--json",
-                  "databaseId,conclusion,createdAt,status,event",
-              ],
-              text=True,
-          )
-          runs = json.loads(raw)
-          success_today = 0
-          for r in runs:
-              if int(r["databaseId"]) == cur:
-                  continue
-              if r.get("conclusion") != "success":
-                  continue
-              created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
-              local = created.astimezone(ZoneInfo("Asia/Shanghai"))
-              if local.date().isoformat() == today:
-                  success_today += 1
-          skip = success_today > 0
-          print(f"[gate] shanghai_today={today} prior_success_today={success_today} skip={skip}")
+
+          if now.hour < 19:
+              skip = True
+              reason = f"before 19:00 CST (now {now.strftime('%H:%M')})"
+              prior = 0
+          else:
+              raw = subprocess.check_output(
+                  [
+                      "gh",
+                      "run",
+                      "list",
+                      "-R",
+                      repo,
+                      "--workflow",
+                      "Daily Strategy WeChat Notify",
+                      "--branch",
+                      "master",
+                      "--limit",
+                      "40",
+                      "--json",
+                      "databaseId,conclusion,createdAt,status,event",
+                  ],
+                  text=True,
+              )
+              runs = json.loads(raw)
+              prior = 0
+              for r in runs:
+                  if int(r["databaseId"]) == cur:
+                      continue
+                  if r.get("conclusion") != "success":
+                      continue
+                  created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
+                  local = created.astimezone(ZoneInfo("Asia/Shanghai"))
+                  if local.date().isoformat() == today:
+                      prior += 1
+              skip = prior > 0
+              reason = f"prior_success_today={prior}" if skip else "ready to send"
+
+          print(f"[gate] shanghai_today={today} {reason} skip={skip}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"skip={'true' if skip else 'false'}\n")
           PY
@@ -126,6 +132,6 @@ jobs:
             multi_asset_rotation/output/ytd_nav_*.png
           if-no-files-found: warn
 
-      - name: Already sent today
+      - name: Skipped this slot
         if: github.event_name == 'schedule' && steps.gate.outputs.skip == 'true'
-        run: echo "Skip backup slot — already successfully notified earlier today (Asia/Shanghai)."
+        run: echo "Skip — outside 19:00–22:00 CST window or already notified today."
