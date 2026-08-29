@@ -181,7 +181,8 @@ def greeks_summary(
         risk_status = "SAFE"
         if any("Gamma" in a or "DELTA" in a.upper() or "delta" in a for a in alerts):
             risk_status = "WARN"
-        if abs(net_delta) > 0.50:
+        # 与 greeks_book / settings.delta_tilt_threshold(1.0) 对齐，避免过早 CRITICAL
+        if abs(net_delta) > 1.5:
             risk_status = "CRITICAL"
             alerts.append(f"|net_delta|={abs(net_delta):.3f} critically high")
 

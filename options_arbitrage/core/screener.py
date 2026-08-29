@@ -283,7 +283,7 @@ class RiskAlert:
     severity: str  # INFO / WARN / CRITICAL
 
 
-def check_delta_tilt(net_delta: float, underlying: str, threshold: float = 0.30) -> Optional[RiskAlert]:
+def check_delta_tilt(net_delta: float, underlying: str, threshold: float = 1.0) -> Optional[RiskAlert]:
     if abs(net_delta) > threshold:
         return RiskAlert(
             underlying=underlying,
