@@ -1,13 +1,22 @@
 name: Daily Strategy WeChat Notify
 
-# 北京时间 19:00–22:00 每小时尝试（GitHub cron 常延迟，避免凌晨误推）：
+# 北京时间 19:00–23:00 多档尝试（GitHub cron 常延迟数小时，避免凌晨误推）：
 # - 周一至周五：本周持仓 + 盈亏 + 折线图
 # - 周六：加推下周一调仓目标
-# 规则：schedule 仅在 CST>=19:00 且当天尚未成功推送时发送；手动 Run 不受限
-# UTC 11–14 = CST 19:00–22:00
+# 规则：schedule 仅在 CST 19:00–23:00 且当天尚未成功推送时发送；手动 Run 不受限
+# UTC 11–15 = CST 19:00–23:00
 on:
   schedule:
-    - cron: "0 11-14 * * 1-6"
+    - cron: "0 11 * * 1-6"
+    - cron: "30 11 * * 1-6"
+    - cron: "0 12 * * 1-6"
+    - cron: "30 12 * * 1-6"
+    - cron: "0 13 * * 1-6"
+    - cron: "30 13 * * 1-6"
+    - cron: "0 14 * * 1-6"
+    - cron: "30 14 * * 1-6"
+    - cron: "0 15 * * 1-6"
+    - cron: "30 15 * * 1-6"
   workflow_dispatch:
 
 concurrency:
@@ -29,7 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Gate schedule slot (after 19:00 CST, once per day)
+      - name: Gate schedule slot (19:00–23:00 CST, once per day)
         id: gate
         if: github.event_name == 'schedule'
         env:
@@ -48,9 +57,27 @@ jobs:
           cur = int(os.environ["GITHUB_RUN_ID"])
           repo = os.environ["GITHUB_REPOSITORY"]
 
+          def run_pushed_ok(run_id: int) -> bool:
+              proc = subprocess.run(
+                  ["gh", "run", "view", str(run_id), "-R", repo, "--log"],
+                  capture_output=True,
+                  text=True,
+                  timeout=180,
+              )
+              if proc.returncode != 0:
+                  return False
+              log = proc.stdout
+              if "[daily_notify] push result:" not in log:
+                  return False
+              return '"code": 200' in log or "'code': 200" in log
+
           if now.hour < 19:
               skip = True
               reason = f"before 19:00 CST (now {now.strftime('%H:%M')})"
+              prior = 0
+          elif now.hour >= 23 and now.minute >= 30:
+              skip = True
+              reason = f"after 23:30 CST (now {now.strftime('%H:%M')})"
               prior = 0
           else:
               raw = subprocess.check_output(
@@ -65,7 +92,7 @@ jobs:
                       "--branch",
                       "master",
                       "--limit",
-                      "40",
+                      "60",
                       "--json",
                       "databaseId,conclusion,createdAt,status,event",
                   ],
@@ -74,16 +101,19 @@ jobs:
               runs = json.loads(raw)
               prior = 0
               for r in runs:
-                  if int(r["databaseId"]) == cur:
+                  rid = int(r["databaseId"])
+                  if rid == cur:
                       continue
                   if r.get("conclusion") != "success":
                       continue
                   created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
                   local = created.astimezone(ZoneInfo("Asia/Shanghai"))
-                  if local.date().isoformat() == today:
+                  if local.date().isoformat() != today:
+                      continue
+                  if run_pushed_ok(rid):
                       prior += 1
               skip = prior > 0
-              reason = f"prior_success_today={prior}" if skip else "ready to send"
+              reason = f"prior_pushed_today={prior}" if skip else "ready to send"
 
           print(f"[gate] shanghai_today={today} {reason} skip={skip}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
@@ -134,4 +164,4 @@ jobs:
 
       - name: Skipped this slot
         if: github.event_name == 'schedule' && steps.gate.outputs.skip == 'true'
-        run: echo "Skip — outside 19:00–22:00 CST window or already notified today."
+        run: echo "Skip — outside 19:00–23:30 CST window or already notified today."
