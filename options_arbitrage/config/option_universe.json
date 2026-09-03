@@ -1,0 +1,446 @@
+{
+  "version": "1.0.0",
+  "description": "China commodity option universe for short-strangle screener",
+  "products": [
+    {
+      "product": "AP",
+      "name": "苹果",
+      "exchange": "CZCE",
+      "cn_name": "苹果期权",
+      "source": "czce",
+      "fetch_symbol": "苹果期权"
+    },
+    {
+      "product": "CF",
+      "name": "棉花",
+      "exchange": "CZCE",
+      "cn_name": "棉花期权",
+      "source": "sina",
+      "fetch_symbol": "棉花期权"
+    },
+    {
+      "product": "CJ",
+      "name": "红枣",
+      "exchange": "CZCE",
+      "cn_name": "红枣期权",
+      "source": "czce",
+      "fetch_symbol": "红枣期权"
+    },
+    {
+      "product": "FG",
+      "name": "玻璃",
+      "exchange": "CZCE",
+      "cn_name": "玻璃期权",
+      "source": "czce",
+      "fetch_symbol": "玻璃期权"
+    },
+    {
+      "product": "MA",
+      "name": "甲醇",
+      "exchange": "CZCE",
+      "cn_name": "甲醇期权",
+      "source": "sina",
+      "fetch_symbol": "甲醇期权"
+    },
+    {
+      "product": "OI",
+      "name": "菜油",
+      "exchange": "CZCE",
+      "cn_name": "菜籽油期权",
+      "source": "sina",
+      "fetch_symbol": "菜籽油期权"
+    },
+    {
+      "product": "PF",
+      "name": "短纤",
+      "exchange": "CZCE",
+      "cn_name": "短纤期权",
+      "source": "czce",
+      "fetch_symbol": "短纤期权"
+    },
+    {
+      "product": "PK",
+      "name": "花生",
+      "exchange": "CZCE",
+      "cn_name": "花生期权",
+      "source": "sina",
+      "fetch_symbol": "花生期权"
+    },
+    {
+      "product": "PL",
+      "name": "丙烯",
+      "exchange": "CZCE",
+      "cn_name": "丙烯期权",
+      "source": "czce",
+      "fetch_symbol": "丙烯期权"
+    },
+    {
+      "product": "PR",
+      "name": "瓶片",
+      "exchange": "CZCE",
+      "cn_name": "瓶片期权",
+      "source": "czce",
+      "fetch_symbol": "瓶片期权"
+    },
+    {
+      "product": "PX",
+      "name": "二甲苯",
+      "exchange": "CZCE",
+      "cn_name": "二甲苯期权",
+      "source": "sina",
+      "fetch_symbol": "对二甲苯期权"
+    },
+    {
+      "product": "RM",
+      "name": "菜粕",
+      "exchange": "CZCE",
+      "cn_name": "菜籽粕期权",
+      "source": "sina",
+      "fetch_symbol": "菜籽粕期权"
+    },
+    {
+      "product": "SA",
+      "name": "纯碱",
+      "exchange": "CZCE",
+      "cn_name": "纯碱期权",
+      "source": "czce",
+      "fetch_symbol": "纯碱期权"
+    },
+    {
+      "product": "SF",
+      "name": "硅铁",
+      "exchange": "CZCE",
+      "cn_name": "硅铁期权",
+      "source": "czce",
+      "fetch_symbol": "硅铁期权"
+    },
+    {
+      "product": "SH",
+      "name": "烧碱",
+      "exchange": "CZCE",
+      "cn_name": "烧碱期权",
+      "source": "sina",
+      "fetch_symbol": "烧碱期权"
+    },
+    {
+      "product": "SM",
+      "name": "锰硅",
+      "exchange": "CZCE",
+      "cn_name": "锰硅期权",
+      "source": "czce",
+      "fetch_symbol": "锰硅期权"
+    },
+    {
+      "product": "SR",
+      "name": "白糖",
+      "exchange": "CZCE",
+      "cn_name": "白糖期权",
+      "source": "sina",
+      "fetch_symbol": "白糖期权"
+    },
+    {
+      "product": "TA",
+      "name": "PTA",
+      "exchange": "CZCE",
+      "cn_name": "PTA期权",
+      "source": "sina",
+      "fetch_symbol": "PTA期权"
+    },
+    {
+      "product": "UR",
+      "name": "尿素",
+      "exchange": "CZCE",
+      "cn_name": "尿素期权",
+      "source": "czce",
+      "fetch_symbol": "尿素期权"
+    },
+    {
+      "product": "ZC",
+      "name": "动力煤",
+      "exchange": "CZCE",
+      "cn_name": "动力煤期权",
+      "source": "czce",
+      "fetch_symbol": "动力煤期权"
+    },
+    {
+      "product": "a",
+      "name": "豆一",
+      "exchange": "DCE",
+      "cn_name": "黄大豆1号期权",
+      "source": "sina",
+      "fetch_symbol": "黄大豆1号期权"
+    },
+    {
+      "product": "b",
+      "name": "豆二",
+      "exchange": "DCE",
+      "cn_name": "黄大豆2号期权",
+      "source": "sina",
+      "fetch_symbol": "黄大豆2号期权"
+    },
+    {
+      "product": "c",
+      "name": "玉米",
+      "exchange": "DCE",
+      "cn_name": "玉米期权",
+      "source": "sina",
+      "fetch_symbol": "玉米期权"
+    },
+    {
+      "product": "cs",
+      "name": "玉米淀粉",
+      "exchange": "DCE",
+      "cn_name": "玉米淀粉期权",
+      "source": "dce",
+      "fetch_symbol": "玉米淀粉期权"
+    },
+    {
+      "product": "eb",
+      "name": "苯乙烯",
+      "exchange": "DCE",
+      "cn_name": "苯乙烯期权",
+      "source": "sina",
+      "fetch_symbol": "苯乙烯期权"
+    },
+    {
+      "product": "eg",
+      "name": "乙二醇",
+      "exchange": "DCE",
+      "cn_name": "乙二醇期权",
+      "source": "sina",
+      "fetch_symbol": "乙二醇期权"
+    },
+    {
+      "product": "i",
+      "name": "铁矿",
+      "exchange": "DCE",
+      "cn_name": "铁矿石期权",
+      "source": "sina",
+      "fetch_symbol": "铁矿石期权"
+    },
+    {
+      "product": "jd",
+      "name": "鸡蛋",
+      "exchange": "DCE",
+      "cn_name": "鸡蛋期权",
+      "source": "dce",
+      "fetch_symbol": "鸡蛋期权"
+    },
+    {
+      "product": "l",
+      "name": "塑料",
+      "exchange": "DCE",
+      "cn_name": "聚乙烯期权",
+      "source": "dce",
+      "fetch_symbol": "聚乙烯期权"
+    },
+    {
+      "product": "lg",
+      "name": "原木",
+      "exchange": "DCE",
+      "cn_name": "原木期权",
+      "source": "dce",
+      "fetch_symbol": "原木期权"
+    },
+    {
+      "product": "lh",
+      "name": "生猪",
+      "exchange": "DCE",
+      "cn_name": "生猪期权",
+      "source": "dce",
+      "fetch_symbol": "生猪期权"
+    },
+    {
+      "product": "m",
+      "name": "豆粕",
+      "exchange": "DCE",
+      "cn_name": "豆粕期权",
+      "source": "sina",
+      "fetch_symbol": "豆粕期权"
+    },
+    {
+      "product": "p",
+      "name": "棕榈",
+      "exchange": "DCE",
+      "cn_name": "棕榈油期权",
+      "source": "dce",
+      "fetch_symbol": "棕榈油期权"
+    },
+    {
+      "product": "pg",
+      "name": "LPG",
+      "exchange": "DCE",
+      "cn_name": "液化石油气期权",
+      "source": "sina",
+      "fetch_symbol": "液化石油气期权"
+    },
+    {
+      "product": "pp",
+      "name": "聚丙烯",
+      "exchange": "DCE",
+      "cn_name": "聚丙烯期权",
+      "source": "dce",
+      "fetch_symbol": "聚丙烯期权"
+    },
+    {
+      "product": "v",
+      "name": "PVC",
+      "exchange": "DCE",
+      "cn_name": "聚氯乙烯期权",
+      "source": "dce",
+      "fetch_symbol": "聚氯乙烯期权"
+    },
+    {
+      "product": "y",
+      "name": "豆油",
+      "exchange": "DCE",
+      "cn_name": "豆油期权",
+      "source": "sina",
+      "fetch_symbol": "豆油期权"
+    },
+    {
+      "product": "lc",
+      "name": "碳酸锂",
+      "exchange": "GFEX",
+      "cn_name": "碳酸锂期权",
+      "source": "sina",
+      "fetch_symbol": "碳酸锂期权"
+    },
+    {
+      "product": "ps",
+      "name": "多晶硅",
+      "exchange": "GFEX",
+      "cn_name": "多晶硅",
+      "source": "gfex",
+      "fetch_symbol": "多晶硅"
+    },
+    {
+      "product": "si",
+      "name": "工业硅",
+      "exchange": "GFEX",
+      "cn_name": "工业硅期权",
+      "source": "sina",
+      "fetch_symbol": "工业硅期权"
+    },
+    {
+      "product": "nr",
+      "name": "20号胶",
+      "exchange": "INE",
+      "cn_name": "20号胶期权",
+      "source": "shfe",
+      "fetch_symbol": "20号胶期权"
+    },
+    {
+      "product": "sc",
+      "name": "原油",
+      "exchange": "INE",
+      "cn_name": "原油期权",
+      "source": "shfe",
+      "fetch_symbol": "原油期权"
+    },
+    {
+      "product": "ag",
+      "name": "白银",
+      "exchange": "SHFE",
+      "cn_name": "白银期权",
+      "source": "sina",
+      "fetch_symbol": "白银期权"
+    },
+    {
+      "product": "al",
+      "name": "铝",
+      "exchange": "SHFE",
+      "cn_name": "沪铝期权",
+      "source": "sina",
+      "fetch_symbol": "沪铝期权"
+    },
+    {
+      "product": "ao",
+      "name": "氧化铝",
+      "exchange": "SHFE",
+      "cn_name": "氧化铝期权",
+      "source": "shfe",
+      "fetch_symbol": "氧化铝期权"
+    },
+    {
+      "product": "au",
+      "name": "黄金",
+      "exchange": "SHFE",
+      "cn_name": "黄金期权",
+      "source": "sina",
+      "fetch_symbol": "黄金期权"
+    },
+    {
+      "product": "br",
+      "name": "丁二烯橡胶",
+      "exchange": "SHFE",
+      "cn_name": "丁二烯橡胶期权",
+      "source": "sina",
+      "fetch_symbol": "丁二烯橡胶期权"
+    },
+    {
+      "product": "cu",
+      "name": "铜",
+      "exchange": "SHFE",
+      "cn_name": "沪铜期权",
+      "source": "sina",
+      "fetch_symbol": "沪铜期权"
+    },
+    {
+      "product": "ni",
+      "name": "镍",
+      "exchange": "SHFE",
+      "cn_name": "镍期权",
+      "source": "shfe",
+      "fetch_symbol": "镍期权"
+    },
+    {
+      "product": "pb",
+      "name": "铅",
+      "exchange": "SHFE",
+      "cn_name": "铅期权",
+      "source": "shfe",
+      "fetch_symbol": "铅期权"
+    },
+    {
+      "product": "rb",
+      "name": "螺纹",
+      "exchange": "SHFE",
+      "cn_name": "螺纹钢期权",
+      "source": "sina",
+      "fetch_symbol": "螺纹钢期权"
+    },
+    {
+      "product": "ru",
+      "name": "橡胶",
+      "exchange": "SHFE",
+      "cn_name": "橡胶期权",
+      "source": "sina",
+      "fetch_symbol": "橡胶期权"
+    },
+    {
+      "product": "sn",
+      "name": "锡",
+      "exchange": "SHFE",
+      "cn_name": "锡期权",
+      "source": "shfe",
+      "fetch_symbol": "锡期权"
+    },
+    {
+      "product": "sp",
+      "name": "纸浆",
+      "exchange": "SHFE",
+      "cn_name": "纸浆期权",
+      "source": "shfe",
+      "fetch_symbol": "纸浆期权"
+    },
+    {
+      "product": "zn",
+      "name": "锌",
+      "exchange": "SHFE",
+      "cn_name": "锌期权",
+      "source": "shfe",
+      "fetch_symbol": "锌期权"
+    }
+  ]
+}

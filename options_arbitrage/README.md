@@ -6,8 +6,59 @@
 - **当日成交**：Web 手动录入（与昨日持仓分表，互不覆盖）
 - **实时盈亏**：持仓盯市 + 今日成交盈亏 − 手续费
 - **筛选大盘**：BS76 / IVR·IVP / POP / 保证金手数 / 双轴图表
+- **收盘扫描**：`run_daily_scan.py` 按技能流程输出 Markdown 报告（IV / 流动性 / 震荡 / 事件 / 保证金·希腊值·胜率）
 
 规约见 [`CURSOR_SPEC.md`](./CURSOR_SPEC.md)。样例结算单：`fixtures/settlement_sample_2026-08-12.xls`。
+
+## 全流程 E2E（推荐入口）
+
+```bash
+cd options_arbitrage
+pip install -r requirements.txt
+
+# 1) 回填 ≥252 日 ATM IV（CZCE 交易所 / DCE 可用 user_csv）
+python scripts/seed_iv_history.py --days 320 --products SR,CF,TA,MA,RM,OI
+
+# 2) 一带账户参数跑通下一交易日扫描
+python run_e2e.py --equity 500000 --client-margin-addon 0.05
+
+# 离线快照
+python run_e2e.py --csv-dir ./data/snapshots/20260820 --equity 500000 --client-margin-addon 0.05
+```
+
+输出：`output/next_session_report.md`、`output/next_session_scan.json`  
+文档：`docs/方法与口径.md`、`docs/交易所规则管理.md`、`docs/报告规范.md`、`docs/数据规范.md`
+
+## 收盘后 / 下一交易日扫描（v2）
+
+```bash
+cd options_arbitrage
+python run_next_day_scan.py
+python run_next_day_scan.py --equity 500000 --client-margin-addon 0.05
+```
+
+输出：`output/next_session_report.md`（**下一交易日候选**，非即时成交声明）
+
+规范文档：`docs/方法与口径.md`、`docs/交易所规则管理.md`、`docs/报告规范.md`
+
+## 收盘后扫描（v1 简化版）
+
+```bash
+cd options_arbitrage
+pip install -r requirements.txt
+
+# 优先 AkShare 实盘链；失败自动回退演示数据
+python run_daily_scan.py
+
+# 仅演示数据 / 强制实盘 / 关闭事件过滤
+python run_daily_scan.py --demo-only
+python run_daily_scan.py --live
+python run_daily_scan.py --no-events --relax-technicals
+```
+
+报告输出：`output/latest_report.md`、`output/latest_scan.json`。
+
+默认阈值（可在 `config/settings.yaml` 修改）：IV Rank≥60 或 IV Percentile≥70，DTE 30–60，Δ∈[0.15,0.20]，权/保比≥8%，胜率≥70%。
 
 ## 启动
 
@@ -46,7 +97,6 @@ streamlit run ui/app.py
 
 ```bash
 pytest -q
-# 29 passed（含真实结算单解析与上传→成交→盈亏全链路）
 ```
 
 ## 盈亏口径（简）

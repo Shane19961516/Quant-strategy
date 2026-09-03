@@ -1,4 +1,4 @@
-# 资金偏好与风控阈值配置
+# 资金偏好与风控阈值配置（对齐 short-strangle-screener 技能默认参数）
 capital:
   total_equity: 100000.0          # 总可用资金 W
   max_allocation_per_symbol: 0.30 # 单品种最大保证金授权占比 R_max
@@ -6,12 +6,26 @@ capital:
 
 screener:
   dte_min: 30
-  dte_max: 45
-  ivr_min: 50.0                   # %
-  ivp_min: 70.0                   # %
+  dte_max: 60
+  ivr_min: 60.0                   # IV Rank 最低阈值（与 IVP 为 OR 关系）
+  ivp_min: 70.0                   # IV Percentile 最低阈值
+  iv_rank_min: 60.0               # 别名
+  iv_percentile_min: 70.0         # 别名
   iv_hv_spread_min: 0.05          # 5% absolute (e.g. 0.32 - 0.22 = 0.10)
-  target_call_delta: 0.20
-  target_put_delta: -0.20
+  delta_target: [0.12, 0.20]
+  target_call_delta: 0.15
+  target_put_delta: -0.15
+  min_volume: 500
+  min_open_interest: 1000
+  min_premium_margin_ratio: 0.08
+  min_pop: 0.65
+  exclude_events: true
+  event_horizon_days: 5
+  include_index_options: false
+  adx_max: 20.0
+  di_max: 25.0
+  bb_mid_tol: 0.35
+  ma_slope_max: 0.5
 
 risk:
   delta_tilt_threshold: 0.30      # |net_delta| 超此值触发倾斜预警

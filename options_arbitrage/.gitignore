@@ -1,8 +1,17 @@
 *.db
 *.duckdb
-data/
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
 .streamlit/
+output/cache/
+output/short_strangle_report_*.md
+data/cache/
+# IV history & fixtures are part of the E2E pipeline
+!data/
+data/*
+!data/iv_history/
+!data/iv_history/**
+!data/fixtures/
+!data/fixtures/**

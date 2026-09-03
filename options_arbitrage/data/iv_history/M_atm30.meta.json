@@ -1,0 +1,8 @@
+{
+  "product": "M",
+  "tenor_days": 30,
+  "source": "user_csv",
+  "n": 281,
+  "updated_at": "2026-08-24T09:47:53",
+  "valid_for_recommend": true
+}

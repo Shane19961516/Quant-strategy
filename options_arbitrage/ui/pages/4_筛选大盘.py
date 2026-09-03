@@ -22,7 +22,7 @@ st.set_page_config(page_title="筛选大盘", layout="wide")
 inject_sidebar()
 
 st.title("④ 宽跨式筛选大盘")
-st.caption("DTE 30–45 · IVR>50% · IVP>70% · IV-HV>5% · Δ≈±0.20")
+st.caption("DTE 30–60 · IVR≥60%或IVP≥70% · IV-HV>5% · Δ∈[0.12,0.20] · 震荡/事件过滤")
 
 
 @st.cache_resource

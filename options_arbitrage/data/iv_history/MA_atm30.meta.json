@@ -1,0 +1,8 @@
+{
+  "product": "MA",
+  "tenor_days": 30,
+  "source": "exchange_czce_atm",
+  "n": 301,
+  "updated_at": "2026-08-24T09:47:50",
+  "valid_for_recommend": true
+}

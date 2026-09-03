@@ -45,11 +45,12 @@ def generate_demo_snapshots(
     today = datetime.utcnow().date()
     snapshots: list[UnderlyingSnapshot] = []
 
-    # --- AG: elevated IV regime ---
+    # --- AG: elevated IV regime + ranging ---
     snapshots.append(
         _build_snapshot(
             underlying="AG2609",
             product="ag",
+            product_name="白银",
             exchange="SHFE",
             F0=7800.0,
             base_iv=0.22,
@@ -60,14 +61,16 @@ def generate_demo_snapshots(
             n_days=n_days,
             today=today,
             elevate=True,
+            ranging=True,
         )
     )
 
-    # --- M (soymeal): also elevated ---
+    # --- M (soymeal): also elevated + ranging ---
     snapshots.append(
         _build_snapshot(
             underlying="M2609",
             product="m",
+            product_name="豆粕",
             exchange="DCE",
             F0=3000.0,
             base_iv=0.18,
@@ -78,6 +81,27 @@ def generate_demo_snapshots(
             n_days=n_days,
             today=today,
             elevate=True,
+            ranging=True,
+        )
+    )
+
+    # --- SR: elevated but trending (should fail technical) ---
+    snapshots.append(
+        _build_snapshot(
+            underlying="SR601",
+            product="SR",
+            product_name="白糖",
+            exchange="CZCE",
+            F0=5600.0,
+            base_iv=0.14,
+            regime_iv=0.24,
+            multiplier=10.0,
+            dte=40,
+            rng=rng,
+            n_days=n_days,
+            today=today,
+            elevate=True,
+            ranging=False,
         )
     )
 
@@ -86,6 +110,7 @@ def generate_demo_snapshots(
         _build_snapshot(
             underlying="CU2609",
             product="cu",
+            product_name="沪铜",
             exchange="SHFE",
             F0=72000.0,
             base_iv=0.16,
@@ -96,6 +121,7 @@ def generate_demo_snapshots(
             n_days=n_days,
             today=today,
             elevate=False,
+            ranging=True,
         )
     )
     return snapshots
@@ -115,15 +141,30 @@ def _build_snapshot(
     n_days: int,
     today,
     elevate: bool,
+    ranging: bool = True,
+    product_name: str = "",
 ) -> UnderlyingSnapshot:
-    # Geometric Brownian path for futures
     daily_vol = base_iv / np.sqrt(252)
-    shocks = rng.normal(0, daily_vol, size=n_days)
-    log_path = np.cumsum(shocks)
-    prices = F0 * np.exp(log_path - log_path[-1])  # end near F0
-    F = float(prices[-1])
+    if ranging:
+        # Sideways tape: tiny noise around F0 keeps ADX subdued
+        prices = F0 * (1.0 + rng.normal(0, 0.0018, size=n_days))
+        # gentle oscillation without sustained drift
+        t = np.arange(n_days)
+        prices = prices * (1.0 + 0.004 * np.sin(2 * np.pi * t / 9.0))
+        prices = prices * (F0 / prices[-1])
+    else:
+        shocks = rng.normal(0.0018, daily_vol, size=n_days)  # mild uptrend
+        log_path = np.cumsum(shocks)
+        prices = F0 * 0.90 * np.exp(log_path)
+        prices = prices * (F0 * 1.10 / prices[-1])  # end extended
 
-    # IV history: mostly around base_iv, last ~40 days elevated if elevate
+    F = float(prices[-1])
+    # Narrow intraday range for ranging names
+    range_frac = 0.0012 if ranging else 0.005
+    noise = np.maximum(prices * range_frac, 1e-6)
+    highs = prices + rng.uniform(0.2, 0.8, n_days) * noise
+    lows = prices - rng.uniform(0.2, 0.8, n_days) * noise
+
     iv_hist = base_iv + rng.normal(0, 0.015, size=n_days)
     iv_hist = np.clip(iv_hist, 0.05, 1.0)
     if elevate:
@@ -135,9 +176,8 @@ def _build_snapshot(
     expire = (today + timedelta(days=dte)).isoformat()
     contracts: list[OptionContract] = []
 
-    # Strike ladder around F
-    step = max(round(F * 0.02 / 10) * 10, 10)
-    strikes = [F + i * step for i in range(-6, 7)]
+    step = max(round(F * 0.015 / 10) * 10, 10)
+    strikes = [F + i * step for i in range(-10, 11)]
     r = 0.02
     T = dte / 365.0
 
@@ -147,6 +187,11 @@ def _build_snapshot(
             prem = black76_price(F, K, T, r, current_iv, opt_type)  # type: ignore[arg-type]
             tag = "C" if opt_type == "CALL" else "P"
             symbol = f"{underlying}-{tag}-{int(round(K))}"
+            # Liquid near ATM / 15-20 delta wings
+            moneyness = abs(K / F - 1.0)
+            oi = float(rng.integers(1500, 9000) if moneyness < 0.12 else rng.integers(1100, 2500))
+            vol = float(rng.integers(200, 2500) if moneyness < 0.12 else rng.integers(80, 400))
+            spread = max(prem * 0.01, 0.5)
             contracts.append(
                 OptionContract(
                     symbol=symbol,
@@ -165,6 +210,11 @@ def _build_snapshot(
                     gamma=g.gamma,
                     vega=g.vega,
                     theta=g.theta,
+                    volume=vol,
+                    open_interest=oi,
+                    bid=float(max(prem - spread / 2, 0.1)),
+                    ask=float(prem + spread / 2),
+                    spread=float(spread),
                 )
             )
 
@@ -178,6 +228,12 @@ def _build_snapshot(
         product=product,
         exchange=exchange,
         multiplier=multiplier,
+        highs=highs.tolist(),
+        lows=lows.tolist(),
+        product_name=product_name or product,
+        option_month=underlying,
+        iv_history_source="demo",
+        month_volume=5000.0,
     )
 
 
@@ -225,18 +281,46 @@ def snapshot_vol_series(snap: UnderlyingSnapshot, lookback: int = 120) -> pd.Dat
 
 
 class MarketDataClient:
-    """Thin facade: CSV directory or demo mode."""
+    """Facade: demo / AkShare live / CSV directory."""
 
-    def __init__(self, data_dir: Optional[str | Path] = None, use_demo: bool = True):
+    def __init__(
+        self,
+        data_dir: Optional[str | Path] = None,
+        use_demo: bool = True,
+        use_akshare: bool = False,
+    ):
         self.data_dir = Path(data_dir) if data_dir else None
         self.use_demo = use_demo
+        self.use_akshare = use_akshare
         self._cache: Optional[list[UnderlyingSnapshot]] = None
+        self.last_status: Optional[dict] = None
 
     def fetch_snapshots(self, refresh: bool = False) -> list[UnderlyingSnapshot]:
         if self._cache is not None and not refresh:
             return self._cache
+
+        if self.use_akshare:
+            try:
+                from data_fetcher.akshare_fetcher import AkshareMarketData
+
+                snaps, status = AkshareMarketData().fetch_snapshots()
+                self.last_status = {
+                    "source": status.source,
+                    "ok": status.products_ok,
+                    "failed": status.products_failed,
+                    "notes": status.notes,
+                }
+                if snaps:
+                    self._cache = snaps
+                    return self._cache
+            except Exception as exc:
+                self.last_status = {"source": "akshare_failed", "error": str(exc)}
+
         if self.use_demo or self.data_dir is None:
             self._cache = generate_demo_snapshots()
+            if self.last_status is None:
+                self.last_status = {"source": "demo"}
+            else:
+                self.last_status["fallback"] = "demo"
             return self._cache
-        # Placeholder for CSV directory convention: <underlying>_prices.csv / _iv.csv
-        raise NotImplementedError("CSV multi-underlying loader — use demo mode or extend")
+        raise NotImplementedError("CSV multi-underlying loader — use demo mode or AkShare")

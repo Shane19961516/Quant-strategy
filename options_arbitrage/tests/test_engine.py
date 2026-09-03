@@ -174,14 +174,15 @@ class TestScreener:
 
     def test_demo_screener_finds_elevated_iv(self):
         snaps = generate_demo_snapshots(seed=42)
-        results = run_screener(snaps)
+        results = run_screener(snaps, exclude_events=False)
         underlyings = {r.underlying for r in results}
         # CU should fail; AG/M should typically pass
         assert "CU2609" not in underlyings
         assert len(results) >= 1
         for r in results:
-            assert 30 <= r.dte <= 45
-            assert r.iv_rank > 50
-            assert r.iv_percentile > 70
+            assert 30 <= r.dte <= 60
+            assert r.iv_rank >= 60 or r.iv_percentile >= 70
             assert r.iv_hv_spread > 0.05
+            assert r.premium_margin_ratio >= 0.08
+            assert r.pop >= 0.65
             assert r.max_pairs >= 0
