@@ -94,6 +94,9 @@ def main() -> int:
         # 常见：PushPlus 905=未实名
         print("[daily_notify] push failed (check token / real-name / channel)", flush=True)
         return 3
+    # 唯一成功标记：供 workflow 去重（须含具体日期，避免匹配到门禁源码）
+    report_day = str(report.payload.get("report_day") or "")
+    print(f"NOTIFY_PUSH_OK:::{report_day}", flush=True)
     return 0
 
 

@@ -1,12 +1,15 @@
 name: Daily Strategy WeChat Notify
 
-# 北京时间 19:00–23:00 多档尝试（GitHub cron 常延迟数小时，避免凌晨误推）：
-# - 周一至周五：本周持仓 + 盈亏 + 折线图
-# - 周六：加推下周一调仓目标
-# 规则：schedule 仅在 CST 19:00–23:00 且当天尚未成功推送时发送；手动 Run 不受限
-# UTC 11–15 = CST 19:00–23:00
+# GitHub cron 常延迟 4–8 小时。策略：
+# - 晚间窗 19:00–23:59 CST：推送当日报告
+# - 凌晨补发窗 00:00–11:59 CST：若昨日未推成功，补发昨日报告
+# - 去重只认日志中的 NOTIFY_PUSH_OK:::YYYY-MM-DD（避免匹配门禁源码误判）
+# - 手动 Run workflow 不受时间窗限制
+# 预定 UTC 10–15 = 期望 CST 18–23；延迟后常落到次日凌晨，由补发窗承接
 on:
   schedule:
+    - cron: "0 10 * * 1-6"
+    - cron: "30 10 * * 1-6"
     - cron: "0 11 * * 1-6"
     - cron: "30 11 * * 1-6"
     - cron: "0 12 * * 1-6"
@@ -38,7 +41,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Gate schedule slot (19:00–23:00 CST, once per day)
+      - name: Gate schedule slot (evening + morning catch-up)
         id: gate
         if: github.event_name == 'schedule'
         env:
@@ -49,15 +52,42 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           import json, os, subprocess
-          from datetime import datetime
+          from datetime import datetime, timedelta
           from zoneinfo import ZoneInfo
 
           now = datetime.now(ZoneInfo("Asia/Shanghai"))
-          today = now.date().isoformat()
+          today = now.date()
           cur = int(os.environ["GITHUB_RUN_ID"])
           repo = os.environ["GITHUB_REPOSITORY"]
 
-          def run_pushed_ok(run_id: int) -> bool:
+          # Mon=0 … Sun=6；周日不推送
+          def is_notify_day(d) -> bool:
+              return d.weekday() <= 5
+
+          if 19 <= now.hour <= 23:
+              report_day = today
+              mode = "evening"
+          elif now.hour < 12:
+              report_day = today - timedelta(days=1)
+              mode = "catchup"
+          else:
+              print(f"[gate] skip midday wait-for-evening now={now.strftime('%F %H:%M')}")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                  f.write("skip=true\n")
+                  f.write("report_day=\n")
+              raise SystemExit(0)
+
+          if not is_notify_day(report_day):
+              print(f"[gate] skip non-notify report_day={report_day} mode={mode}")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                  f.write("skip=true\n")
+                  f.write("report_day=\n")
+              raise SystemExit(0)
+
+          report_day_s = report_day.isoformat()
+          marker = "NOTIFY_PUSH_OK:::" + report_day_s
+
+          def run_has_marker(run_id: int) -> bool:
               proc = subprocess.run(
                   ["gh", "run", "view", str(run_id), "-R", repo, "--log"],
                   capture_output=True,
@@ -66,58 +96,53 @@ jobs:
               )
               if proc.returncode != 0:
                   return False
-              log = proc.stdout
-              if "[daily_notify] push result:" not in log:
-                  return False
-              return '"code": 200' in log or "'code': 200" in log
+              return marker in proc.stdout
 
-          if now.hour < 19:
-              skip = True
-              reason = f"before 19:00 CST (now {now.strftime('%H:%M')})"
-              prior = 0
-          elif now.hour >= 23 and now.minute >= 30:
-              skip = True
-              reason = f"after 23:30 CST (now {now.strftime('%H:%M')})"
-              prior = 0
-          else:
-              raw = subprocess.check_output(
-                  [
-                      "gh",
-                      "run",
-                      "list",
-                      "-R",
-                      repo,
-                      "--workflow",
-                      "Daily Strategy WeChat Notify",
-                      "--branch",
-                      "master",
-                      "--limit",
-                      "60",
-                      "--json",
-                      "databaseId,conclusion,createdAt,status,event",
-                  ],
-                  text=True,
-              )
-              runs = json.loads(raw)
-              prior = 0
-              for r in runs:
-                  rid = int(r["databaseId"])
-                  if rid == cur:
-                      continue
-                  if r.get("conclusion") != "success":
-                      continue
-                  created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
-                  local = created.astimezone(ZoneInfo("Asia/Shanghai"))
-                  if local.date().isoformat() != today:
-                      continue
-                  if run_pushed_ok(rid):
-                      prior += 1
-              skip = prior > 0
-              reason = f"prior_pushed_today={prior}" if skip else "ready to send"
+          raw = subprocess.check_output(
+              [
+                  "gh",
+                  "run",
+                  "list",
+                  "-R",
+                  repo,
+                  "--workflow",
+                  "Daily Strategy WeChat Notify",
+                  "--branch",
+                  "master",
+                  "--limit",
+                  "80",
+                  "--json",
+                  "databaseId,conclusion,createdAt,updatedAt,event",
+              ],
+              text=True,
+          )
+          runs = json.loads(raw)
+          prior = 0
+          for r in runs:
+              rid = int(r["databaseId"])
+              if rid == cur:
+                  continue
+              if r.get("conclusion") != "success":
+                  continue
+              # 纯 skip 约 8–15s；真推送约 60s+，先过滤缩短日志拉取
+              created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
+              updated = datetime.fromisoformat(r["updatedAt"].replace("Z", "+00:00"))
+              if (updated - created).total_seconds() < 40:
+                  continue
+              if run_has_marker(rid):
+                  prior += 1
+                  break
 
-          print(f"[gate] shanghai_today={today} {reason} skip={skip}")
+          skip = prior > 0
+          reason = (
+              f"already_pushed {marker}"
+              if skip
+              else f"ready mode={mode} report_day={report_day_s}"
+          )
+          print(f"[gate] now={now.strftime('%F %H:%M')} {reason} skip={skip}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"skip={'true' if skip else 'false'}\n")
+              f.write(f"report_day={report_day_s}\n")
           PY
 
       - name: Setup Python
@@ -138,6 +163,7 @@ jobs:
         if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         env:
           TZ: Asia/Shanghai
+          REPORT_DAY: ${{ steps.gate.outputs.report_day }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           PUSHPLUS_CHANNEL: ${{ secrets.PUSHPLUS_CHANNEL }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
@@ -147,6 +173,12 @@ jobs:
         run: |
           export PUSHPLUS_CHANNEL="${PUSHPLUS_CHANNEL:-wechat}"
           export WECHAT_PHONE="${WECHAT_PHONE:-15111101843}"
+          # 手动 Run 时 gate 未跑，REPORT_DAY 为空 → 用当天
+          if [ -z "${REPORT_DAY:-}" ]; then
+            REPORT_DAY="$(TZ=Asia/Shanghai date +%F)"
+            export REPORT_DAY
+          fi
+          echo "[notify] REPORT_DAY=$REPORT_DAY"
           python daily_notify.py
 
       - name: Upload report artifact
@@ -164,4 +196,4 @@ jobs:
 
       - name: Skipped this slot
         if: github.event_name == 'schedule' && steps.gate.outputs.skip == 'true'
-        run: echo "Skip — outside 19:00–23:30 CST window or already notified today."
+        run: echo "Skip — outside send window, non-notify day, or already pushed for report_day."
