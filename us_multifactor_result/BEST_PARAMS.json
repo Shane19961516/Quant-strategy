@@ -1,0 +1,74 @@
+{
+  "engine": "causal_v3",
+  "params": {
+    "start": "2016-01-01",
+    "top_n": 15,
+    "cost_bps": 10.0,
+    "tilt": {
+      "momentum": 0.5,
+      "stability": 0.4,
+      "size": 0.1
+    },
+    "weighting": "equal",
+    "use_regime": false,
+    "regime_mode": "ma",
+    "regime_fast": 8,
+    "regime_slow": 26,
+    "require_prior_spy_pos": false,
+    "mom_confirm": 0,
+    "spy_vol_cap": null,
+    "vol_target": null,
+    "lever_cap": 1.0,
+    "dd_soft": -0.04,
+    "dd_hard": -0.07,
+    "use_vol_target": false,
+    "use_dd_brake": true
+  },
+  "summary": {
+    "total_return": 29.44663579458209,
+    "cagr": 0.3787990774402863,
+    "ann_vol": 0.21674562158928556,
+    "sharpe": 1.5935519223036274,
+    "max_drawdown": -0.13447527809190718,
+    "calmar": 2.8168677753645985,
+    "win_rate": 0.4213381555153707,
+    "n_obs": 553.0,
+    "avg_turnover": 0.24466546112115733,
+    "avg_exposure": 0.6238698010849909,
+    "max_leverage": 1.0
+  },
+  "walk_forward": {
+    "is": {
+      "total_return": 4.505115548814303,
+      "cagr": 0.32759812030876057,
+      "ann_vol": 0.2116723277028467,
+      "sharpe": 1.4468104969558064,
+      "max_drawdown": -0.13447527809190718,
+      "calmar": 2.4361215307163264,
+      "win_rate": 0.46006389776357826,
+      "n_obs": 313.0
+    },
+    "oos": {
+      "total_return": 4.530607945393572,
+      "cagr": 0.44855210821746105,
+      "ann_vol": 0.2229903660825099,
+      "sharpe": 1.7778699097596562,
+      "max_drawdown": -0.12571020626023444,
+      "calmar": 3.568143920541401,
+      "win_rate": 0.37083333333333335,
+      "n_obs": 240.0
+    },
+    "full": {
+      "total_return": 29.44663579458209,
+      "cagr": 0.3787990774402863,
+      "ann_vol": 0.21674562158928556,
+      "sharpe": 1.5935519223036274,
+      "max_drawdown": -0.13447527809190718,
+      "calmar": 2.8168677753645985,
+      "win_rate": 0.4213381555153707,
+      "n_obs": 553.0
+    }
+  },
+  "hit": false,
+  "soft_hit": true
+}

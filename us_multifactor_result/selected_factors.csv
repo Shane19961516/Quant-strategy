@@ -1,0 +1,16 @@
+category,rank,factor
+momentum,1,mom_1m
+momentum,2,mom_accel
+momentum,3,mom_12_1
+momentum,4,mom_12m
+momentum,5,mom_1w
+stability,1,inv_downside_vol
+stability,2,inv_vol_6m
+stability,3,inv_vol_1m
+stability,4,inv_vol_3m
+stability,5,inv_beta
+size,1,neg_log_mcap
+size,2,neg_mcap_rank
+size,3,inv_price_rank
+size,4,neg_log_price
+size,5,neg_log_dollar_vol

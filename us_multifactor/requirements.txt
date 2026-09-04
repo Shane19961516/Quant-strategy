@@ -1,0 +1,8 @@
+yfinance>=0.2.40
+pandas>=1.5
+numpy>=1.23
+matplotlib>=3.5
+pyarrow>=12
+pytest>=7.0
+lxml>=4.9
+requests>=2.28

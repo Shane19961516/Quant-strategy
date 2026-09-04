@@ -1,0 +1,66 @@
+{
+  "momentum": [
+    "mom_1w",
+    "mom_1m",
+    "mom_3m",
+    "mom_6m",
+    "mom_12m",
+    "mom_12_1",
+    "mom_accel",
+    "mom_riskadj_3m",
+    "near_52w_high",
+    "resid_mom_6m"
+  ],
+  "profitability": [
+    "roe",
+    "roa",
+    "gross_margin",
+    "op_margin",
+    "profit_margin",
+    "roe_q",
+    "roa_q",
+    "ni_growth_q",
+    "rev_growth",
+    "earn_growth",
+    "cfo_assets"
+  ],
+  "quality": [
+    "inv_debt_equity",
+    "inv_debt_equity_q",
+    "current_ratio",
+    "quick_ratio",
+    "inv_accruals",
+    "cfo_assets",
+    "insider_own",
+    "inv_short_ratio",
+    "roe_margin_blend"
+  ],
+  "size": [
+    "neg_log_price",
+    "neg_log_dollar_vol",
+    "neg_log_volume",
+    "inv_price_rank",
+    "neg_log_mcap",
+    "neg_mcap_rank"
+  ],
+  "stability": [
+    "inv_vol_1m",
+    "inv_vol_3m",
+    "inv_vol_6m",
+    "inv_downside_vol",
+    "inv_maxdd_6m",
+    "inv_beta",
+    "inv_idio_vol",
+    "inv_range_vol"
+  ],
+  "valuation": [
+    "earnings_yield",
+    "inv_pe",
+    "book_yield",
+    "inv_pb",
+    "sales_yield",
+    "inv_ev_ebitda",
+    "forward_earn_yield",
+    "fcf_yield"
+  ]
+}

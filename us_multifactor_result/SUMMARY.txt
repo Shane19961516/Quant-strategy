@@ -1,0 +1,5 @@
+US S&P 500 Multi-Factor — CAUSAL v3
+joint_targets_hit=False soft_targets_hit=True
+Sharpe=1.594 CAGR=37.88% MaxDD=-13.45%
+OOS Sharpe=1.778 CAGR=44.86%
+tilt={'momentum': 0.5, 'stability': 0.4, 'size': 0.1} top_n=15
