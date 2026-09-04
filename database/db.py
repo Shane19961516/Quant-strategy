@@ -11,7 +11,6 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from .models import (
     DailyPosition,
     DailyTrade,
-    FuturesManualTrade,
     MarkQuote,
     OptionContractCache,
     ScreenerResult,
@@ -167,13 +166,6 @@ def save_settlement_import(
 ) -> SettlementImport:
     if replace_active:
         deactivate_settlements(session, imp.account_id)
-        # 清理同账户历史昨仓行，避免重复导入把表撑大（查询虽已按 active import 过滤）
-        stale = session.exec(
-            select(YesterdayOptionPosition).where(YesterdayOptionPosition.account_id == imp.account_id)
-        ).all()
-        for row in stale:
-            session.delete(row)
-        session.commit()
     session.add(imp)
     session.commit()
     session.refresh(imp)
@@ -198,20 +190,8 @@ def get_yesterday_positions(
     account_id: str,
     settlement_date: Optional[str] = None,
 ) -> list[YesterdayOptionPosition]:
-    """
-    Always prefer the active settlement import to avoid duplicated rows from
-    repeated uploads of the same XLS (same settlement_date, many import_id).
-    """
-    active = get_active_settlement(session, account_id)
-    if active and (settlement_date is None or active.settlement_date == settlement_date):
-        return list(
-            session.exec(
-                select(YesterdayOptionPosition).where(YesterdayOptionPosition.import_id == active.id)
-            ).all()
-        )
     if settlement_date:
-        # fallback: latest import_id for that date only (dedupe by max import_id)
-        rows = list(
+        return list(
             session.exec(
                 select(YesterdayOptionPosition).where(
                     YesterdayOptionPosition.account_id == account_id,
@@ -219,11 +199,14 @@ def get_yesterday_positions(
                 )
             ).all()
         )
-        if not rows:
-            return []
-        max_iid = max(int(r.import_id) for r in rows)
-        return [r for r in rows if int(r.import_id) == max_iid]
-    return []
+    active = get_active_settlement(session, account_id)
+    if not active:
+        return []
+    return list(
+        session.exec(
+            select(YesterdayOptionPosition).where(YesterdayOptionPosition.import_id == active.id)
+        ).all()
+    )
 
 
 def list_today_trades(
@@ -257,34 +240,6 @@ def delete_today_trade(session: Session, trade_id_pk: int, account_id: str) -> b
     session.delete(row)
     session.commit()
     return True
-
-
-def clear_today_trades(
-    session: Session,
-    account_id: Optional[str] = None,
-    session_date: Optional[str] = None,
-) -> int:
-    """Delete today option trades. Omit filters to clear the whole table (startup wipe)."""
-    q = select(TodayManualTrade)
-    if account_id:
-        q = q.where(TodayManualTrade.account_id == account_id)
-    if session_date:
-        q = q.where(TodayManualTrade.session_date == session_date)
-    rows = list(session.exec(q).all())
-    for r in rows:
-        session.delete(r)
-    session.commit()
-    return len(rows)
-
-
-def clear_all_session_trades(session: Session) -> dict[str, int]:
-    """Wipe all hand-entered option + futures trades (used on API startup)."""
-    opt_n = clear_today_trades(session)
-    fut_rows = list(session.exec(select(FuturesManualTrade)).all())
-    for r in fut_rows:
-        session.delete(r)
-    session.commit()
-    return {"today_option_trades": opt_n, "futures_trades": len(fut_rows)}
 
 
 def upsert_mark(
@@ -322,44 +277,3 @@ def get_marks(session: Session, account_id: str, session_date: str) -> dict[str,
         )
     ).all()
     return {r.symbol: r.price for r in rows}
-
-
-def list_futures_trades(
-    session: Session,
-    account_id: str,
-    session_date: str,
-) -> list[FuturesManualTrade]:
-    return list(
-        session.exec(
-            select(FuturesManualTrade)
-            .where(
-                FuturesManualTrade.account_id == account_id,
-                FuturesManualTrade.session_date == session_date,
-            )
-            .order_by(FuturesManualTrade.created_at.asc())
-        ).all()
-    )
-
-
-def add_futures_trade(session: Session, trade: FuturesManualTrade) -> FuturesManualTrade:
-    session.add(trade)
-    session.commit()
-    session.refresh(trade)
-    return trade
-
-
-def delete_futures_trade(session: Session, pk: int, account_id: str) -> bool:
-    row = session.get(FuturesManualTrade, pk)
-    if not row or row.account_id != account_id:
-        return False
-    session.delete(row)
-    session.commit()
-    return True
-
-
-def clear_futures_trades(session: Session, account_id: str, session_date: str) -> int:
-    rows = list_futures_trades(session, account_id, session_date)
-    for r in rows:
-        session.delete(r)
-    session.commit()
-    return len(rows)
