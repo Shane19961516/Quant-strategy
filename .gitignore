@@ -110,6 +110,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Alpha101 downloaded market cache (re-fetch via yfinance)
+alpha101_data/
+
 # Spyder project settings
 .spyderproject
 .spyproject

@@ -63,3 +63,102 @@ Brinson、Hood和Beebower（1986）提出Brinson模型的经典版本，记为BH
 将日收益率转换为设定频率的收益率，默认为6个月（披露完整持仓数据的报告期仅为半年报和年报），
 
 详见代码。
+
+
+五.因子工程（Factor Engineering）
+------
+
+新增 `factor_engineering/`：面向 A 股月频价量数据的**因子研究与因子库**全流程。
+
+### 1) 完整流程
+```
+因子生成 → 有效性/稳定性/分层/多空检验 → 入库标准裁决
+       → FactorStore 录入 → 解释文档 → 固定时点更新 → 读取调用
+```
+
+| 步骤 | 模块 | 说明 |
+|------|------|------|
+| 生成 | `factors` / `process` | 滞后1期、缩尾、行业中性、z-score |
+| 检验 | `battery` | 有效性、稳定性、分层、多空四套检验 |
+| 入库标准 | `admission` | 全部门禁通过才可 `admitted` |
+| 数据库 | `store` | SQLite 元数据 + `panels/*.csv.gz` + 文档 |
+| 文档/调用 | `docs` + `FactorStore` API | `list` / `get_factor_on` / `get_doc` |
+| 固定更新 | `update` | 默认 `month_end` 重算、复检、写审计 |
+
+### 2) 入库标准（摘要）
+详见 `factor_db/ADMISSION_STANDARD.md`（运行 `admit` 后生成），核心阈值：
+- 有效性：\|IC\|≥0.02，\|ICIR\|≥0.30，\|t\|≥2，胜率≥55%
+- 稳定性：年度同号≥75%，半样本同号，滚动 ICIR 为正≥55%
+- 分层：单调性≥0.60，\|Top−Bottom\|≥0.3%/月
+- 多空：夏普≥0.30，回撤≥−50%，换手≤1.8（含 20bp 成本）
+
+### 3) 运行
+```bash
+pip install -r factor_engineering/requirements.txt
+
+# 一键：生成 + 检验 + 入库 + 写文档
+python3 run_factor_warehouse.py admit
+
+# 查看入库标准 / 已入库因子 / 文档 / 截面
+python3 run_factor_warehouse.py standard
+python3 run_factor_warehouse.py list
+python3 run_factor_warehouse.py doc rev_1
+python3 run_factor_warehouse.py get rev_1 --date 2019-12-31
+
+# 固定时点更新（月末）
+python3 run_factor_warehouse.py update --schedule month_end
+python3 run_factor_warehouse.py schedule
+
+# 研究向报告（合成/IC 图等）
+python3 run_factor_engineering.py
+python3 -m pytest factor_engineering/tests -q
+```
+
+### 4) 调用示例
+```python
+from factor_engineering import FactorStore
+
+store = FactorStore()  # ./factor_db
+store.list_factors(status="admitted")
+panel = store.load_panel("rev_1")           # 已按 direction 校正
+s = store.get_factor_on("rev_1", "2019-12-31")
+print(store.get_doc("rev_1")[:400])
+```
+
+### 5) 设计要点
+- **无前视**：因子统一 `shift(1)`，回测 `weight[t]*return[t]`。
+- **方向校正**：IC 为负则 `direction=-1`，读取 API 默认取反。
+- **审计**：每次入库写入 `admission_runs`；每次更新写入 `update_runs`。
+
+
+六.Alpha101 美股验证（SPX ∪ NDX，未来5日收益）
+------
+
+新增 `alpha101/`：以 **标普500 ∪ 纳斯达克100** 为股票池，yfinance 近10年日频 OHLCV，
+验证 WorldQuant Alpha101（OHLCV 可实现子集）对**未来5个交易日收益**的预测力，
+并做分层 / 稳定性 / 多空检验，按标准入库。
+
+### 1) 设定
+- 无前视：`shift(1)`；评估用**非重叠5日网格**（避免重叠收益虚高）
+- 入库分两档：研究级（实际入库） / 机构级（对照，通常更严）
+- 因子库：`factor_db_alpha101/`；报告：`alpha101_result/FACTOR_REPORT.md`
+
+### 2) 运行
+```bash
+pip install -r alpha101/requirements.txt
+python3 run_alpha101_validation.py                 # 下载/缓存后全量验证
+python3 run_alpha101_validation.py --list
+python3 -m pytest alpha101/tests -q
+```
+
+```python
+from factor_engineering import FactorStore
+store = FactorStore("factor_db_alpha101")
+print(store.list_factors(status="admitted"))
+s = store.get_factor_on("alpha015", "2024-06-28")
+print(store.get_doc("alpha015")[:400])
+```
+
+### 3) 样本结论（2016-08 → 2026-08）
+- 机构级门槛：**无一通过**（符合 Alpha101 在美股大盘上的弱信号预期）
+- 研究级入库：`alpha015`、`alpha_vol20`（后者 `direction=-1`，调用时取反）

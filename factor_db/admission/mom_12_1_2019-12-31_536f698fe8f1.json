@@ -1,0 +1,151 @@
+{
+  "factor": "mom_12_1",
+  "admitted": false,
+  "direction": -1,
+  "reject_reasons": [
+    "min_abs_ic: value=0.016942024096208118 vs 0.02 (有效性：|IC均值| 下限)",
+    "min_abs_icir: value=0.15059015962288572 vs 0.3 (有效性：|ICIR| 下限)",
+    "min_ic_tstat: value=1.5577167235256042 vs 2.0 (有效性：|IC t统计量| 下限)",
+    "min_subperiod_sign_ratio: value=0.4444444444444444 vs 0.75 (稳定性：年度子样本 IC 同号占比下限)"
+  ],
+  "metrics": {
+    "ic_mean": -0.016942024096208118,
+    "ic_std": 0.1125041911014309,
+    "icir": -0.15059015962288572,
+    "ic_pos_ratio": 0.4485981308411215,
+    "ic_tstat": -1.5577167235256042,
+    "n": 107.0,
+    "avg_turnover": 0.4736449830330195,
+    "ic_decay_1": -0.012309562672124968,
+    "ic_decay_3": -0.007403897381037212,
+    "autocorr_1": 0.8618550165758875,
+    "q_spread": -0.007064764204288903,
+    "q_monotonicity": 1.0,
+    "subperiod_sign_ratio": 0.4444444444444444,
+    "half_sample_sign_match": true,
+    "rolling_icir_pos_ratio": 0.6190476190476191,
+    "ic_decay_0": -0.016942024096208118,
+    "ls_sharpe": 0.6248964586960982,
+    "ls_cagr": 0.06127111400260188,
+    "ls_max_drawdown": -0.16936239342363035,
+    "ls_total_return": 0.8034796284293262,
+    "ls_win_rate": 0.5126050420168067,
+    "n_months": 107.0,
+    "direction": -1,
+    "hit_rate_adj": 0.5514018691588785
+  },
+  "gates": [
+    {
+      "name": "min_months",
+      "category": "sample",
+      "passed": true,
+      "value": 107.0,
+      "threshold": 36,
+      "detail": "样本：最少有效月份数"
+    },
+    {
+      "name": "min_abs_ic",
+      "category": "validity",
+      "passed": false,
+      "value": 0.016942024096208118,
+      "threshold": 0.02,
+      "detail": "有效性：|IC均值| 下限"
+    },
+    {
+      "name": "min_abs_icir",
+      "category": "validity",
+      "passed": false,
+      "value": 0.15059015962288572,
+      "threshold": 0.3,
+      "detail": "有效性：|ICIR| 下限"
+    },
+    {
+      "name": "min_ic_tstat",
+      "category": "validity",
+      "passed": false,
+      "value": 1.5577167235256042,
+      "threshold": 2.0,
+      "detail": "有效性：|IC t统计量| 下限"
+    },
+    {
+      "name": "min_ic_hit_rate",
+      "category": "validity",
+      "passed": true,
+      "value": 0.5514018691588785,
+      "threshold": 0.55,
+      "detail": "有效性：方向校正后 IC 胜率下限"
+    },
+    {
+      "name": "min_subperiod_sign_ratio",
+      "category": "stability",
+      "passed": false,
+      "value": 0.4444444444444444,
+      "threshold": 0.75,
+      "detail": "稳定性：年度子样本 IC 同号占比下限"
+    },
+    {
+      "name": "half_sample_sign_match",
+      "category": "stability",
+      "passed": true,
+      "value": 1,
+      "threshold": 1,
+      "detail": "稳定性：前后半样本 IC 必须同号"
+    },
+    {
+      "name": "min_rolling_icir_pos_ratio",
+      "category": "stability",
+      "passed": true,
+      "value": 0.6190476190476191,
+      "threshold": 0.55,
+      "detail": "稳定性：滚动 ICIR>0 占比下限"
+    },
+    {
+      "name": "min_quantile_monotonicity",
+      "category": "layered",
+      "passed": true,
+      "value": 1.0,
+      "threshold": 0.6,
+      "detail": "分层：分位收益单调性下限"
+    },
+    {
+      "name": "min_abs_q_spread",
+      "category": "layered",
+      "passed": true,
+      "value": 0.007064764204288903,
+      "threshold": 0.003,
+      "detail": "分层：|Top-Bottom 月均价差| 下限"
+    },
+    {
+      "name": "min_ls_sharpe",
+      "category": "long_short",
+      "passed": true,
+      "value": 0.6248964586960982,
+      "threshold": 0.3,
+      "detail": "多空：净夏普下限（含成本）"
+    },
+    {
+      "name": "min_ls_cagr",
+      "category": "long_short",
+      "passed": true,
+      "value": 0.06127111400260188,
+      "threshold": 0.0,
+      "detail": "多空：年化收益下限"
+    },
+    {
+      "name": "max_ls_drawdown",
+      "category": "long_short",
+      "passed": true,
+      "value": -0.16936239342363035,
+      "threshold": -0.5,
+      "detail": "多空：最大回撤下限（更差则拒）"
+    },
+    {
+      "name": "max_avg_turnover",
+      "category": "long_short",
+      "passed": true,
+      "value": 0.4736449830330195,
+      "threshold": 1.8,
+      "detail": "多空：平均单边换手上限"
+    }
+  ]
+}
