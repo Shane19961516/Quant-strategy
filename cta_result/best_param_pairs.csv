@@ -1,0 +1,2 @@
+,label,window,entry_z,exit_z,stop_z,method,p_window,p_entry_z,p_exit_z,p_stop_z,train_sharpe,train_cagr,train_total,train_maxdd,valid_sharpe,valid_cagr,valid_total,valid_maxdd,pos_asset_frac,local_sharpe_std,score
+0,"pairs|window=40,entry_z=1.5,exit_z=0,stop_z=3.5",40,1.5,0,3.5,pairs,40,1.5,0,3.5,0.36314000146581965,0.01586162358296095,0.0625805250718372,-0.07327149225928131,0.9700072614405423,0.037526693607150774,0.07331889324639551,-0.03498606655619929,0.6,0.2882444672522862,0.5166524405683942

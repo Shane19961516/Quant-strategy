@@ -1,0 +1,2 @@
+,label,window,n_std,exit_z,stop_z,method,p_window,p_n_std,p_exit_z,p_stop_z,train_sharpe,train_cagr,train_total,train_maxdd,valid_sharpe,valid_cagr,valid_total,valid_maxdd,pos_asset_frac,local_sharpe_std,score
+0,"bollinger|window=10,n_std=2.5,exit_z=0,stop_z=3.5",10,2.5,0,3.5,bollinger,10,2.5,0,3.5,0.11868836581039123,0.0019285520765333075,0.007466922192395531,-0.031481854369270756,1.4879794581714956,0.01674781091958888,0.03241430209555407,-0.009125457219040345,0.5384615384615384,0.22312997919231417,0.6955833165837014
