@@ -1,0 +1,32 @@
+# 资金偏好与风控阈值配置
+capital:
+  total_equity: 100000.0          # 总可用资金 W
+  max_allocation_per_symbol: 0.30 # 单品种最大保证金授权占比 R_max
+  max_margin_usage: 0.60          # 账户保证金占用上限（超过则拒绝新开仓建议）
+
+screener:
+  dte_min: 30
+  dte_max: 45
+  ivr_min: 50.0                   # %
+  ivp_min: 70.0                   # %
+  iv_hv_spread_min: 0.05          # 5% absolute (e.g. 0.32 - 0.22 = 0.10)
+  target_call_delta: 0.20
+  target_put_delta: -0.20
+
+risk:
+  delta_tilt_threshold: 0.30      # |net_delta| 超此值触发倾斜预警
+  gamma_squeeze_dte: 10           # DTE 低于此值进入 Gamma 监控
+  gamma_squeeze_moneyness: 0.03   # 标的贴近行权价 3% 范围
+  risk_free_rate: 0.02            # 无风险利率 r
+
+scheduler:
+  market_data_cron: "*/5 * * * *" # 每 5 分钟拉取行情
+  screener_cron: "0 */1 * * *"    # 每小时重跑筛选
+
+database:
+  sqlite_url: "sqlite:///./data/strangle.db"
+  duckdb_path: "./data/iv_history.duckdb"
+
+ui:
+  api_base_url: "http://127.0.0.1:8000"
+  default_lookback_days: 120

@@ -152,6 +152,6 @@ def order_ticket(underlying: str) -> dict[str, Any]:
         f"卖出 Put : {c.put_symbol}  K={c.put_strike:.0f}  Δ={c.put_delta:.3f}  权利金≈{c.put_premium:.2f}\n"
         f"DTE={c.dte}  POP={c.pop:.1%}  IVR={c.iv_rank:.1f}%  IVP={c.iv_percentile:.1f}%\n"
         f"建议手数: {c.max_pairs} 对  保证金≈{c.total_margin:.0f}  ROI≈{c.expected_roi:.1f}%\n"
-        f"风控: 净Δ倾斜阈=0.30 | 账户保证金占用上限 60%\n"
+        f"风控: 净Δ倾斜阈=1.0 | 账户保证金占用上限 60%\n"
     )
     return {"underlying": c.underlying, "ticket": text, "candidate": c.to_dict()}

@@ -14,14 +14,25 @@ screener:
   target_put_delta: -0.20
 
 risk:
-  delta_tilt_threshold: 0.30      # |net_delta| 超此值触发倾斜预警
+  delta_tilt_threshold: 1.0       # |net_delta| 超此值触发倾斜预警（对齐 Libra ~1.0）
   gamma_squeeze_dte: 10           # DTE 低于此值进入 Gamma 监控
   gamma_squeeze_moneyness: 0.03   # 标的贴近行权价 3% 范围
   risk_free_rate: 0.02            # 无风险利率 r
+  daily_profit_target: 660.0      # 日均盈利目标（对齐 Excel 风控台）
+  stress_shock: 0.05              # 压力测试标的变动
+  max_product_margin_ratio: 0.12  # 品种保证金最大占比上限
 
 scheduler:
-  market_data_cron: "*/5 * * * *" # 每 5 分钟拉取行情
-  screener_cron: "0 */1 * * *"    # 每小时重跑筛选
+  quote_cron: "*/2 * * * *"     # 交易时段自动拉行情（akshare/CTP）
+  cfmmc_cron: "30 16 * * 1-5"   # 工作日 16:30 自动拉监控中心结算单
+  market_data_cron: "*/5 * * * *" # legacy demo
+  screener_cron: "0 */1 * * *"
+
+feed:
+  quote_provider: akshare         # akshare | ctp
+  auto_quotes: true
+  auto_cfmmc: true
+  auto_scheduler: true
 
 database:
   sqlite_url: "sqlite:///./data/strangle.db"

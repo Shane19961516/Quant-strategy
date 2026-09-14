@@ -175,3 +175,21 @@ class MarkQuote(SQLModel, table=True):
     symbol: str = Field(index=True)
     price: float
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FuturesManualTrade(SQLModel, table=True):
+    """当日期货对冲成交（与期权分表）。"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: str = Field(index=True)
+    session_date: str = Field(index=True)
+    trade_id: str = Field(index=True)
+    symbol: str = Field(index=True)  # JD2610 / V2610
+    side: str  # BUY / SELL
+    volume: int
+    price: float
+    last: float = 0.0
+    fee: float = 0.0
+    multiplier: float = 10.0
+    note: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)

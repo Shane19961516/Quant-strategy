@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .streamlit/
+.env
+.env.local
+**/secrets*.json
+**/cfmmc_credentials*

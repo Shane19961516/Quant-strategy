@@ -60,21 +60,21 @@ def inject_sidebar() -> None:
         st.sidebar.info("API 未连接时仍可本地解析预览")
 
 
-def get_json(path: str, params: dict | None = None):
-    r = requests.get(f"{api_base()}{path}", params=params or {}, timeout=30)
+def get_json(path: str, params: dict | None = None, timeout: float = 30):
+    r = requests.get(f"{api_base()}{path}", params=params or {}, timeout=timeout)
     r.raise_for_status()
     return r.json()
 
 
-def post_json(path: str, payload: dict):
-    r = requests.post(f"{api_base()}{path}", json=payload, timeout=30)
+def post_json(path: str, payload: dict, timeout: float = 30):
+    r = requests.post(f"{api_base()}{path}", json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json()
 
 
-def post_file(path: str, file_bytes: bytes, filename: str, form: dict | None = None):
+def post_file(path: str, file_bytes: bytes, filename: str, form: dict | None = None, timeout: float = 120):
     files = {"file": (filename, file_bytes, "application/vnd.ms-excel")}
     data = form or {}
-    r = requests.post(f"{api_base()}{path}", files=files, data=data, timeout=60)
+    r = requests.post(f"{api_base()}{path}", files=files, data=data, timeout=timeout)
     r.raise_for_status()
     return r.json()

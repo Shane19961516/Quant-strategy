@@ -1,0 +1,65 @@
+{
+  "default": {
+    "style": "domestic",
+    "underlying_margin_rate": 0.12,
+    "otm_haircut": 0.5,
+    "min_margin_ratio": 0.5,
+    "multiplier": 10
+  },
+  "exchanges": {
+    "DCE": {
+      "style": "domestic",
+      "underlying_margin_rate": 0.12,
+      "otm_haircut": 0.5,
+      "min_margin_ratio": 0.5,
+      "products": {
+        "m": { "multiplier": 10, "underlying_margin_rate": 0.10 },
+        "c": { "multiplier": 10, "underlying_margin_rate": 0.10 },
+        "i": { "multiplier": 100, "underlying_margin_rate": 0.12 }
+      }
+    },
+    "SHFE": {
+      "style": "domestic",
+      "underlying_margin_rate": 0.12,
+      "otm_haircut": 0.5,
+      "min_margin_ratio": 0.5,
+      "products": {
+        "ag": { "multiplier": 15, "underlying_margin_rate": 0.10 },
+        "au": { "multiplier": 1000, "underlying_margin_rate": 0.08 },
+        "cu": { "multiplier": 5, "underlying_margin_rate": 0.10 }
+      }
+    },
+    "CZCE": {
+      "style": "domestic",
+      "underlying_margin_rate": 0.10,
+      "otm_haircut": 0.5,
+      "min_margin_ratio": 0.5,
+      "products": {
+        "SR": { "multiplier": 10, "underlying_margin_rate": 0.09 },
+        "CF": { "multiplier": 5, "underlying_margin_rate": 0.09 }
+      }
+    },
+    "CFFEX": {
+      "style": "domestic",
+      "underlying_margin_rate": 0.14,
+      "otm_haircut": 0.5,
+      "min_margin_ratio": 0.5,
+      "products": {
+        "IO": { "multiplier": 100, "underlying_margin_rate": 0.14 },
+        "MO": { "multiplier": 100, "underlying_margin_rate": 0.14 },
+        "HO": { "multiplier": 100, "underlying_margin_rate": 0.14 }
+      }
+    },
+    "CME": {
+      "style": "cme",
+      "underlying_margin_rate": 0.10,
+      "otm_haircut": 0.5,
+      "min_margin_ratio": 0.5,
+      "span_credit": 0.5,
+      "products": {
+        "ES": { "multiplier": 50, "underlying_margin_rate": 0.08 },
+        "CL": { "multiplier": 1000, "underlying_margin_rate": 0.10 }
+      }
+    }
+  }
+}
