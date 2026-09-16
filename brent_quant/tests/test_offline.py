@@ -12,7 +12,7 @@ from brent_quant.data_cleaner import clean_ohlcv, detect_missing_bars
 from brent_quant.data_loader import _flatten_ohlcv, merge_incremental, to_utc_index
 from brent_quant.factors.trend import efficiency_ratio
 from brent_quant.position import contracts_for_trade
-from brent_quant.signal import add_factors, signal_from_model
+from brent_quant.signal import add_factors
 
 
 def _synth(n: int = 800, seed: int = 1) -> pd.DataFrame:
@@ -85,12 +85,12 @@ def test_efficiency_ratio_bounds():
     assert pytest.approx(er.iloc[-1], rel=1e-6) == 1.0
 
 
-def test_signal_shifted_execution():
-    df = _synth(400)
-    res = run_backtest(df, model="A", time_stop_bars=12)
-    # First bar cannot be in a position from a same-bar signal.
+def test_pulse_hold_does_not_churn():
+    df = _synth(500)
+    res = run_backtest(df, model="A", time_stop_bars=24)
     assert res.positions.iloc[0] == 0.0
     if not res.trades.empty:
+        assert len(res.trades) < 250
         assert (res.trades["bars_held"] >= 0).all()
 
 

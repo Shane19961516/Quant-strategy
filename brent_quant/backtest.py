@@ -14,6 +14,8 @@ from brent_quant.position import contracts_for_trade
 from brent_quant.risk import extreme_bar, initial_stop, stop_hit, trailing_stop
 from brent_quant.signal import build_signal_frame
 
+PULSE_MODELS = frozenset({"A", "B", "C", "D", "E", "DONCHIAN20"})
+
 
 @dataclass
 class BacktestResult:
@@ -189,18 +191,27 @@ def run_backtest(
         entry_reason = model
 
     for i in range(n):
-        # 1) Open: fill pending target from previous close.
+        # 1) Open: fill pending order from previous close.
         if i > 0:
             target = pending_target
             if extreme_bar(_as_float(zret[i], 0.0), cfg.EXTREME_RETURN_Z) and qty == 0:
                 target = 0.0
-            desired = 0.0 if target == 0 else (1.0 if target > 0 else -1.0)
-            current = 0.0 if side == 0 else (1.0 if side > 0 else -1.0)
-            if desired != current:
-                if qty != 0:
-                    flatten(i, opens[i], "signal_change")
-                if desired != 0 and qty == 0:
+            desired_sign = 0.0 if target == 0 else (1.0 if target > 0 else -1.0)
+            current_sign = 0.0 if side == 0 else (1.0 if side > 0 else -1.0)
+            pulse = model.upper() in PULSE_MODELS and signal_override is None
+            if pulse:
+                # Pulse models enter on a new signal and hold until stop / opposite / time.
+                if qty == 0 and desired_sign != 0:
                     enter(i, target)
+                elif qty != 0 and desired_sign != 0 and desired_sign != current_sign:
+                    flatten(i, opens[i], "signal_change")
+                    enter(i, target)
+            else:
+                if desired_sign != current_sign:
+                    if qty != 0:
+                        flatten(i, opens[i], "signal_change")
+                    if desired_sign != 0 and qty == 0:
+                        enter(i, target)
 
         # 2) Intrabar risk.
         if qty != 0 and use_stops:

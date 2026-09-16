@@ -123,24 +123,7 @@ def signal_from_model(
         raise ValueError(f"unknown model {model}")
 
     out = pd.Series(sig, index=df.index, name="signal").astype(float)
-    # Hold last non-zero until an opposite or explicit flatten. Pulse entries
-    # (single-bar breakout flags) stay as target until reversed.
-    out = _sticky_target(out, model)
     return out
-
-
-def _sticky_target(signal: pd.Series, model: str) -> pd.Series:
-    if model in {"BHS", "SCORE"}:
-        return signal
-    # Breakout systems: keep the last directional target until opposite fires.
-    sticky = signal.copy()
-    last = 0.0
-    vals = sticky.to_numpy(copy=True)
-    for i, v in enumerate(vals):
-        if v != 0.0:
-            last = v
-        vals[i] = last
-    return pd.Series(vals, index=signal.index, name="signal")
 
 
 def build_signal_frame(df: pd.DataFrame, model: str, **kwargs) -> pd.DataFrame:

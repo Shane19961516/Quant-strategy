@@ -1,0 +1,146 @@
+{
+  "windows": [
+    {
+      "train_start": "2026-07-07",
+      "train_end": "2026-07-29",
+      "test_start": "2026-07-30",
+      "test_end": "2026-08-09",
+      "chosen_breakout_n": 12,
+      "train_sharpe": -5.306346270876808,
+      "oos_sharpe": 0.04263222243432657,
+      "oos_total_return": 1.9732465466715254e-05,
+      "oos_max_drawdown": -0.006629369201988866,
+      "oos_profit_factor": 0.8729111395746345,
+      "oos_n_trades": 7.0
+    },
+    {
+      "train_start": "2026-07-16",
+      "train_end": "2026-08-09",
+      "test_start": "2026-08-10",
+      "test_end": "2026-08-18",
+      "chosen_breakout_n": 12,
+      "train_sharpe": -2.4630132638273006,
+      "oos_sharpe": -1.2502893287142214,
+      "oos_total_return": -0.0026962225324903555,
+      "oos_max_drawdown": -0.011957516250188038,
+      "oos_profit_factor": 0.47768718613497096,
+      "oos_n_trades": 9.0
+    },
+    {
+      "train_start": "2026-07-26",
+      "train_end": "2026-08-18",
+      "test_start": "2026-08-19",
+      "test_end": "2026-08-27",
+      "chosen_breakout_n": 72,
+      "train_sharpe": -3.019284829695772,
+      "oos_sharpe": 1.842935605610011,
+      "oos_total_return": 0.0047058473824881375,
+      "oos_max_drawdown": -0.010549021494091981,
+      "oos_profit_factor": 1.050734609417915,
+      "oos_n_trades": 12.0
+    },
+    {
+      "train_start": "2026-08-05",
+      "train_end": "2026-08-27",
+      "test_start": "2026-08-28",
+      "test_end": "2026-09-08",
+      "chosen_breakout_n": 72,
+      "train_sharpe": -1.2428270842073803,
+      "oos_sharpe": 1.0914198667069774,
+      "oos_total_return": 0.0019562049290637873,
+      "oos_max_drawdown": -0.004181603618699792,
+      "oos_profit_factor": 0.9802758242262282,
+      "oos_n_trades": 13.0
+    }
+  ],
+  "oos_summary": {
+    "start": "2026-07-30 00:00:00+00:00",
+    "end": "2026-09-08 00:00:00+00:00",
+    "n_daily": 31,
+    "total_return": 0.003976858732783972,
+    "cagr": 0.03279002353499805,
+    "ann_return": 0.03471164438788878,
+    "ann_vol": 0.07112312739119007,
+    "sharpe": 0.48805002902879197,
+    "sortino": 0.674516663853742,
+    "calmar": 2.128888378282764,
+    "max_drawdown": -0.015402415584347184,
+    "drawdown_duration_days": 13,
+    "var_5": -0.006688533655867801,
+    "cvar_5": -0.009289456484904257,
+    "end_nav": 1002459.890247577,
+    "monthly_returns": {
+      "2026-08-31": -0.000885382984753047,
+      "2026-09-30": 0.006163582205417795
+    },
+    "yearly_returns": {},
+    "n_trades": 0.0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "profit_factor": null,
+    "payoff_ratio": null,
+    "expectancy": null,
+    "avg_holding_bars": null,
+    "turnover": 0.0,
+    "gross_pnl": 0.0,
+    "model": "D_WF",
+    "params": {
+      "model": "D",
+      "windows": [
+        {
+          "train_start": "2026-07-07",
+          "train_end": "2026-07-29",
+          "test_start": "2026-07-30",
+          "test_end": "2026-08-09",
+          "chosen_breakout_n": 12,
+          "train_sharpe": -5.306346270876808,
+          "oos_sharpe": 0.04263222243432657,
+          "oos_total_return": 1.9732465466715254e-05,
+          "oos_max_drawdown": -0.006629369201988866,
+          "oos_profit_factor": 0.8729111395746345,
+          "oos_n_trades": 7.0
+        },
+        {
+          "train_start": "2026-07-16",
+          "train_end": "2026-08-09",
+          "test_start": "2026-08-10",
+          "test_end": "2026-08-18",
+          "chosen_breakout_n": 12,
+          "train_sharpe": -2.4630132638273006,
+          "oos_sharpe": -1.2502893287142214,
+          "oos_total_return": -0.0026962225324903555,
+          "oos_max_drawdown": -0.011957516250188038,
+          "oos_profit_factor": 0.47768718613497096,
+          "oos_n_trades": 9.0
+        },
+        {
+          "train_start": "2026-07-26",
+          "train_end": "2026-08-18",
+          "test_start": "2026-08-19",
+          "test_end": "2026-08-27",
+          "chosen_breakout_n": 72,
+          "train_sharpe": -3.019284829695772,
+          "oos_sharpe": 1.842935605610011,
+          "oos_total_return": 0.0047058473824881375,
+          "oos_max_drawdown": -0.010549021494091981,
+          "oos_profit_factor": 1.050734609417915,
+          "oos_n_trades": 12.0
+        },
+        {
+          "train_start": "2026-08-05",
+          "train_end": "2026-08-27",
+          "test_start": "2026-08-28",
+          "test_end": "2026-09-08",
+          "chosen_breakout_n": 72,
+          "train_sharpe": -1.2428270842073803,
+          "oos_sharpe": 1.0914198667069774,
+          "oos_total_return": 0.0019562049290637873,
+          "oos_max_drawdown": -0.004181603618699792,
+          "oos_profit_factor": 0.9802758242262282,
+          "oos_n_trades": 13.0
+        }
+      ]
+    }
+  }
+}
