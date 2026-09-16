@@ -52,7 +52,7 @@ def _table_markdown(df: pd.DataFrame) -> str:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Brent volume-price Phase-1 runner")
+    p = argparse.ArgumentParser(description="Brent 量价第一阶段运行器")
     p.add_argument("--mode", default="all", choices=["download", "backtest", "scan", "walk-forward", "all"])
     p.add_argument("--skip-download", action="store_true")
     p.add_argument("--ticker", default=cfg.TICKER)
@@ -219,29 +219,35 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         text_table = _table_markdown(comparison_table(kwargs["summaries"]))
         path.parent.mkdir(parents=True, exist_ok=True)
         body = [
-            "# Brent volume-price Phase-1 backtest report",
+            "# Brent 量价第一阶段回测报告",
             "",
-            "## Data",
+            "## 数据",
             "",
             "```json",
             json.dumps(data_meta, indent=2, default=str),
             "```",
             "",
-            "## Quality control",
+            "## 数据质检",
             "",
             "```json",
             json.dumps(qc, indent=2, default=str),
             "```",
             "",
-            "## Model comparison",
+            "## 模型对比",
             "",
             text_table,
             "",
-            "Primary screens: Sharpe, Calmar, Profit Factor, Max Drawdown.",
+            "第一层筛选指标：Sharpe、Calmar、盈亏比（Profit Factor）、最大回撤。",
             "",
         ]
+        title_map = {
+            "factor_analysis": "因子分析",
+            "parameter_scan": "参数扫描",
+            "walk_forward": "Walk-forward",
+        }
         for title, section in (kwargs.get("extra_sections") or {}).items():
-            body.extend(["## " + title, "", "```json", json.dumps(section, indent=2, default=str), "```", ""])
+            heading = title_map.get(title, title)
+            body.extend(["## " + heading, "", "```json", json.dumps(section, indent=2, default=str), "```", ""])
         path.write_text("\n".join(body), encoding="utf-8")
         return path
 

@@ -1,6 +1,6 @@
-# Brent volume-price Phase-1 backtest report
+# Brent 量价第一阶段回测报告
 
-## Data
+## 数据
 
 ```json
 {
@@ -16,7 +16,7 @@
 }
 ```
 
-## Quality control
+## 数据质检
 
 ```json
 {
@@ -55,7 +55,7 @@
 }
 ```
 
-## Model comparison
+## 模型对比
 
 | model | total_return | cagr | sharpe | calmar | profit_factor | max_drawdown | n_trades | win_rate | expectancy | ann_vol |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -69,9 +69,9 @@
 | DONCHIAN20 | 0.3505 | 2.6895 | 2.9587 | 38.4929 | 1.3037 | -0.0699 | 529.0000 | 0.3422 | 657.5186 | 0.4775 |
 | RANDOM | 0.2208 | 1.3791 | 1.6228 | 10.1392 | 1.1588 | -0.1360 | 854.0000 | 0.4239 | 243.5072 | 0.6448 |
 
-Primary screens: Sharpe, Calmar, Profit Factor, Max Drawdown.
+第一层筛选指标：Sharpe、Calmar、盈亏比（Profit Factor）、最大回撤。
 
-## factor_analysis
+## 因子分析
 
 ```json
 {
@@ -491,7 +491,7 @@ Primary screens: Sharpe, Calmar, Profit Factor, Max Drawdown.
 }
 ```
 
-## parameter_scan
+## 参数扫描
 
 ```json
 {
@@ -660,7 +660,7 @@ Primary screens: Sharpe, Calmar, Profit Factor, Max Drawdown.
 }
 ```
 
-## walk_forward
+## Walk-forward
 
 ```json
 {

@@ -109,29 +109,35 @@ def write_markdown_report(
     path.parent.mkdir(parents=True, exist_ok=True)
     table = comparison_table(summaries)
     lines = [
-        "# Brent volume-price Phase-1 backtest report",
+        "# Brent 量价第一阶段回测报告",
         "",
-        "## Data",
+        "## 数据",
         "",
         "```json",
         json.dumps(_jsonable(data_meta), indent=2, default=str),
         "```",
         "",
-        "## Quality control",
+        "## 数据质检",
         "",
         "```json",
         json.dumps(_jsonable(qc), indent=2, default=str),
         "```",
         "",
-        "## Model comparison",
+        "## 模型对比",
         "",
         table.to_markdown(index=False) if hasattr(table, "to_markdown") else table.to_string(index=False),
         "",
-        "Primary screens: Sharpe, Calmar, Profit Factor, Max Drawdown.",
+        "第一层筛选指标：Sharpe、Calmar、盈亏比（Profit Factor）、最大回撤。",
         "",
     ]
     extra_sections = extra_sections or {}
+    title_map = {
+        "factor_analysis": "因子分析",
+        "parameter_scan": "参数扫描",
+        "walk_forward": "Walk-forward",
+    }
     for title, body in extra_sections.items():
-        lines.extend([f"## {title}", "", "```json", json.dumps(_jsonable(body), indent=2, default=str), "```", ""])
+        heading = title_map.get(title, title)
+        lines.extend([f"## {heading}", "", "```json", json.dumps(_jsonable(body), indent=2, default=str), "```", ""])
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
