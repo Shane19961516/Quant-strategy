@@ -204,3 +204,14 @@ def test_hold_to_liq_ignores_opposite_pulse():
     assert (flip.trades["exit_reason"] == "signal_change").any()
     assert (hold.trades["exit_reason"] != "signal_change").all()
     assert (hold.trades["exit_reason"] == "eod_flatten").all()
+
+
+def test_deliver_config_is_long_only_hourly():
+    from universal_quant.eth_okx_deliver import DELIVER
+
+    assert DELIVER["long_only"] is True
+    assert DELIVER["model"] == "B"
+    assert DELIVER["decision"] == "1h"
+    assert DELIVER["bar"] == "1m"
+    assert DELIVER["risk_per_trade"] == 0.02
+    assert DELIVER["max_weight"] == 4.0
