@@ -3,11 +3,10 @@
     "symbol": "ETH-USDT-SWAP",
     "interval": "1m",
     "rows": 86410,
-    "start": "2026-07-18 08:22:00+00:00",
-    "end": "2026-09-16 08:31:00+00:00",
-    "cached": false,
+    "cached": true,
     "adapter": "okx",
-    "days_requested": 60
+    "start": "2026-07-18 08:22:00+00:00",
+    "end": "2026-09-16 08:31:00+00:00"
   },
   "windows": "24h lookback / 72h time-stop mapped onto 1m bars",
   "runs": {
@@ -143,10 +142,149 @@
       "min_nav": 3.7905919915336184e-07
     }
   },
+  "hourly_clock_runs": {
+    "risk_budget_B": {
+      "calendar_cagr": 0.7412426801700718,
+      "cagr_252": 0.46614891142129533,
+      "total_return": 0.09538353856938686,
+      "sharpe": 1.4975804481677897,
+      "max_drawdown": -0.06405671042060357,
+      "ann_vol": 0.28020049326285035,
+      "n_trades": 46.0,
+      "profit_factor": 1.661335598833604,
+      "expectancy": 2073.5551862907405,
+      "win_rate": 0.3695652173913043,
+      "avg_holding_bars": 612.5652173913044,
+      "avg_holding_hours": 10.209420289855073,
+      "start": "2026-07-18 00:00:00+00:00",
+      "end": "2026-09-16 00:00:00+00:00",
+      "end_nav": 1095383.5385693868,
+      "median_weight": 0.4645625609027574,
+      "mean_weight": 0.5437690725824261,
+      "p90_weight": 1.0151481718025988,
+      "long_share": 0.5652173913043478,
+      "exit_reasons": {
+        "stop": 0.9782608695652174,
+        "eod_flatten": 0.021739130434782608
+      },
+      "funding_pct_of_initial_nav": 0.00331045591491814,
+      "near_10pct_adverse_trades": 0,
+      "near_3pct_adverse_trades": 1
+    },
+    "risk_budget_E": {
+      "calendar_cagr": 0.3420486407286172,
+      "cagr_252": 0.22504551955713437,
+      "total_return": 0.04951494022824621,
+      "sharpe": 1.5732812854018046,
+      "max_drawdown": -0.03977995392541134,
+      "ann_vol": 0.1346222328716599,
+      "n_trades": 30.0,
+      "profit_factor": 1.564129538032787,
+      "expectancy": 1650.498007608086,
+      "win_rate": 0.4,
+      "avg_holding_bars": 762.9666666666667,
+      "avg_holding_hours": 12.716111111111111,
+      "start": "2026-07-18 00:00:00+00:00",
+      "end": "2026-09-16 00:00:00+00:00",
+      "end_nav": 1049514.9402282462,
+      "median_weight": 0.441118363635395,
+      "mean_weight": 0.5149577986685788,
+      "p90_weight": 0.8421695447015476,
+      "long_share": 0.6333333333333333,
+      "exit_reasons": {
+        "stop": 0.9333333333333333,
+        "signal_change": 0.06666666666666667
+      },
+      "funding_pct_of_initial_nav": 0.002318298146745228,
+      "near_10pct_adverse_trades": 0,
+      "near_3pct_adverse_trades": 1
+    },
+    "risk_budget_A": {
+      "calendar_cagr": 0.8435590242346411,
+      "cagr_252": 0.5250602352592637,
+      "total_return": 0.10570624191311895,
+      "sharpe": 1.6283312419270837,
+      "max_drawdown": -0.06405671042060357,
+      "ann_vol": 0.28228733066050343,
+      "n_trades": 47.0,
+      "profit_factor": 1.7090692967624466,
+      "expectancy": 2249.06897687496,
+      "win_rate": 0.3617021276595745,
+      "avg_holding_bars": 624.6382978723404,
+      "avg_holding_hours": 10.41063829787234,
+      "start": "2026-07-18 00:00:00+00:00",
+      "end": "2026-09-16 00:00:00+00:00",
+      "end_nav": 1105706.2419131189,
+      "median_weight": 0.48242184958077783,
+      "mean_weight": 0.5515512480509307,
+      "p90_weight": 1.013035795125294,
+      "long_share": 0.5531914893617021,
+      "exit_reasons": {
+        "stop": 0.9787234042553191,
+        "eod_flatten": 0.02127659574468085
+      },
+      "funding_pct_of_initial_nav": 0.003533184429133971,
+      "near_10pct_adverse_trades": 0,
+      "near_3pct_adverse_trades": 1
+    },
+    "risk_budget_BHS": {
+      "calendar_cagr": 3.566859105813559,
+      "cagr_252": 1.8516453950253746,
+      "total_return": 0.2833823908560713,
+      "sharpe": 2.3665571919208706,
+      "max_drawdown": -0.05614331413946094,
+      "ann_vol": 0.4908744663088863,
+      "n_trades": 0.0,
+      "profit_factor": NaN,
+      "expectancy": NaN,
+      "win_rate": NaN,
+      "avg_holding_bars": NaN,
+      "avg_holding_hours": null,
+      "start": "2026-07-18 00:00:00+00:00",
+      "end": "2026-09-16 00:00:00+00:00",
+      "end_nav": 1295749.9769522592
+    },
+    "full_10x_B": {
+      "calendar_cagr": -0.891753467303298,
+      "cagr_252": -0.784322352594609,
+      "total_return": -0.3059637163221983,
+      "sharpe": 0.9417327638040346,
+      "max_drawdown": -0.6481093431606972,
+      "ann_vol": 4.350066464325659,
+      "n_trades": 46.0,
+      "profit_factor": 0.8747703751383772,
+      "expectancy": -6651.385137439058,
+      "win_rate": 0.3695652173913043,
+      "avg_holding_bars": 612.5652173913044,
+      "avg_holding_hours": 10.209420289855073,
+      "start": "2026-07-18 00:00:00+00:00",
+      "end": "2026-09-16 00:00:00+00:00",
+      "end_nav": 694036.2836778017,
+      "median_weight": 10.0,
+      "mean_weight": 10.0,
+      "p90_weight": 10.0,
+      "long_share": 0.5652173913043478,
+      "exit_reasons": {
+        "stop": 0.9782608695652174,
+        "eod_flatten": 0.021739130434782608
+      },
+      "funding_pct_of_initial_nav": 0.05870416666666666,
+      "near_10pct_adverse_trades": 0,
+      "near_3pct_adverse_trades": 1,
+      "equity_hit_zero": false,
+      "min_nav": 468415.37256134726
+    }
+  },
   "natr": {
     "median": 0.0005737807411351359,
     "mean": 0.0006924894662049339,
     "p90": 0.0012859800101185242
   },
-  "implied_weight_at_median_natr": 2.5
+  "implied_weight_at_median_natr": 2.5,
+  "hourly_natr": {
+    "median": 0.0064934134020398614,
+    "mean": 0.006771415509816851,
+    "p90": 0.010617683072098582
+  },
+  "hourly_implied_weight": 0.7700110389443685
 }
