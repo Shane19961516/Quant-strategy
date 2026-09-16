@@ -132,3 +132,6 @@ dmypy.json
 brent_quant/data/raw/*.parquet
 brent_quant/data/processed/*.parquet
 brent_quant/**/__pycache__/
+universal_quant/data/raw/*.parquet
+universal_quant/data/processed/*.parquet
+universal_quant/**/__pycache__/
