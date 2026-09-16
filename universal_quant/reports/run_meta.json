@@ -1,0 +1,181 @@
+{
+  "data": {
+    "SPY": {
+      "symbol": "SPY",
+      "interval": "1h",
+      "period": "730d",
+      "rows": 5072,
+      "start": "2023-10-17 13:30:00+00:00",
+      "end": "2026-09-15 19:30:00+00:00",
+      "adapter": "yahoo",
+      "qc_missing": 0
+    },
+    "QQQ": {
+      "symbol": "QQQ",
+      "interval": "1h",
+      "period": "730d",
+      "rows": 5073,
+      "start": "2023-10-17 13:30:00+00:00",
+      "end": "2026-09-15 19:30:00+00:00",
+      "adapter": "yahoo",
+      "qc_missing": 0
+    },
+    "BZ=F": {
+      "symbol": "BZ=F",
+      "interval": "1h",
+      "period": "730d",
+      "rows": 13584,
+      "start": "2024-04-23 04:00:00+00:00",
+      "end": "2026-09-16 03:00:00+00:00",
+      "adapter": "yahoo",
+      "qc_missing": 0
+    },
+    "GC=F": {
+      "symbol": "GC=F",
+      "interval": "1h",
+      "period": "730d",
+      "rows": 13737,
+      "start": "2024-04-23 04:00:00+00:00",
+      "end": "2026-09-16 03:00:00+00:00",
+      "adapter": "yahoo",
+      "qc_missing": 0
+    },
+    "BTC-USD": {
+      "symbol": "BTC-USD",
+      "interval": "1h",
+      "period": "730d",
+      "rows": 17467,
+      "start": "2024-09-17 00:00:00+00:00",
+      "end": "2026-09-16 03:00:00+00:00",
+      "adapter": "yahoo",
+      "qc_missing": 0
+    }
+  },
+  "portfolio": {
+    "sizing": {
+      "risk_per_trade": 0.01,
+      "max_weight": 2.5,
+      "time_stop_bars": 72,
+      "target_port_cagr": 0.27,
+      "target_port_vol": 0.12,
+      "max_port_leverage": 8.0
+    },
+    "portfolio_B": {
+      "assets": [
+        "SPY",
+        "QQQ",
+        "Brent",
+        "Gold",
+        "BTC"
+      ],
+      "weights": {
+        "SPY": 0.2524023038038478,
+        "QQQ": 0.25659954196556206,
+        "Brent": 0.17057904246795022,
+        "Gold": 0.1532973762967599,
+        "BTC": 0.16712173546587986
+      },
+      "raw_vol": 0.04708094811498999,
+      "leverage": 1.3200999316481574,
+      "target_vol": 0.12,
+      "target_cagr": 0.27,
+      "calendar_cagr": 0.27000000000111335,
+      "calendar_cagr_unlevered": 0.19894765469733988,
+      "unlevered": {
+        "cagr": 0.19147694239285706,
+        "calendar_cagr": 0.19894765469733988,
+        "total_return": 0.6973310752582078,
+        "sharpe": 3.7458559229807045,
+        "max_drawdown": -0.01783901763317053,
+        "calmar": 10.733603516194623,
+        "ann_vol": 0.04708094811498999,
+        "ann_return": 0.17635844835608247
+      },
+      "cagr": 0.25958592174341577,
+      "total_return": 1.0075762098518215,
+      "sharpe": 3.7458559229806694,
+      "max_drawdown": -0.02350035244899973,
+      "calmar": 11.046043769205887,
+      "ann_vol": 0.06215155638852873,
+      "ann_return": 0.2328107756204374
+    },
+    "portfolio_D": {
+      "assets": [
+        "SPY",
+        "QQQ",
+        "Brent",
+        "Gold",
+        "BTC"
+      ],
+      "weights": {
+        "SPY": 0.25114278595094336,
+        "QQQ": 0.24127120485493486,
+        "Brent": 0.16365118205537868,
+        "Gold": 0.18020709032735344,
+        "BTC": 0.1637277368113896
+      },
+      "raw_vol": 0.025842153752344027,
+      "leverage": 4.6466181610618005,
+      "target_vol": 0.12,
+      "target_cagr": 0.27,
+      "calendar_cagr": 0.12122632112249954,
+      "calendar_cagr_unlevered": 0.026211448188802056,
+      "unlevered": {
+        "cagr": 0.025297168575011186,
+        "calendar_cagr": 0.026211448188802056,
+        "total_return": 0.07836192945256526,
+        "sharpe": 0.9796585898079309,
+        "max_drawdown": -0.04941978590069385,
+        "calmar": 0.5118834109448462,
+        "ann_vol": 0.025842153752344027,
+        "ann_return": 0.025316487902621077
+      },
+      "cagr": 0.11681543082031731,
+      "total_return": 0.39603475263271903,
+      "sharpe": 0.9796585898079202,
+      "max_drawdown": -0.2140237982269818,
+      "calmar": 0.5458058019156792,
+      "ann_vol": 0.12007862094659312,
+      "ann_return": 0.1176360524626192
+    },
+    "portfolio_E": {
+      "assets": [
+        "SPY",
+        "QQQ",
+        "Brent",
+        "Gold",
+        "BTC"
+      ],
+      "weights": {
+        "SPY": 0.25842789306887887,
+        "QQQ": 0.25081290124179495,
+        "Brent": 0.16201663570563213,
+        "Gold": 0.17875263284320192,
+        "BTC": 0.14998993714049216
+      },
+      "raw_vol": 0.035423397718425426,
+      "leverage": 1.6807272368312167,
+      "target_vol": 0.12,
+      "target_cagr": 0.27,
+      "calendar_cagr": 0.2699999999994531,
+      "calendar_cagr_unlevered": 0.15335551308820872,
+      "unlevered": {
+        "cagr": 0.14770066308007457,
+        "calendar_cagr": 0.15335551308820872,
+        "total_return": 0.515908449604568,
+        "sharpe": 3.9076796829715486,
+        "max_drawdown": -0.015748278220708123,
+        "calmar": 9.37884516707714,
+        "ann_vol": 0.035423397718425426,
+        "ann_return": 0.13842329156611174
+      },
+      "cagr": 0.2595859217418257,
+      "total_return": 1.0075762098441685,
+      "sharpe": 3.9076796829715517,
+      "max_drawdown": -0.026381131439187522,
+      "calmar": 9.839832773670468,
+      "ann_vol": 0.05953706936646239,
+      "ann_return": 0.23265179634699304
+    }
+  }
+}

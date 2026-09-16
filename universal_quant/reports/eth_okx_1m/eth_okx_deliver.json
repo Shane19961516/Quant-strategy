@@ -1,0 +1,55 @@
+{
+  "data": {
+    "symbol": "ETH-USDT-SWAP",
+    "interval": "1m",
+    "rows": 86410,
+    "cached": true,
+    "adapter": "okx",
+    "start": "2026-07-18 08:22:00+00:00",
+    "end": "2026-09-16 08:31:00+00:00"
+  },
+  "deliver": {
+    "symbol": "ETH-USDT-SWAP",
+    "model": "B",
+    "long_only": true,
+    "risk_per_trade": 0.02,
+    "max_weight": 4.0,
+    "bar": "1m",
+    "decision": "1h",
+    "stop": "2x hourly ATR + 3x trail + 72h time stop",
+    "order_split": "iceberg/maker in live; backtest is one fill (100 taker clips destroy expectancy)"
+  },
+  "performance": {
+    "calendar_cagr": 2.6015634965584677,
+    "cagr_252": 1.4207200182301731,
+    "total_return": 0.23428477455835628,
+    "sharpe": 1.8129542673130967,
+    "max_drawdown": -0.1165184943889267,
+    "ann_vol": 0.5667873339645224,
+    "n_trades": 26.0,
+    "profit_factor": 2.0342903851778718,
+    "expectancy": 9010.952867628923,
+    "win_rate": 0.4230769230769231,
+    "avg_holding_bars": 542.0769230769231,
+    "avg_holding_hours": 9.034615384615385,
+    "start": "2026-07-18 00:00:00+00:00",
+    "end": "2026-09-16 00:00:00+00:00",
+    "end_nav": 1234284.7745583563,
+    "median_weight": 0.9565816601516383,
+    "mean_weight": 1.1996501899062657,
+    "p90_weight": 2.2829575905913,
+    "long_share": 1.0,
+    "exit_reasons": {
+      "stop": 1.0
+    },
+    "funding_pct_of_initial_nav": 0.004055255736756406,
+    "train_ret": 0.03969643060660211,
+    "test_ret": 0.19488359202484484,
+    "fold0": 0.06723616369921626,
+    "fold1": 0.11353200579694467,
+    "fold2": 0.048683605442520594,
+    "all_folds_positive": true,
+    "both_halves_positive": true,
+    "n_signal_bars": 48
+  }
+}
