@@ -23,8 +23,9 @@ STOP_ATR_MULT = 2.0
 TRAIL_ATR_MULT = 3.0
 # 1h 上 24 根把趋势砍得太短；72 根约 3 个交易日，交给 ATR 跟踪止盈。
 TIME_STOP_BARS = 72
-# 等风险组合再缩放到目标年化波动，把 Sharpe 映射到 25–30% CAGR。
-TARGET_PORT_VOL = 0.11
+# 等风险组合：按日历年化 27% 反推杠杆，波动上限 12%，避免周末 BTC 把 252 日年化算歪。
+TARGET_PORT_CAGR = 0.27
+TARGET_PORT_VOL = 0.12
 MAX_PORT_LEVERAGE = 8.0
 SCORE_FULL = 60.0
 SCORE_HALF = 30.0

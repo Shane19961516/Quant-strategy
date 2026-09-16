@@ -46,8 +46,11 @@ def _md_table(rows: list[dict]) -> str:
 
 def _port_stats(eq: pd.Series) -> dict:
     st = performance_from_equity(eq)
+    from universal_quant.portfolio.risk_budget import calendar_cagr
+
     return {
         "cagr": st.get("cagr"),
+        "calendar_cagr": calendar_cagr(eq),
         "total_return": st.get("total_return"),
         "sharpe": st.get("sharpe"),
         "max_drawdown": st.get("max_drawdown"),
@@ -111,6 +114,7 @@ def run(argv=None) -> dict:
             "risk_per_trade": cfg.RISK_PER_TRADE,
             "max_weight": cfg.MAX_WEIGHT,
             "time_stop_bars": cfg.TIME_STOP_BARS,
+            "target_port_cagr": cfg.TARGET_PORT_CAGR,
             "target_port_vol": cfg.TARGET_PORT_VOL,
             "max_port_leverage": cfg.MAX_PORT_LEVERAGE,
         }
@@ -120,7 +124,12 @@ def run(argv=None) -> dict:
         if len(navmap) < 2:
             continue
         nav_df = pd.concat(navmap, axis=1, sort=True).ffill().dropna(how="all")
-        blend = blend_equal_risk(nav_df, target_vol=cfg.TARGET_PORT_VOL, max_leverage=cfg.MAX_PORT_LEVERAGE)
+        blend = blend_equal_risk(
+            nav_df,
+            target_vol=cfg.TARGET_PORT_VOL,
+            max_leverage=cfg.MAX_PORT_LEVERAGE,
+            target_cagr=cfg.TARGET_PORT_CAGR,
+        )
         scaled_st = _port_stats(blend["nav"])
         raw_st = _port_stats(blend["nav_unlevered"])
         extra[f"portfolio_{tag}"] = {
@@ -129,6 +138,9 @@ def run(argv=None) -> dict:
             "raw_vol": blend["raw_vol"],
             "leverage": blend["leverage"],
             "target_vol": blend["target_vol"],
+            "target_cagr": blend["target_cagr"],
+            "calendar_cagr": blend["calendar_cagr"],
+            "calendar_cagr_unlevered": blend["calendar_cagr_unlevered"],
             "unlevered": raw_st,
             **scaled_st,
         }
@@ -138,8 +150,8 @@ def run(argv=None) -> dict:
         if tag == "B":
             plot_model_pnl(navmap, reports / "upv_model_b_pnl.png", "模型 B 累计损益（提高风险预算后）")
             plot_series["等风险（未加杠杆）"] = blend["nav_unlevered"]
-            plot_series[f"等风险 + {cfg.TARGET_PORT_VOL:.0%} 目标波动"] = blend["nav"]
-            plot_drawdown(blend["nav"], reports / "upv_portfolio_b_dd.png", "模型 B 组合回撤（目标波动）")
+            plot_series[f"等风险 + 年化{cfg.TARGET_PORT_CAGR:.0%}目标"] = blend["nav"]
+            plot_drawdown(blend["nav"], reports / "upv_portfolio_b_dd.png", "模型 B 组合回撤（年化目标）")
 
     if plot_series:
         plot_portfolio_nav(plot_series, reports / "upv_portfolio_nav.png", "五资产等风险组合净值")
@@ -151,7 +163,8 @@ def run(argv=None) -> dict:
         f"周期：`{args.interval}`；下载窗口：`{args.period}`。",
         "",
         f"仓位：单笔风险 `{cfg.RISK_PER_TRADE:.2%}`，权重上限 `{cfg.MAX_WEIGHT}`，"
-        f"时间止损 `{cfg.TIME_STOP_BARS}` 根，组合目标波动 `{cfg.TARGET_PORT_VOL:.0%}`。",
+        f"时间止损 `{cfg.TIME_STOP_BARS}` 根，组合目标年化 `{cfg.TARGET_PORT_CAGR:.0%}`"
+        f"（波动上限 `{cfg.TARGET_PORT_VOL:.0%}`）。",
         "",
         "## 数据",
         "",

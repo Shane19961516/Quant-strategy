@@ -81,3 +81,15 @@ def test_equal_risk_vol_target():
     blend = blend_equal_risk(navs, target_vol=0.12)
     assert blend["leverage"] > 0.0
     assert abs(float(blend["weights"].sum()) - 1.0) < 1e-9
+
+
+def test_equal_risk_cagr_target():
+    from universal_quant.portfolio.risk_budget import blend_equal_risk, calendar_cagr
+
+    idx = pd.date_range("2022-01-03", periods=504, freq="B")
+    rng = np.random.default_rng(3)
+    a = pd.Series(1_000_000 * np.cumprod(1.0 + rng.normal(0.00025, 0.006, len(idx))), index=idx)
+    b = pd.Series(1_000_000 * np.cumprod(1.0 + rng.normal(0.00015, 0.012, len(idx))), index=idx)
+    navs = pd.DataFrame({"a": a, "b": b})
+    blend = blend_equal_risk(navs, target_vol=0.20, max_leverage=8.0, target_cagr=0.27)
+    assert 0.24 <= calendar_cagr(blend["nav"]) <= 0.30

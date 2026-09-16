@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 plt.rcParams["font.sans-serif"] = [
+    "WenQuanYi Micro Hei",
     "Noto Sans CJK SC",
     "Noto Sans CJK JP",
     "WenQuanYi Zen Hei",
