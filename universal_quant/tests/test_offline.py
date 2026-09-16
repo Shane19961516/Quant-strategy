@@ -93,3 +93,48 @@ def test_equal_risk_cagr_target():
     navs = pd.DataFrame({"a": a, "b": b})
     blend = blend_equal_risk(navs, target_vol=0.20, max_leverage=8.0, target_cagr=0.27)
     assert 0.24 <= calendar_cagr(blend["nav"]) <= 0.30
+
+
+def test_hourly_clock_no_intrabar_leak():
+    from universal_quant.eth_okx_study import hourly_clock_on_1m
+
+    idx = pd.date_range("2026-01-01", periods=48 * 60, freq="1min", tz="UTC")
+    close = pd.Series(100.0, index=idx)
+    spike = pd.Timestamp("2026-01-02 10:30:00", tz="UTC")
+    close.loc[spike] = 130.0
+    df = pd.DataFrame(
+        {
+            "open": close,
+            "high": close,
+            "low": pd.Series(100.0, index=idx),
+            "close": close,
+            "volume": 1_000.0,
+        },
+        index=idx,
+    )
+    df.loc[spike, "high"] = 130.0
+    sig, overlay = hourly_clock_on_1m(df, "A")
+    leaked = overlay["atr"].loc["2026-01-02 10:00":"2026-01-02 10:59"]
+    after = overlay["atr"].loc["2026-01-02 11:00"]
+    assert float(leaked.max()) < 0.2 or leaked.isna().all()
+    assert float(after) > 1.0
+    fired = sig[sig.abs() > 0]
+    if len(fired):
+        assert (fired.index.minute == 59).all()
+
+
+def test_run_backtest_prepared_signal():
+    idx = pd.date_range("2026-01-01", periods=80, freq="1min", tz="UTC")
+    px = pd.Series(100.0, index=idx)
+    df = pd.DataFrame({"open": px, "high": px + 0.1, "low": px - 0.1, "close": px, "volume": 1.0}, index=idx)
+    sig = pd.Series(0.0, index=idx)
+    sig.iloc[10] = 1.0
+    overlay = {
+        "atr": pd.Series(1.0, index=idx),
+        "natr": pd.Series(0.01, index=idx),
+        "regime": pd.Series("trend", index=idx),
+    }
+    res = run_backtest(df, model="B", symbol="ETH-USDT-SWAP", signal=sig, overlay=overlay, prepared=True)
+    assert res.equity.iloc[0] > 0
+    assert not res.trades.empty
+    assert str(res.trades.iloc[0]["entry_time"]).startswith("2026-01-01")

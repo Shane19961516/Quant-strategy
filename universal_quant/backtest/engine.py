@@ -42,9 +42,15 @@ def run_backtest(
     spec: dict | None = None,
     slippage_ticks: float = 1.0,
     cost_mult: float = 1.0,
+    signal: pd.Series | None = None,
+    overlay: dict[str, pd.Series] | None = None,
+    prepared: bool = False,
 ) -> BacktestResult:
     spec = spec or cfg.spec_for(symbol)
-    work = add_score(add_regime(df))
+    work = df.copy() if prepared else add_score(add_regime(df))
+    if overlay:
+        for col, series in overlay.items():
+            work[col] = series.reindex(work.index)
     if model.upper() == "BHS":
         rets = work["close"].pct_change().fillna(0.0)
         eq = cfg.INITIAL_NAV * (1.0 + rets).cumprod()
@@ -59,7 +65,12 @@ def run_backtest(
             params={"model": "BHS", "symbol": symbol},
         )
 
-    work["signal"] = signal_from_model(work, model)
+    if signal is not None:
+        work["signal"] = signal.reindex(work.index).fillna(0.0).astype(float)
+    else:
+        work["signal"] = signal_from_model(work, model)
+    if "regime" not in work.columns:
+        work["regime"] = ""
     n = len(work)
     opens = work["open"].to_numpy(float)
     highs = work["high"].to_numpy(float)
