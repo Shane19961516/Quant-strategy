@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Brent quant local market data (keep .gitkeep)
+brent_quant/data/raw/*.parquet
+brent_quant/data/processed/*.parquet
+brent_quant/**/__pycache__/
