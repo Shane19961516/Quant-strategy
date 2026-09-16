@@ -454,10 +454,10 @@ w = 0.01 / (2 \times 0.004) = 1.25
 python -m universal_quant.main
 ```
 
-盘中仪表盘 + 模拟盘：
+盘中仪表盘 + 模拟盘（在仓库根目录运行 `run_dashboard.py` / `run_dashboard.bat`）：
 
 ```bash
-python -m universal_quant.dashboard
+python run_dashboard.py
 ```
 
 打开 `http://127.0.0.1:8050`。用 Yahoo 已收盘的 1h K 按与回测相同的规则成交；Kill Switch 手动或在日亏损 3% / 回撤 8% 时自动触发。这不是券商实盘。
