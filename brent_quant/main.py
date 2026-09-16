@@ -37,7 +37,20 @@ from brent_quant.walk_forward import walk_forward
 def _table_markdown(df: pd.DataFrame) -> str:
     if df.empty:
         return "_no rows_"
-    cols = [str(c) for c in df.columns]
+    cols_zh = {
+        "model": "模型",
+        "total_return": "总收益",
+        "cagr": "CAGR",
+        "sharpe": "Sharpe",
+        "calmar": "Calmar",
+        "profit_factor": "盈亏比",
+        "max_drawdown": "最大回撤",
+        "n_trades": "交易次数",
+        "win_rate": "胜率",
+        "expectancy": "期望收益",
+        "ann_vol": "年化波动",
+    }
+    cols = [cols_zh.get(str(c), str(c)) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "| " + " | ".join("---" for _ in cols) + " |"]
     for _, row in df.iterrows():
         cells = []
