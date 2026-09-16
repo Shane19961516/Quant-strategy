@@ -8,4 +8,12 @@
 python -m universal_quant.main
 ```
 
-完整策略说明（数据、清洗、信号、风控、仓位）：[STRATEGY.md](STRATEGY.md)。报告在 `universal_quant/reports/`。
+完整策略说明：[STRATEGY.md](STRATEGY.md)。报告在 `reports/`。
+
+盘中仪表盘 + 模拟盘（Yahoo 1h，非实盘）：
+
+```bash
+python -m universal_quant.dashboard
+```
+
+浏览器打开 `http://127.0.0.1:8050`。第一次点「刷新行情并推进」会用最近约 80 根 K 铺上模拟仓。Kill Switch 可一键平仓；日亏损 3% 或回撤 8% 也会自动停。

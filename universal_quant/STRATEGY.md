@@ -448,11 +448,19 @@ w = 0.01 / (2 \times 0.004) = 1.25
 | 组合目标年化 | 27% |
 | 组合波动上限 | 12% |
 
-跑一次：
+跑一次回测：
 
 ```bash
 python -m universal_quant.main
 ```
+
+盘中仪表盘 + 模拟盘：
+
+```bash
+python -m universal_quant.dashboard
+```
+
+打开 `http://127.0.0.1:8050`。用 Yahoo 已收盘的 1h K 按与回测相同的规则成交；Kill Switch 手动或在日亏损 3% / 回撤 8% 时自动触发。这不是券商实盘。
 
 ---
 
@@ -460,7 +468,7 @@ python -m universal_quant.main
 
 - 付费行情、真实合约换月、持仓量  
 - 滚动波动目标、相关性发剪、风险簇限额  
-- 实盘下单、Kill Switch、盘中仪表盘  
+- 券商实盘下单  
 - Walk-forward / 参数网格（只有离线单测 + 一次 730d 回测）  
 - 机器学习、宏观、基本面  
 

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UPV 模拟盘 · 盘中仪表盘</title>
+  <style>
+    :root {
+      --bg: #0d141c;
+      --panel: #15202b;
+      --line: #243447;
+      --text: #e8eef4;
+      --muted: #8aa0b5;
+      --gold: #c4a35a;
+      --green: #3dba7a;
+      --red: #e05a5a;
+      --blue: #5aa7d4;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text);
+      font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", sans-serif; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 22px; border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #101820, #1a2a38 55%, #2a2416);
+    }
+    header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: 0.04em; }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: 0.82rem; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; margin-left: 8px; }
+    .badge.on { background: #3a1c1c; color: var(--red); }
+    .badge.off { background: #16301f; color: var(--green); }
+    .wrap { padding: 18px 22px 40px; }
+    .metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+    .card .k { color: var(--muted); font-size: 0.75rem; }
+    .card .v { font-size: 1.25rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .up { color: var(--green); } .down { color: var(--red); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    button {
+      background: #1e3144; color: var(--text); border: 1px solid #35506a;
+      padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+    }
+    button:hover { border-color: var(--gold); color: var(--gold); }
+    button.danger { background: #3a1c1c; border-color: #7a3333; }
+    button.primary { background: #1d3d2a; border-color: #2f6a45; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+    th { color: var(--muted); font-weight: 500; font-size: 0.75rem; }
+    .reg { padding: 2px 7px; border-radius: 4px; font-size: 0.75rem; }
+    .trend { background: #1c3a2a; color: #7dcea0; }
+    .range { background: #2a2a1c; color: #d4c07a; }
+    .shock { background: #3a1c1c; color: #f0a0a0; }
+    .transition { background: #1c2a3a; color: #9bb7d4; }
+    .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 14px; }
+    svg { width: 100%; height: 160px; }
+    .err { color: var(--red); font-size: 0.82rem; min-height: 1.2em; margin: 8px 0; }
+    .note { color: var(--muted); font-size: 0.78rem; margin-top: 12px; line-height: 1.5; }
+    @media (max-width: 1100px) {
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .grid2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>UPV 模拟盘 <span id="killBadge" class="badge off">运行中</span></h1>
+      <p>Yahoo 1 小时 K · 模型 <span id="model">B</span> · 收盘出信号、下一根开盘成交 · 非实盘</p>
+    </div>
+    <div id="updated" style="color:var(--muted);font-size:0.82rem"></div>
+  </header>
+  <div class="wrap">
+    <div class="actions">
+      <button class="primary" onclick="act('/api/refresh',{force:true})">刷新行情并推进</button>
+      <button onclick="act('/api/step',{})">强制吃掉最新一根</button>
+      <button class="danger" onclick="act('/api/kill',{})">Kill Switch 全部平仓</button>
+      <button onclick="act('/api/resume',{})">解除 Kill</button>
+      <button onclick="act('/api/reset',{})">重置模拟盘</button>
+      <button onclick="loadState()">仅刷新画面</button>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="metrics">
+      <div class="card"><div class="k">净值 NAV</div><div class="v" id="nav">—</div></div>
+      <div class="card"><div class="k">今日盈亏</div><div class="v" id="day">—</div></div>
+      <div class="card"><div class="k">回撤</div><div class="v" id="dd">—</div></div>
+      <div class="card"><div class="k">总敞口</div><div class="v" id="gross">—</div></div>
+      <div class="card"><div class="k">净敞口</div><div class="v" id="net">—</div></div>
+      <div class="card"><div class="k">本批处理 K 线</div><div class="v" id="bars">—</div></div>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>品种</th><th>状态</th><th>价格</th><th>评分</th><th>脉冲</th>
+            <th>仓位</th><th>权重</th><th>止损</th><th>持仓根数</th><th>浮动盈亏</th><th>最新 K</th>
+          </tr>
+        </thead>
+        <tbody id="books"></tbody>
+      </table>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <div class="k">模拟盘净值</div>
+        <svg id="eq" viewBox="0 0 800 160" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="card">
+        <div class="k">最近成交</div>
+        <table>
+          <thead><tr><th>时间</th><th>品种</th><th>方向</th><th>原因</th><th>盈亏</th></tr></thead>
+          <tbody id="trades"></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="note">
+      这是研究用模拟盘，不是券商柜台。行情来自 Yahoo 1 小时 K（有延迟），只在<strong>已收盘</strong>的 K 线上按回测同一套规则成交。
+      Kill 在日亏损 3% 或回撤 8% 时也会自动触发。重置会从最近约 80 根 K 重新铺仓。
+    </p>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fmt = (x, d=2) => x==null || x!==x ? "—" : Number(x).toLocaleString("zh-CN", {maximumFractionDigits:d, minimumFractionDigits:d});
+    const pct = (x) => x==null || x!==x ? "—" : (x*100).toFixed(2) + "%";
+    const cls = (x) => x>0 ? "up" : (x<0 ? "down" : "");
+    const regClass = (r) => ({trend:"trend", range:"range", shock:"shock", transition:"transition"}[r] || "");
+
+    function render(s) {
+      $("model").textContent = s.model || "B";
+      $("nav").textContent = fmt(s.nav, 0);
+      $("day").innerHTML = `<span class="${cls(s.day_pnl)}">${fmt(s.day_pnl,0)} (${pct(s.day_pnl_pct)})</span>`;
+      $("dd").innerHTML = `<span class="${cls(s.drawdown)}">${pct(s.drawdown)}</span>`;
+      $("gross").textContent = pct(s.gross);
+      $("net").innerHTML = `<span class="${cls(s.net)}">${pct(s.net)}</span>`;
+      $("bars").textContent = s.processed_bars ?? "—";
+      $("updated").textContent = s.updated_at ? ("更新 " + s.updated_at.replace("T"," ").slice(0,19) + " UTC") : "";
+      $("err").textContent = s.last_error || s.error || "";
+      const kill = !!s.kill;
+      const b = $("killBadge");
+      b.textContent = kill ? ("Kill · " + (s.kill_reason || "已停止开仓")) : "运行中";
+      b.className = "badge " + (kill ? "on" : "off");
+      $("books").innerHTML = (s.books||[]).map(r => `
+        <tr>
+          <td>${r.name}<div style="color:var(--muted);font-size:0.72rem">${r.symbol}${r.forming?" · 当前K未收盘":""}</div></td>
+          <td><span class="reg ${regClass(r.regime)}">${r.regime||"—"}</span></td>
+          <td>${fmt(r.price, 2)}</td>
+          <td class="${cls(r.score)}">${fmt(r.score,1)}</td>
+          <td class="${cls(r.signal)}">${fmt(r.signal,2)}</td>
+          <td>${r.position}</td>
+          <td>${pct(r.weight)}</td>
+          <td>${fmt(r.stop, 2)}</td>
+          <td>${r.held||0}</td>
+          <td class="${cls(r.unrealized)}">${fmt(r.unrealized,0)}</td>
+          <td style="color:var(--muted);font-size:0.75rem">${(r.last_bar||"").replace("T"," ").slice(0,16)}</td>
+        </tr>`).join("");
+      $("trades").innerHTML = (s.trades||[]).slice(0,12).map(t => `
+        <tr>
+          <td style="font-size:0.75rem;color:var(--muted)">${(t.exit_time||"").replace("T"," ").slice(5,16)}</td>
+          <td>${t.name||t.symbol}</td>
+          <td>${t.side>0?"多":"空"}</td>
+          <td>${t.exit_reason}</td>
+          <td class="${cls(t.PnL)}">${fmt(t.PnL,0)}</td>
+        </tr>`).join("") || `<tr><td colspan="5" style="color:var(--muted)">暂无成交</td></tr>`;
+      drawEq(s.equity||[]);
+    }
+
+    function drawEq(eq) {
+      const svg = $("eq");
+      if (!eq.length) { svg.innerHTML = ""; return; }
+      const vals = eq.map(p => Number(p.nav));
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const span = (max-min) || 1;
+      const w=800, h=160, p=8;
+      const pts = vals.map((v,i) => {
+        const x = p + (i/(vals.length-1||1))*(w-2*p);
+        const y = h-p - ((v-min)/span)*(h-2*p);
+        return x.toFixed(1)+","+y.toFixed(1);
+      }).join(" ");
+      const color = vals[vals.length-1] >= vals[0] ? "#3dba7a" : "#e05a5a";
+      svg.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/>`;
+    }
+
+    async function loadState() {
+      const r = await fetch("/api/state");
+      render(await r.json());
+    }
+    async function act(url, body) {
+      $("err").textContent = "处理中…";
+      const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body||{})});
+      const s = await r.json();
+      if (!r.ok) { $("err").textContent = s.error || ("HTTP "+r.status); return; }
+      render(s);
+    }
+    loadState();
+    setInterval(loadState, 30000);
+  </script>
+</body>
+</html>
