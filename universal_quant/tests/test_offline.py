@@ -138,3 +138,50 @@ def test_run_backtest_prepared_signal():
     assert res.equity.iloc[0] > 0
     assert not res.trades.empty
     assert str(res.trades.iloc[0]["entry_time"]).startswith("2026-01-01")
+
+
+def test_clip_liquidation_is_ten_percent():
+    from universal_quant.backtest.clip_engine import run_clip_backtest
+
+    idx = pd.date_range("2026-01-01", periods=40, freq="1min", tz="UTC")
+    close = pd.Series(100.0, index=idx)
+    close.iloc[8:] = 85.0
+    df = pd.DataFrame(
+        {"open": close, "high": close, "low": close, "close": close, "volume": 1.0},
+        index=idx,
+    )
+    sig = pd.Series(0.0, index=idx)
+    sig.iloc[0] = 1.0
+    res = run_clip_backtest(
+        df, sig, symbol="ETH-USDT-SWAP", model="B", n_clips=1, leverage=10.0, liq_pct=0.10, spec={"tick_size": 0.01, "commission_bps": 0.0}
+    )
+    assert not res.trades.empty
+    assert (res.trades["exit_reason"] == "liquidation").any()
+    assert res.equity.min() < 50_000
+
+
+def test_clip_scale_in_stops_at_100():
+    from universal_quant.backtest.clip_engine import run_clip_backtest
+
+    idx = pd.date_range("2026-01-01", periods=180, freq="1min", tz="UTC")
+    px = pd.Series(100.0, index=idx)
+    df = pd.DataFrame({"open": px, "high": px + 0.01, "low": px - 0.01, "close": px, "volume": 1.0}, index=idx)
+    sig = pd.Series(1.0, index=idx)
+    res = run_clip_backtest(
+        df, sig, symbol="ETH-USDT-SWAP", model="B", n_clips=100, leverage=10.0, liq_pct=0.10, spec={"tick_size": 0.01, "commission_bps": 0.0}
+    )
+    assert len(res.trades) == 100
+    assert (res.trades["weight"] - 0.1).abs().max() < 1e-9
+
+
+def test_n20_one_minute_windows():
+    from universal_quant import config as uqcfg
+    from universal_quant.eth_okx_fly import _n20_one_minute
+
+    with _n20_one_minute():
+        assert uqcfg.BAR_MINUTES == 1
+        assert uqcfg.BREAKOUT_N == 20
+        assert uqcfg.ER_N == 20
+        assert uqcfg.VOL_N == 20
+    assert uqcfg.BAR_MINUTES == 60
+    assert uqcfg.BREAKOUT_N == 24
