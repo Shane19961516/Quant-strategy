@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from brent_quant import config as cfg
 from brent_quant.backtest import run_backtest
 from brent_quant.contract_roll import difference_adjust, volume_roll_index
 from brent_quant.data_cleaner import clean_ohlcv, detect_missing_bars
@@ -92,6 +93,15 @@ def test_pulse_hold_does_not_churn():
     if not res.trades.empty:
         assert len(res.trades) < 250
         assert (res.trades["bars_held"] >= 0).all()
+
+
+def test_gold_silver_specs():
+    gold = cfg.spec_for("GC=F")
+    silver = cfg.spec_for("SI=F")
+    assert gold["multiplier"] == 100.0
+    assert gold["tick_size"] == 0.10
+    assert silver["multiplier"] == 5000.0
+    assert silver["tick_size"] == 0.005
 
 
 def test_sizing_positive():

@@ -21,9 +21,43 @@ TIMEZONE = "UTC"
 SOURCE_TIMEZONE = "America/New_York"
 
 # ICE Brent: $0.01 tick, 1,000 barrels.
+# COMEX Gold GC: $0.10 tick, 100 troy ounces.
+# COMEX Silver SI: $0.005 tick, 5,000 troy ounces.
 TICK_SIZE = 0.01
 MULTIPLIER = 1000.0
 COMMISSION_PER_SIDE = 2.50
+
+INSTRUMENTS = {
+    "BZ=F": {
+        "name": "Brent原油",
+        "tick_size": 0.01,
+        "multiplier": 1000.0,
+        "commission_per_side": 2.50,
+    },
+    "GC=F": {
+        "name": "COMEX黄金",
+        "tick_size": 0.10,
+        "multiplier": 100.0,
+        "commission_per_side": 2.50,
+    },
+    "SI=F": {
+        "name": "COMEX白银",
+        "tick_size": 0.005,
+        "multiplier": 5000.0,
+        "commission_per_side": 2.50,
+    },
+}
+
+
+def spec_for(ticker: str) -> dict:
+    if ticker in INSTRUMENTS:
+        return dict(INSTRUMENTS[ticker])
+    return {
+        "name": ticker,
+        "tick_size": TICK_SIZE,
+        "multiplier": MULTIPLIER,
+        "commission_per_side": COMMISSION_PER_SIDE,
+    }
 SLIPPAGE_TICKS = 1
 INITIAL_NAV = 1_000_000.0
 RISK_PER_TRADE = 0.0035

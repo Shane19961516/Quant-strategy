@@ -1,0 +1,42 @@
+{
+  "data": {
+    "ticker": "SI=F",
+    "interval": "5m",
+    "period_requested": "60d",
+    "old_rows": 0,
+    "new_rows": 13685,
+    "merged_rows": 13685,
+    "start": "2026-07-07 04:00:00+00:00",
+    "end": "2026-09-16 02:25:00+00:00",
+    "processed_path": "/workspace/brent_quant/data/processed/SIF_5m_clean.parquet"
+  },
+  "qc": {
+    "rows": 13685,
+    "dropped_ohlc_na": 0,
+    "duplicate_timestamps_removed": 0,
+    "abnormal_return_bars": 0,
+    "zero_volume_bars": 41,
+    "invalid_bars": 0,
+    "missing_bars": 11,
+    "missing_bar_sample": [
+      "2026-07-09 22:50:00+00:00",
+      "2026-07-10 04:40:00+00:00",
+      "2026-07-16 05:15:00+00:00",
+      "2026-07-28 01:30:00+00:00",
+      "2026-07-28 19:45:00+00:00",
+      "2026-07-29 08:15:00+00:00",
+      "2026-07-30 23:35:00+00:00",
+      "2026-08-25 11:10:00+00:00",
+      "2026-08-25 11:15:00+00:00",
+      "2026-08-27 02:25:00+00:00",
+      "2026-09-10 04:50:00+00:00"
+    ],
+    "start": "2026-07-07 04:00:00+00:00",
+    "end": "2026-09-16 02:25:00+00:00",
+    "timezone": "UTC"
+  },
+  "report": "/workspace/brent_quant/reports/silver/phase1_report.md",
+  "extra_keys": [
+    "factor_analysis"
+  ]
+}

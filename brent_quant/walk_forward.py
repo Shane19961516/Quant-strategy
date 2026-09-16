@@ -40,6 +40,7 @@ def walk_forward(
     test_days: int = 10,
     step_days: int = 10,
     grid: tuple[int, ...] = cfg.BREAKOUT_GRID,
+    **bt_kwargs,
 ) -> dict[str, Any]:
     windows = _split_by_days(df, train_days, test_days, step_days)
     oos_equity_parts: list[pd.Series] = []
@@ -52,14 +53,14 @@ def walk_forward(
         best_n = grid[0]
         best_sharpe = float("-inf")
         for n in grid:
-            res = run_backtest(train, model=model, breakout_n=n)
+            res = run_backtest(train, model=model, breakout_n=n, **bt_kwargs)
             stats = summarize_result(res)
             sharpe = stats.get("sharpe")
             score = sharpe if sharpe is not None and sharpe == sharpe else -999.0
             if score > best_sharpe:
                 best_sharpe = score
                 best_n = n
-        oos = run_backtest(test, model=model, breakout_n=best_n)
+        oos = run_backtest(test, model=model, breakout_n=best_n, **bt_kwargs)
         stats = summarize_result(oos)
         rows.append(
             {

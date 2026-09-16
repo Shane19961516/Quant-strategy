@@ -61,6 +61,9 @@ def run_backtest(
     initial_nav: float = cfg.INITIAL_NAV,
     use_stops: bool = True,
     signal_override: pd.Series | None = None,
+    tick_size: float = cfg.TICK_SIZE,
+    multiplier: float = cfg.MULTIPLIER,
+    contract: str = cfg.CONTRACT,
 ) -> BacktestResult:
     if signal_override is None:
         work = build_signal_frame(
@@ -120,14 +123,14 @@ def run_backtest(
         nonlocal nav, qty, side, entry_price, stop, extreme, bars_held, trade_pnl, entry_i
         if qty == 0.0 or side == 0.0:
             return
-        fill = close_fill(price, side, cfg.TICK_SIZE, slippage_ticks)
+        fill = close_fill(price, side, tick_size, slippage_ticks)
         if i == entry_i:
             last_ref = entry_price
         elif i > 0:
             last_ref = closes[i - 1]
         else:
             last_ref = entry_price
-        gap = side * qty * cfg.MULTIPLIER * (fill - last_ref)
+        gap = side * qty * multiplier * (fill - last_ref)
         fee = commission * abs(qty)
         nav += gap - fee
         trade_pnl += gap - fee
@@ -135,7 +138,7 @@ def run_backtest(
             {
                 "entry_time": str(index[entry_i]) if entry_i >= 0 else None,
                 "exit_time": str(index[i]),
-                "contract": cfg.CONTRACT,
+                "contract": contract,
                 "signal": float(side),
                 "score": float(scores[entry_i]) if entry_i >= 0 else np.nan,
                 "regime": str(regimes[entry_i]) if entry_i >= 0 else "",
@@ -171,13 +174,13 @@ def run_backtest(
             atr_i,
             risk_per_trade,
             stop_atr_mult,
-            cfg.MULTIPLIER,
+            multiplier,
             cfg.MAX_LEVERAGE,
         )
         size *= abs(target)
         if size <= 0:
             return
-        fill = open_fill(opens[i], target, cfg.TICK_SIZE, slippage_ticks)
+        fill = open_fill(opens[i], target, tick_size, slippage_ticks)
         fee = commission * size
         nav -= fee
         qty = size
@@ -238,7 +241,7 @@ def run_backtest(
             # After entry this bar, MTM from fill to close; otherwise close-to-close.
             if i == entry_i:
                 prev = entry_price
-            mtm = side * qty * cfg.MULTIPLIER * (closes[i] - prev)
+            mtm = side * qty * multiplier * (closes[i] - prev)
             nav += mtm
             trade_pnl += mtm
 
@@ -270,6 +273,9 @@ def run_backtest(
         "trail_atr_mult": trail_atr_mult,
         "time_stop_bars": time_stop_bars,
         "initial_nav": initial_nav,
+        "tick_size": tick_size,
+        "multiplier": multiplier,
+        "contract": contract,
     }
     bars = work[["open", "high", "low", "close", "volume", "signal", "atr"]].copy()
     bars["equity"] = eq
@@ -285,7 +291,11 @@ def run_backtest(
     )
 
 
-def buy_and_hold(df: pd.DataFrame, initial_nav: float = cfg.INITIAL_NAV) -> BacktestResult:
+def buy_and_hold(
+    df: pd.DataFrame,
+    initial_nav: float = cfg.INITIAL_NAV,
+    contract: str = cfg.CONTRACT,
+) -> BacktestResult:
     work = df.copy()
     rets = work["close"].pct_change().fillna(0.0)
     eq = initial_nav * (1.0 + rets).cumprod()
@@ -296,7 +306,7 @@ def buy_and_hold(df: pd.DataFrame, initial_nav: float = cfg.INITIAL_NAV) -> Back
             {
                 "entry_time": str(work.index[0]),
                 "exit_time": str(work.index[-1]),
-                "contract": cfg.CONTRACT,
+                "contract": contract,
                 "signal": 1.0,
                 "score": np.nan,
                 "regime": "n/a",
@@ -330,13 +340,14 @@ def random_entry_benchmark(
     df: pd.DataFrame,
     template: BacktestResult,
     seed: int = cfg.RANDOM_SEED,
+    **bt_kwargs,
 ) -> BacktestResult:
     rng = np.random.default_rng(seed)
     n = len(df)
     sig = np.zeros(n, dtype=float)
     if template.trades is None or template.trades.empty:
         override = pd.Series(sig, index=df.index)
-        return run_backtest(df, model="A", signal_override=override)
+        return run_backtest(df, model="A", signal_override=override, **bt_kwargs)
 
     holds = template.trades["bars_held"].fillna(1).astype(int).clip(lower=1)
     used = np.zeros(n, dtype=bool)
@@ -350,7 +361,7 @@ def random_entry_benchmark(
             sig[start:end] = float(rng.choice([-1.0, 1.0]))
             break
     override = pd.Series(sig, index=df.index)
-    res = run_backtest(df, model="A", signal_override=override)
+    res = run_backtest(df, model="A", signal_override=override, **bt_kwargs)
     res.model = "RANDOM"
     res.params["model"] = "RANDOM"
     return res

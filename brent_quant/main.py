@@ -88,10 +88,22 @@ def load_or_download(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, 
     return incremental_update(args.ticker, args.period, args.interval)
 
 
-def _param_scan(df: pd.DataFrame, slippage_ticks: float) -> dict[str, Any]:
+def _bt_kwargs(ticker: str, slippage_ticks: float) -> dict:
+    spec = cfg.spec_for(ticker)
+    return {
+        "slippage_ticks": slippage_ticks,
+        "commission_per_side": float(spec["commission_per_side"]),
+        "tick_size": float(spec["tick_size"]),
+        "multiplier": float(spec["multiplier"]),
+        "contract": ticker,
+    }
+
+
+def _param_scan(df: pd.DataFrame, slippage_ticks: float, ticker: str = cfg.TICKER) -> dict[str, Any]:
+    kw = _bt_kwargs(ticker, slippage_ticks)
     rows = []
     for n in cfg.BREAKOUT_GRID:
-        res = run_backtest(df, model="A", breakout_n=n, slippage_ticks=slippage_ticks)
+        res = run_backtest(df, model="A", breakout_n=n, **kw)
         stats = summarize_result(res)
         rows.append(
             {
@@ -106,7 +118,7 @@ def _param_scan(df: pd.DataFrame, slippage_ticks: float) -> dict[str, Any]:
             }
         )
     for n in cfg.ER_GRID:
-        res = run_backtest(df, model="C", er_n=n, slippage_ticks=slippage_ticks)
+        res = run_backtest(df, model="C", er_n=n, **kw)
         stats = summarize_result(res)
         rows.append(
             {
@@ -121,7 +133,7 @@ def _param_scan(df: pd.DataFrame, slippage_ticks: float) -> dict[str, Any]:
             }
         )
     for ticks in cfg.SLIPPAGE_GRID:
-        res = run_backtest(df, model="D", slippage_ticks=ticks)
+        res = run_backtest(df, model="D", **{**kw, "slippage_ticks": ticks})
         stats = summarize_result(res)
         rows.append(
             {
@@ -136,7 +148,7 @@ def _param_scan(df: pd.DataFrame, slippage_ticks: float) -> dict[str, Any]:
             }
         )
     for cm in cfg.COST_MULT_GRID:
-        res = run_backtest(df, model="D", slippage_ticks=slippage_ticks, cost_mult=cm)
+        res = run_backtest(df, model="D", cost_mult=cm, **kw)
         stats = summarize_result(res)
         rows.append(
             {
@@ -171,6 +183,9 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         write_json(payload, reports / "download_meta.json")
         return payload
 
+    spec = cfg.spec_for(args.ticker)
+    kw = _bt_kwargs(args.ticker, args.slippage_ticks)
+
     factored = add_score(add_factors(clean))
     factor_stats = run_factor_analysis(factored)
     write_json(factor_stats, reports / "factor_analysis.json")
@@ -179,7 +194,7 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
     results = {}
     summaries = {}
     for model in models:
-        res = run_backtest(clean, model=model, slippage_ticks=args.slippage_ticks)
+        res = run_backtest(clean, model=model, **kw)
         results[model] = res
         stats = summarize_result(res)
         if not res.trades.empty:
@@ -193,15 +208,15 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         hod = hour_of_day_stats(res)
         hod.to_csv(reports / f"hour_of_day_{model}.csv")
 
-    bhs = buy_and_hold(clean)
+    bhs = buy_and_hold(clean, contract=args.ticker)
     summaries["BHS"] = summarize_result(bhs)
     results["BHS"] = bhs
     plot_equity(bhs, reports / "equity_BHS.png")
-    don = run_backtest(clean, model="DONCHIAN20", slippage_ticks=args.slippage_ticks)
+    don = run_backtest(clean, model="DONCHIAN20", **kw)
     summaries["DONCHIAN20"] = summarize_result(don)
     results["DONCHIAN20"] = don
     template = results.get("A") or results.get("D") or next(iter(results.values()))
-    rnd = random_entry_benchmark(clean, template)
+    rnd = random_entry_benchmark(clean, template, **kw)
     summaries["RANDOM"] = summarize_result(rnd)
     results["RANDOM"] = rnd
 
@@ -212,12 +227,12 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
     extra: dict[str, Any] = {"factor_analysis": factor_stats}
 
     if args.mode in {"scan", "all"}:
-        scan = _param_scan(clean, args.slippage_ticks)
+        scan = _param_scan(clean, args.slippage_ticks, ticker=args.ticker)
         extra["parameter_scan"] = scan
         pd.DataFrame(scan["rows"]).to_csv(reports / "parameter_scan.csv", index=False)
 
     if args.mode in {"walk-forward", "all"}:
-        wf = walk_forward(clean, model="D", train_days=20, test_days=8, step_days=8)
+        wf = walk_forward(clean, model="D", train_days=20, test_days=8, step_days=8, **kw)
         extra["walk_forward"] = {k: v for k, v in wf.items() if k != "oos_equity"}
         write_json(extra["walk_forward"], reports / "walk_forward.json")
         if wf.get("oos_equity") is not None and len(wf["oos_equity"]):
@@ -232,7 +247,7 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         text_table = _table_markdown(comparison_table(kwargs["summaries"]))
         path.parent.mkdir(parents=True, exist_ok=True)
         body = [
-            "# Brent 量价第一阶段回测报告",
+            f"# {spec['name']} 量价第一阶段回测报告",
             "",
             "## 数据",
             "",

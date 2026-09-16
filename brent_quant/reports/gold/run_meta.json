@@ -1,0 +1,37 @@
+{
+  "data": {
+    "ticker": "GC=F",
+    "interval": "5m",
+    "period_requested": "60d",
+    "old_rows": 0,
+    "new_rows": 13688,
+    "merged_rows": 13688,
+    "start": "2026-07-07 04:00:00+00:00",
+    "end": "2026-09-16 02:25:00+00:00",
+    "processed_path": "/workspace/brent_quant/data/processed/GCF_5m_clean.parquet"
+  },
+  "qc": {
+    "rows": 13688,
+    "dropped_ohlc_na": 0,
+    "duplicate_timestamps_removed": 0,
+    "abnormal_return_bars": 0,
+    "zero_volume_bars": 41,
+    "invalid_bars": 0,
+    "missing_bars": 6,
+    "missing_bar_sample": [
+      "2026-07-16 05:15:00+00:00",
+      "2026-07-24 14:15:00+00:00",
+      "2026-07-28 01:30:00+00:00",
+      "2026-07-28 19:45:00+00:00",
+      "2026-07-29 08:15:00+00:00",
+      "2026-08-25 11:15:00+00:00"
+    ],
+    "start": "2026-07-07 04:00:00+00:00",
+    "end": "2026-09-16 02:25:00+00:00",
+    "timezone": "UTC"
+  },
+  "report": "/workspace/brent_quant/reports/gold/phase1_report.md",
+  "extra_keys": [
+    "factor_analysis"
+  ]
+}
