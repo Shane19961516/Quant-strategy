@@ -116,6 +116,16 @@ INSTRUMENTS = {
         "volume_type": "coins",
         "timezone": "UTC",
     },
+    "ETH-USD": {
+        "name": "ETH",
+        "asset_class": "crypto",
+        "cluster": "Crypto",
+        "tick_size": 0.01,
+        "multiplier": 1.0,
+        "commission_bps": 5.0,
+        "volume_type": "coins",
+        "timezone": "UTC",
+    },
 }
 
 
