@@ -23,12 +23,14 @@ def run_clip_backtest(
     liq_pct: float = 0.10,
     slippage_ticks: float = 1.0,
     cost_mult: float = 1.0,
+    hold_to_liq: bool = False,
 ) -> BacktestResult:
     """Pulse at close t, scale 1 clip per next bar up to `n_clips`.
 
     Each clip is isolated 10x on 1/`n_clips` of NAV. Stop is price ±`liq_pct`
     from that clip's entry (exchange liquidation), not ATR. Opposite pulse
-    flattens remaining clips. First liquidation stops further scale-in.
+    flattens remaining clips unless `hold_to_liq` (then only liquidation exits).
+    First liquidation stops further scale-in.
     """
     spec = spec or cfg.spec_for(symbol)
     work = df.copy()
@@ -99,7 +101,7 @@ def run_clip_backtest(
 
         tgt = pending
         ds = 0.0 if tgt == 0 else (1.0 if tgt > 0 else -1.0)
-        if ds != 0 and campaign_side != 0 and ds != campaign_side:
+        if not hold_to_liq and ds != 0 and campaign_side != 0 and ds != campaign_side:
             flatten_all(i, opens[i], "signal_change")
         if ds != 0 and campaign_side == 0:
             campaign_side = ds
@@ -174,5 +176,6 @@ def run_clip_backtest(
             "leverage": leverage,
             "liq_pct": liq_pct,
             "clip_weight": clip_w,
+            "hold_to_liq": hold_to_liq,
         },
     )

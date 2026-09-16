@@ -185,3 +185,22 @@ def test_n20_one_minute_windows():
         assert uqcfg.VOL_N == 20
     assert uqcfg.BAR_MINUTES == 60
     assert uqcfg.BREAKOUT_N == 24
+
+
+def test_hold_to_liq_ignores_opposite_pulse():
+    from universal_quant.backtest.clip_engine import run_clip_backtest
+
+    idx = pd.date_range("2026-01-01", periods=50, freq="1min", tz="UTC")
+    px = pd.Series(100.0, index=idx)
+    df = pd.DataFrame({"open": px, "high": px + 0.01, "low": px - 0.01, "close": px, "volume": 1.0}, index=idx)
+    sig = pd.Series(0.0, index=idx)
+    sig.iloc[0] = 1.0
+    sig.iloc[5] = -1.0
+    spec = {"tick_size": 0.01, "commission_bps": 0.0}
+    flip = run_clip_backtest(df, sig, symbol="ETH-USDT-SWAP", model="B", n_clips=1, leverage=10.0, spec=spec)
+    hold = run_clip_backtest(
+        df, sig, symbol="ETH-USDT-SWAP", model="B", n_clips=1, leverage=10.0, spec=spec, hold_to_liq=True
+    )
+    assert (flip.trades["exit_reason"] == "signal_change").any()
+    assert (hold.trades["exit_reason"] != "signal_change").all()
+    assert (hold.trades["exit_reason"] == "eod_flatten").all()

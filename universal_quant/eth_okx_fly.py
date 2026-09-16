@@ -175,6 +175,54 @@ def main() -> int:
         report["runs"]["fly_B_oneshot"] = pack1
         print("  oneshot ret", pack1.get("total_return"), "mdd", pack1.get("max_drawdown"), "n", pack1.get("n_trades"), "liq", pack1.get("n_liquidations"))
 
+        print("fly B hold-to-liq (ignore reverse pulse) ...")
+        sig_b = signal_from_model(work, "B")
+        first_i = int((sig_b.abs() > 0).to_numpy().nonzero()[0][0]) if (sig_b.abs() > 0).any() else -1
+        report["first_pulse"] = {
+            "index": first_i,
+            "time": str(df.index[first_i]) if first_i >= 0 else None,
+            "side": float(sig_b.iloc[first_i]) if first_i >= 0 else None,
+        }
+        res_hold = run_clip_backtest(
+            df,
+            sig_b,
+            symbol="ETH-USDT-SWAP",
+            model="B",
+            spec=ETH_SPEC,
+            n_clips=N_CLIPS,
+            leverage=LEVERAGE,
+            liq_pct=LIQ_PCT,
+            hold_to_liq=True,
+        )
+        eq_hold = res_hold.daily_equity if len(res_hold.daily_equity) else res_hold.equity
+        pack_hold = _extras(_pack(eq_hold, res_hold.trades), res_hold.trades)
+        if not res_hold.trades.empty:
+            pack_hold["funding_pct_of_initial_nav"] = _funding_haircut(res_hold.trades)
+        pack_hold["min_nav"] = float(res_hold.equity.min()) if len(res_hold.equity) else float("nan")
+        pack_hold["note"] = "N=20 pulse starts 100-clip 10x; only liquidation or eod exits"
+        report["runs"]["fly_B_hold_liq"] = pack_hold
+        print(
+            "  hold-liq ret",
+            pack_hold.get("total_return"),
+            "mdd",
+            pack_hold.get("max_drawdown"),
+            "n",
+            pack_hold.get("n_trades"),
+            "liq",
+            pack_hold.get("n_liquidations"),
+            "first",
+            report["first_pulse"],
+        )
+        if len(eq_hold):
+            plot_model_pnl(
+                {"飞10x 翻面就平": eq_b, "飞10x 只爆仓平": eq_hold, "10x 死拿": eq_h},
+                out_dir / "eth_1m_fly_hold_liq_pnl.png",
+                "N=20 10 倍：翻面平 vs 只爆仓 vs 死拿",
+            )
+            eq_hold.to_csv(out_dir / "eth_1m_fly_B_hold_liq_equity.csv", header=["equity"])
+            if not res_hold.trades.empty:
+                res_hold.trades.to_csv(out_dir / "eth_1m_fly_B_hold_liq_trades.csv", index=False)
+
     (out_dir / "eth_okx_1m_fly.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print("Wrote", out_dir / "eth_okx_1m_fly.json")
     return 0
