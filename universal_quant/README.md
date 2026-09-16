@@ -8,4 +8,4 @@
 python -m universal_quant.main
 ```
 
-报告在 `universal_quant/reports/`。
+完整策略说明（数据、清洗、信号、风控、仓位）：[STRATEGY.md](STRATEGY.md)。报告在 `universal_quant/reports/`。
