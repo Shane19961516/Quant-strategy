@@ -13,7 +13,8 @@ from brent_quant.metrics import performance_from_equity
 from universal_quant import config as cfg
 from universal_quant.adapters.yahoo import get_data
 from universal_quant.backtest.engine import run_backtest
-from universal_quant.portfolio.risk_budget import equal_risk_nav
+from universal_quant.portfolio.risk_budget import blend_equal_risk
+from universal_quant.report import plot_drawdown, plot_model_pnl, plot_portfolio_nav
 
 
 def parse_args(argv=None):
@@ -43,6 +44,19 @@ def _md_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _port_stats(eq: pd.Series) -> dict:
+    st = performance_from_equity(eq)
+    return {
+        "cagr": st.get("cagr"),
+        "total_return": st.get("total_return"),
+        "sharpe": st.get("sharpe"),
+        "max_drawdown": st.get("max_drawdown"),
+        "calmar": st.get("calmar"),
+        "ann_vol": st.get("ann_vol"),
+        "ann_return": st.get("ann_return"),
+    }
+
+
 def run(argv=None) -> dict:
     args = parse_args(argv)
     reports = Path(args.reports_dir)
@@ -52,8 +66,7 @@ def run(argv=None) -> dict:
     data_meta = {}
     frames = {}
     rows = []
-    navs_e = {}
-    navs_d = {}
+    navs_by_model: dict[str, dict[str, pd.Series]] = {"B": {}, "D": {}, "E": {}}
     for sym in symbols:
         print(f"== {sym} {args.interval} ==")
         df, meta = get_data(sym, interval=args.interval, period=args.period)
@@ -72,6 +85,7 @@ def run(argv=None) -> dict:
                 {
                     "品种": spec["name"],
                     "模型": model,
+                    "年化": st.get("cagr"),
                     "总收益": st.get("total_return"),
                     "Sharpe": st.get("sharpe"),
                     "Calmar": st.get("calmar"),
@@ -81,10 +95,8 @@ def run(argv=None) -> dict:
                     "期望收益": st.get("expectancy"),
                 }
             )
-            if model == "E" and len(res.daily_equity):
-                navs_e[spec["name"]] = res.daily_equity
-            if model == "D" and len(res.daily_equity):
-                navs_d[spec["name"]] = res.daily_equity
+            if model in navs_by_model and len(res.daily_equity):
+                navs_by_model[model][spec["name"]] = res.daily_equity
             (reports / f"{sym.replace('=', '').replace('-', '')}_{model}_equity.csv").write_text(
                 res.daily_equity.to_csv(header=["equity"])
             )
@@ -94,27 +106,52 @@ def run(argv=None) -> dict:
     table = pd.DataFrame(rows)
     table.to_csv(reports / "single_asset_comparison.csv", index=False)
 
-    extra = {}
-    for tag, navmap in (("E", navs_e), ("D", navs_d)):
-        if len(navmap) >= 2:
-            nav_df = pd.concat(navmap, axis=1, sort=True).ffill().dropna(how="all")
-            port = equal_risk_nav(nav_df)
-            pst = performance_from_equity(port)
-            extra[f"portfolio_{tag}"] = {
-                "assets": list(navmap.keys()),
-                "sharpe": pst.get("sharpe"),
-                "total_return": pst.get("total_return"),
-                "max_drawdown": pst.get("max_drawdown"),
-                "calmar": pst.get("calmar"),
-                "ann_vol": pst.get("ann_vol"),
-            }
-            port.to_csv(reports / f"portfolio_{tag}_nav.csv", header=["equity"])
+    extra = {
+        "sizing": {
+            "risk_per_trade": cfg.RISK_PER_TRADE,
+            "max_weight": cfg.MAX_WEIGHT,
+            "time_stop_bars": cfg.TIME_STOP_BARS,
+            "target_port_vol": cfg.TARGET_PORT_VOL,
+            "max_port_leverage": cfg.MAX_PORT_LEVERAGE,
+        }
+    }
+    plot_series = {}
+    for tag, navmap in navs_by_model.items():
+        if len(navmap) < 2:
+            continue
+        nav_df = pd.concat(navmap, axis=1, sort=True).ffill().dropna(how="all")
+        blend = blend_equal_risk(nav_df, target_vol=cfg.TARGET_PORT_VOL, max_leverage=cfg.MAX_PORT_LEVERAGE)
+        scaled_st = _port_stats(blend["nav"])
+        raw_st = _port_stats(blend["nav_unlevered"])
+        extra[f"portfolio_{tag}"] = {
+            "assets": list(navmap.keys()),
+            "weights": {str(k): float(v) for k, v in blend["weights"].items()},
+            "raw_vol": blend["raw_vol"],
+            "leverage": blend["leverage"],
+            "target_vol": blend["target_vol"],
+            "unlevered": raw_st,
+            **scaled_st,
+        }
+        blend["nav"].to_csv(reports / f"portfolio_{tag}_nav.csv", header=["equity"])
+        blend["nav_unlevered"].to_csv(reports / f"portfolio_{tag}_nav_unlevered.csv", header=["equity"])
+        pd.Series(blend["weights"], name="weight").to_csv(reports / f"portfolio_{tag}_weights.csv")
+        if tag == "B":
+            plot_model_pnl(navmap, reports / "upv_model_b_pnl.png", "模型 B 累计损益（提高风险预算后）")
+            plot_series["等风险（未加杠杆）"] = blend["nav_unlevered"]
+            plot_series[f"等风险 + {cfg.TARGET_PORT_VOL:.0%} 目标波动"] = blend["nav"]
+            plot_drawdown(blend["nav"], reports / "upv_portfolio_b_dd.png", "模型 B 组合回撤（目标波动）")
+
+    if plot_series:
+        plot_portfolio_nav(plot_series, reports / "upv_portfolio_nav.png", "五资产等风险组合净值")
 
     report = reports / "upv_phase1_report.md"
     body = [
         "# UPV Engine 第一阶段回测报告",
         "",
         f"周期：`{args.interval}`；下载窗口：`{args.period}`。",
+        "",
+        f"仓位：单笔风险 `{cfg.RISK_PER_TRADE:.2%}`，权重上限 `{cfg.MAX_WEIGHT}`，"
+        f"时间止损 `{cfg.TIME_STOP_BARS}` 根，组合目标波动 `{cfg.TARGET_PORT_VOL:.0%}`。",
         "",
         "## 数据",
         "",
@@ -136,7 +173,9 @@ def run(argv=None) -> dict:
         "",
     ]
     report.write_text("\n".join(body), encoding="utf-8")
-    Path(reports / "run_meta.json").write_text(json.dumps({"data": data_meta, "portfolio": extra}, indent=2, default=str), encoding="utf-8")
+    Path(reports / "run_meta.json").write_text(
+        json.dumps({"data": data_meta, "portfolio": extra}, indent=2, default=str), encoding="utf-8"
+    )
     print(table.to_string(index=False))
     print("Report:", report)
     return {"rows": rows, "data": data_meta, "portfolio": extra, "report": str(report)}

@@ -57,3 +57,27 @@ def test_next_bar_flat_start():
     assert spec_for("GC=F")["cluster"] == "Metals"
     if not res.trades.empty:
         assert (res.trades["bars_held"] >= 0).all()
+
+
+def test_target_weight_caps():
+    from universal_quant.portfolio.sizing import target_weight
+
+    assert target_weight(0.01, 0.01, 2.0, 2.5) == 0.5
+    assert target_weight(0.001, 0.01, 2.0, 2.5) == 2.5
+    assert target_weight(0.0, 0.01, 2.0, 2.5) == 0.0
+
+
+def test_equal_risk_vol_target():
+    from universal_quant.portfolio.risk_budget import blend_equal_risk, equal_risk_nav
+
+    idx = pd.date_range("2022-01-03", periods=504, freq="B")
+    rng = np.random.default_rng(7)
+    a = pd.Series(1_000_000 * np.cumprod(1.0 + rng.normal(0.0004, 0.008, len(idx))), index=idx)
+    b = pd.Series(1_000_000 * np.cumprod(1.0 + rng.normal(0.0002, 0.018, len(idx))), index=idx)
+    navs = pd.DataFrame({"a": a, "b": b})
+    port = equal_risk_nav(navs, target_vol=0.12, max_leverage=8.0)
+    vol = float(port.pct_change().dropna().std(ddof=1) * np.sqrt(252))
+    assert 0.09 < vol < 0.15
+    blend = blend_equal_risk(navs, target_vol=0.12)
+    assert blend["leverage"] >= 1.0
+    assert abs(float(blend["weights"].sum()) - 1.0) < 1e-9
