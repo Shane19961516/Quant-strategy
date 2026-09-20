@@ -27,5 +27,6 @@ python -m btc_eth_perp_arb.eval_composite
 python -m btc_eth_perp_arb.eval_leverage
 python -m btc_eth_perp_arb.eval_window_sigma
 python -m btc_eth_perp_arb.eval_leverage_sweep
+python -m btc_eth_perp_arb.eval_bar_clock
 python -m pytest btc_eth_perp_arb/tests -q
 ```

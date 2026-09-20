@@ -185,6 +185,41 @@ def delivery_chosen_config(**overrides) -> BacktestConfig:
     )
 
 
+# Coarser-bar residual arb. Same family as the 14d chosen book, but the
+# clock is the bar — not 01:00 UTC. Calendar windows stay fixed; only
+# bar_minutes changes (5 = baseline, then 10 / 60 / 120). Not 1m 10x.
+BAR_ARB_MINUTES = (5, 10, 60, 120)
+BAR_ARB_Z_DAYS = CHOSEN_Z_DAYS  # 14 calendar days
+BAR_ARB_BETA_MINUTES = 1440
+BAR_ARB_CORR_MINUTES = 1440
+BAR_ARB_MAX_HOLD_MINUTES = 5 * 1440
+BAR_ARB_COOLDOWN_MINUTES = 1440
+
+
+def _calendar_bars(calendar_minutes: int, bar_minutes: int) -> int:
+    return max(1, int(calendar_minutes) // int(bar_minutes))
+
+
+def bar_arb_config(*, bar_minutes: int, **overrides) -> BacktestConfig:
+    """14d residual z / |z|≥2 / 2x, resampled. Windows are calendar time.
+
+    Every bar is a decision (signal t, fill t+1 open). 01:00 UTC is off so
+    bar length actually changes trading rate. Do not grid OOS / last month.
+    """
+    bm = int(bar_minutes)
+    kwargs = dict(
+        z_window=_calendar_bars(BAR_ARB_Z_DAYS * 1440, bm),
+        beta_window=_calendar_bars(BAR_ARB_BETA_MINUTES, bm),
+        corr_window=_calendar_bars(BAR_ARB_CORR_MINUTES, bm),
+        max_hold_bars=_calendar_bars(BAR_ARB_MAX_HOLD_MINUTES, bm),
+        cooldown_bars=_calendar_bars(BAR_ARB_COOLDOWN_MINUTES, bm),
+        raw_spread_min_periods=_calendar_bars(30 * 1440, bm),
+        entry_hour_utc=None,
+    )
+    kwargs.update(overrides)
+    return delivery_chosen_config(**kwargs)
+
+
 def funding_carry_config(**overrides) -> BacktestConfig:
     """Slow 2x shell with 8h ETH−BTC funding-carry as the signal.
 

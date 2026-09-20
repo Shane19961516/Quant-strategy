@@ -1200,4 +1200,54 @@ def test_composite_1x_sizes_one_tenth_of_10x():
     # Qty step (0.001 BTC) makes the ratio inexact; 1x notional is 1/10 of 10x.
 
 
+def test_bar_arb_config_scales_calendar_windows_and_drops_hour_gate():
+    from dataclasses import asdict
+    from btc_eth_perp_arb.config import (
+        BAR_ARB_MINUTES,
+        BAR_ARB_Z_DAYS,
+        _calendar_bars,
+        bar_arb_config,
+        delivery_chosen_config,
+    )
+
+    base = delivery_chosen_config()
+    assert BAR_ARB_MINUTES == (5, 10, 60, 120)
+    assert BAR_ARB_Z_DAYS == 14
+    expected_z = {5: 4032, 10: 2016, 60: 336, 120: 168}
+    frozen = (
+        "leverage",
+        "entry_z",
+        "exit_z",
+        "stop_z",
+        "corr_min",
+        "cost_hurdle_bps",
+        "starting_equity",
+        "signal_mode",
+    )
+    for minutes in BAR_ARB_MINUTES:
+        cfg = bar_arb_config(bar_minutes=minutes)
+        assert cfg.z_window == expected_z[minutes]
+        assert cfg.z_window == _calendar_bars(14 * 1440, minutes)
+        assert cfg.beta_window == _calendar_bars(1440, minutes)
+        assert cfg.corr_window == _calendar_bars(1440, minutes)
+        assert cfg.max_hold_bars == _calendar_bars(5 * 1440, minutes)
+        assert cfg.cooldown_bars == _calendar_bars(1440, minutes)
+        assert cfg.raw_spread_min_periods == _calendar_bars(30 * 1440, minutes)
+        assert cfg.entry_hour_utc is None
+        for key in frozen:
+            assert getattr(cfg, key) == getattr(base, key)
+
+    a5 = asdict(bar_arb_config(bar_minutes=5))
+    a120 = asdict(bar_arb_config(bar_minutes=120))
+    changed = {k for k in a5 if a5[k] != a120[k]}
+    assert changed == {
+        "z_window",
+        "beta_window",
+        "corr_window",
+        "max_hold_bars",
+        "cooldown_bars",
+        "raw_spread_min_periods",
+    }
+
+
 
