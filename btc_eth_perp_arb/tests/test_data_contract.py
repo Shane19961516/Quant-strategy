@@ -1056,6 +1056,31 @@ def test_delivery_grid_only_changes_window_and_entry_z():
     assert z4.exit_z == a.exit_z
 
 
+def test_delivery_chosen_config_is_14d_z2_and_sweep_only_changes_leverage():
+    from btc_eth_perp_arb.config import (
+        DELIVERY_SWEEP_LEVERAGES,
+        delivery_chosen_config,
+        delivery_grid_config,
+    )
+
+    c = delivery_chosen_config()
+    g = delivery_grid_config(z_days=14, entry_z=2.0)
+    assert c.z_window == g.z_window == 14 * 1440
+    assert c.entry_z == g.entry_z == 2.0
+    assert c.stop_z == 4.0
+    assert c.exit_z == 0.5
+    assert c.leverage == 2.0
+    assert c.entry_hour_utc == 1
+    assert DELIVERY_SWEEP_LEVERAGES == (1.0, 2.0, 5.0, 10.0, 20.0, 50.0)
+    x50 = delivery_chosen_config(leverage=50.0)
+    assert x50.leverage == 50.0
+    assert x50.z_window == c.z_window
+    assert x50.entry_z == c.entry_z
+    assert x50.exit_z == c.exit_z
+    assert x50.stop_z == c.stop_z
+    assert x50.entry_hour_utc == c.entry_hour_utc
+
+
 def test_delivery_e3_e4_are_one_knob_and_e4_stop_is_tradable():
     from btc_eth_perp_arb.config import (
         delivery_config,

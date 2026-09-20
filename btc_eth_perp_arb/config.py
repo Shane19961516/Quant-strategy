@@ -70,6 +70,11 @@ DELIVERY_ENTRY_ZS_GRID = (2.0, 2.5, 3.0, 4.0)
 DELIVERY_ENTRY_Z_3 = 3.0
 DELIVERY_ENTRY_Z_4 = 4.0
 DELIVERY_STOP_Z_E4 = 5.0  # E4 / any |z|≥4 band is [4, 5); exit still 0.5
+# Train-chosen cell from the window×sigma grid. Leverage sweep only; do not
+# reopen windows or |z|. Cross-margin liq is eq < MMR × gross.
+CHOSEN_Z_DAYS = 14
+CHOSEN_ENTRY_Z = 2.0
+DELIVERY_SWEEP_LEVERAGES = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0)
 
 
 @dataclass(frozen=True)
@@ -171,6 +176,13 @@ def delivery_e3_config(**overrides) -> BacktestConfig:
 def delivery_e4_config(**overrides) -> BacktestConfig:
     """Frozen A 7d shell, enter |z|≥4, stop 5, exit 0.5."""
     return delivery_grid_config(z_days=7, entry_z=DELIVERY_ENTRY_Z_4, **overrides)
+
+
+def delivery_chosen_config(**overrides) -> BacktestConfig:
+    """Train-chosen 14d |z|≥2 shell. Pass leverage= for the sweep; nothing else."""
+    return delivery_grid_config(
+        z_days=CHOSEN_Z_DAYS, entry_z=CHOSEN_ENTRY_Z, **overrides
+    )
 
 
 def funding_carry_config(**overrides) -> BacktestConfig:
