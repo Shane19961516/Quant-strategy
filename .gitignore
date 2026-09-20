@@ -3,9 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# BTC/ETH perp raw Vision zips (aligned parquet is committed)
+# BTC/ETH perp raw Vision zips (aligned 1-month parquet is committed)
 btc_eth_perp_arb/cache/raw/
 btc_eth_perp_arb/cache/*.tmp
+btc_eth_perp_arb/cache/aligned_1m_long.parquet
+btc_eth_perp_arb/cache/aligned_1m_long.manifest.json
 
 # C extensions
 *.so

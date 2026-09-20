@@ -222,3 +222,60 @@ def test_invert_signal_flips_side_not_thresholds():
     assert o["fill_qty"] * i["fill_qty"] < 0
     assert int(o["bar_open_ts"]) == int(i["bar_open_ts"])
 
+
+def test_cost_hurdle_blocks_small_dislocation():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        cost_hurdle_bps=50.0,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out["spread_dev_bps"] = 10.0
+    out.loc[80, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    assert not (res.bars["event"] == "enter").any()
+    out["spread_dev_bps"] = 80.0
+    res2 = run_simulator(out, cfg)
+    assert (res2.bars["event"] == "enter").any()
+
+
+def test_cooldown_blocks_immediate_reentry():
+    df = _panel(n=500, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        cooldown_bars=30,
+        max_hold_bars=5,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    out.loc[90:200, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    enters = list(res.bars.index[res.bars["event"] == "enter"])
+    assert len(enters) >= 1
+    if len(enters) >= 2:
+        assert enters[1] - enters[0] >= 30
+

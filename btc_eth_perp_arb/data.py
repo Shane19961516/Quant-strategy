@@ -112,7 +112,42 @@ def download_daily_zip(kind: str, symbol: str, day: date) -> Path | None:
     return dest
 
 
-def download_monthly_funding(symbol: str, year: int, month: int) -> Path | None:
+def download_monthly_kline_zip(kind: str, symbol: str, year: int, month: int) -> Path | None:
+    """kind: klines | markPriceKlines | indexPriceKlines | premiumIndexKlines."""
+    name = f"{symbol}-1m-{year:04d}-{month:02d}.zip"
+    url = f"{VISION_BASE}/monthly/{kind}/{symbol}/1m/{name}"
+    dest = RAW_DIR / "monthly" / kind / symbol / name
+    if dest.exists() and dest.stat().st_size > 0:
+        return dest
+    r = _get(url, timeout=120)
+    if r.status_code == 404:
+        return None
+    _save_bytes(dest, r.content)
+    return dest
+
+
+def _month_end(d: date) -> date:
+    if d.month == 12:
+        return date(d.year, 12, 31)
+    return date(d.year, d.month + 1, 1) - timedelta(days=1)
+
+
+def _split_monthly_and_daily(start: date, end: date) -> tuple[list[tuple[int, int]], list[date]]:
+    """Complete calendar months as monthly zips; leftover days as daily zips."""
+    months: list[tuple[int, int]] = []
+    days: list[date] = []
+    cur = start
+    while cur <= end:
+        me = _month_end(cur)
+        month_start = date(cur.year, cur.month, 1)
+        if cur == month_start and me <= end:
+            months.append((cur.year, cur.month))
+            cur = me + timedelta(days=1)
+        else:
+            chunk_end = min(me, end)
+            days.extend(_daterange(cur, chunk_end))
+            cur = chunk_end + timedelta(days=1)
+    return months, days
     name = f"{symbol}-fundingRate-{year:04d}-{month:02d}.zip"
     url = f"{VISION_BASE}/monthly/fundingRate/{symbol}/{name}"
     dest = RAW_DIR / "fundingRate" / symbol / name
@@ -295,9 +330,54 @@ def _download_symbol_days(symbol: str, days: list[date]) -> dict[str, pd.DataFra
         if missing:
             print(f"  {symbol} {kind}: missing {len(missing)} day(s), first={missing[0]}")
         if not frames:
+            out[kind] = pd.DataFrame(columns=KLINE_COLS)
+        else:
+            out[kind] = (
+                pd.concat(frames, ignore_index=True)
+                .drop_duplicates("open_time")
+                .sort_values("open_time")
+                .reset_index(drop=True)
+            )
+    return out
+
+
+def _download_symbol_range(symbol: str, start: date, end: date) -> dict[str, pd.DataFrame]:
+    kinds = ("klines", "markPriceKlines", "indexPriceKlines", "premiumIndexKlines")
+    months, days = _split_monthly_and_daily(start, end)
+    print(f"  {symbol}: {len(months)} monthly zip(s), {len(days)} daily zip(s)")
+    frames: dict[str, list[pd.DataFrame]] = {k: [] for k in kinds}
+
+    def month_job(job: tuple[str, int, int]) -> tuple[tuple[str, int, int], Path | None]:
+        kind, y, m = job
+        return job, download_monthly_kline_zip(kind, symbol, y, m)
+
+    month_jobs = [(kind, y, m) for kind in kinds for y, m in months]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = [pool.submit(month_job, j) for j in month_jobs]
+        for fut in as_completed(futs):
+            (kind, y, m), path = fut.result()
+            if path is None:
+                print(f"  {symbol} monthly {kind} {y}-{m:02d} missing → daily fallback")
+                ms = date(y, m, 1)
+                for day in _daterange(ms, _month_end(ms)):
+                    p = download_daily_zip(kind, symbol, day)
+                    if p is not None:
+                        frames[kind].append(_read_kline_zip(p))
+            else:
+                frames[kind].append(_read_kline_zip(path))
+
+    if days:
+        daily = _download_symbol_days(symbol, days)
+        for kind in kinds:
+            if not daily[kind].empty:
+                frames[kind].append(daily[kind])
+
+    out: dict[str, pd.DataFrame] = {}
+    for kind in kinds:
+        if not frames[kind]:
             raise RuntimeError(f"no {kind} data for {symbol}")
         out[kind] = (
-            pd.concat(frames, ignore_index=True)
+            pd.concat(frames[kind], ignore_index=True)
             .drop_duplicates("open_time")
             .sort_values("open_time")
             .reset_index(drop=True)
@@ -379,13 +459,12 @@ def build_aligned_panel(
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     fetch_start = start - timedelta(days=warmup_days)
-    days = _daterange(fetch_start, end)
-    print(f"Downloading Binance Vision 1m files {fetch_start} → {end} ({len(days)} days)")
+    print(f"Downloading Binance Vision 1m files {fetch_start} → {end}")
 
     legs = {}
     for symbol in SYMBOLS:
         print(f"  {symbol} ...")
-        legs[symbol] = _download_symbol_days(symbol, days)
+        legs[symbol] = _download_symbol_range(symbol, fetch_start, end)
 
     btc = _leg_frame(legs["BTCUSDT"], "btc")
     eth = _leg_frame(legs["ETHUSDT"], "eth")
@@ -481,12 +560,18 @@ def build_aligned_panel(
     return panel, manifest
 
 
-def save_panel(panel: pd.DataFrame, manifest: dict, cache_dir: Path | None = None) -> Path:
+def save_panel(
+    panel: pd.DataFrame,
+    manifest: dict,
+    cache_dir: Path | None = None,
+    name: str = "aligned_1m.parquet",
+) -> Path:
     cache_dir = cache_dir or CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / "aligned_1m.parquet"
+    path = cache_dir / name
     panel.to_parquet(path, index=False)
-    man_path = cache_dir / "manifest.json"
+    man_name = "manifest.json" if name == "aligned_1m.parquet" else Path(name).stem + ".manifest.json"
+    man_path = cache_dir / man_name
     payload = dict(manifest)
     payload["parquet"] = path.name
     payload["parquet_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -494,12 +579,21 @@ def save_panel(panel: pd.DataFrame, manifest: dict, cache_dir: Path | None = Non
     return path
 
 
-def load_panel(cache_dir: Path | None = None) -> tuple[pd.DataFrame, dict]:
+def load_panel(
+    cache_dir: Path | None = None, name: str = "aligned_1m.parquet"
+) -> tuple[pd.DataFrame, dict]:
     cache_dir = cache_dir or CACHE_DIR
-    path = cache_dir / "aligned_1m.parquet"
-    man_path = cache_dir / "manifest.json"
+    path = cache_dir / name
+    candidates = [
+        cache_dir / (Path(name).stem + ".manifest.json"),
+        cache_dir / "manifest.json",
+    ]
     if not path.exists():
         raise FileNotFoundError(path)
     panel = pd.read_parquet(path)
-    manifest = json.loads(man_path.read_text(encoding="utf-8")) if man_path.exists() else {}
+    manifest = {}
+    for man_path in candidates:
+        if man_path.exists():
+            manifest = json.loads(man_path.read_text(encoding="utf-8"))
+            break
     return panel, manifest

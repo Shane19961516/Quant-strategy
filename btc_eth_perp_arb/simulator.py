@@ -91,6 +91,10 @@ def run_simulator(
     z = df["z"].to_numpy(dtype=float)
     beta = df["beta"].to_numpy(dtype=float)
     corr = df["corr"].to_numpy(dtype=float)
+    if "spread_dev_bps" in df.columns:
+        spread_dev = df["spread_dev_bps"].to_numpy(dtype=float)
+    else:
+        spread_dev = np.full(n, np.nan)
     incomplete = df["pair_incomplete"].to_numpy(dtype=np.int8)
     gap_run = df["gap_run"].to_numpy(dtype=np.int32)
     btc_fund = df["btc_funding_rate"].to_numpy(dtype=float)
@@ -108,6 +112,7 @@ def run_simulator(
     hold_bars = 0
     frozen_beta = 0.0
     liq_count = 0
+    last_flat_i = -10**9
 
     equity = np.full(n, np.nan)
     notional_pnl = np.zeros(n)
@@ -324,6 +329,7 @@ def run_simulator(
         z_sig = z[i - 1] if i > 0 else np.nan
         beta_sig = beta[i - 1] if i > 0 else np.nan
         corr_sig = corr[i - 1] if i > 0 else np.nan
+        dev_sig = spread_dev[i - 1] if i > 0 else np.nan
         in_pos = abs(qty_btc) > 0 or abs(qty_eth) > 0
 
         if tradable:
@@ -347,7 +353,15 @@ def run_simulator(
                 if flatten_why:
                     flatten(i, flatten_why, use_pessimistic=(cfg.exec_mode == "pessimistic"))
                     in_pos = abs(qty_btc) > 0 or abs(qty_eth) > 0
+                    last_flat_i = i
             else:
+                stride_ok = cfg.decision_stride <= 1 or (
+                    (int(ts[i]) // 60_000) % int(cfg.decision_stride) == 0
+                )
+                cool_ok = cfg.cooldown_bars <= 0 or (i - last_flat_i) >= int(cfg.cooldown_bars)
+                hurdle_ok = cfg.cost_hurdle_bps <= 0 or (
+                    np.isfinite(dev_sig) and abs(float(dev_sig)) >= float(cfg.cost_hurdle_bps)
+                )
                 can_enter = (
                     in_window
                     and np.isfinite(z_sig)
@@ -357,6 +371,9 @@ def run_simulator(
                     and not in_funding_blackout(i)
                     and gap_run[i] == 0
                     and (i == 0 or gap_run[i - 1] <= GAP_FREEZE_MINUTES)
+                    and stride_ok
+                    and cool_ok
+                    and hurdle_ok
                 )
                 side_sign = -1 if cfg.invert_signal else 1
                 if can_enter and cfg.entry_z <= z_sig < cfg.stop_z:
@@ -378,6 +395,7 @@ def run_simulator(
         # Liquidation on mark (cross). Check after marking this bar.
         if tradable and g > 0 and eq < cfg.mmr * g:
             flatten(i, "liq", use_pessimistic=True)
+            last_flat_i = i
             u = unrealized(btc_mark[i], eth_mark[i])
             eq = cash + u
             g = 0.0

@@ -106,3 +106,29 @@ def summarize(result: SimResult, pnl_start_ts: int, starting_equity: float = STA
         .value_counts()
         .to_dict(),
     }
+
+
+def monthly_table(result: SimResult, pnl_start_ts: int) -> pd.DataFrame:
+    w = result.bars[result.bars["bar_open_ts"] >= pnl_start_ts].copy()
+    w["month"] = pd.to_datetime(w["bar_open_ts"], unit="ms", utc=True).dt.strftime("%Y-%m")
+    rows = []
+    for month, g in w.groupby("month", sort=True):
+        eq = g["equity"].astype(float)
+        start_eq = float(eq.iloc[0])
+        end_eq = float(eq.dropna().iloc[-1])
+        peak = eq.cummax()
+        dd = float((eq / peak - 1.0).min()) if len(eq) else 0.0
+        rows.append(
+            {
+                "month": month,
+                "equity_return": (end_eq / start_eq - 1.0) if start_eq else 0.0,
+                "start_equity": start_eq,
+                "end_equity": end_eq,
+                "max_drawdown": dd,
+                "trades": int((g["event"] == "enter").sum()),
+                "fees": float(g["fee"].fillna(0).sum()),
+                "funding": float(g["funding_cash"].fillna(0).sum()),
+                "liquidations": int((g["event"] == "liq").sum()),
+            }
+        )
+    return pd.DataFrame(rows)

@@ -47,6 +47,20 @@ GAP_FREEZE_MINUTES = 2
 STARTING_EQUITY = 100_000.0
 INTEREST_PER_8H = 0.0001  # Binance default interest used in funding formula
 
+# Slow cost-aware book. Locked from microstructure economics + the research
+# workflow (hold must match a slow factor; 1-min taker cannot support 100+
+# trades/month). Not grid-searched on the last-month window.
+DELIVERY_Z_WINDOW = 7 * 1440  # 7-day z of log(ETH/BTC)
+DELIVERY_BETA_WINDOW = 1440
+DELIVERY_CORR_WINDOW = 1440
+DELIVERY_CORR_MIN = 0.70
+DELIVERY_MAX_HOLD = 5 * 1440
+DELIVERY_COOLDOWN = 1440  # 1 day after flatten
+DELIVERY_COST_HURDLE_BPS = 30.0  # ~1.25× round-trip taker+spread on two legs
+DELIVERY_STRIDE = 60  # decide entries on the hour only
+DELIVERY_LEVERAGE = 2.0
+DELIVERY_ADV = 0.01
+
 
 @dataclass(frozen=True)
 class BacktestConfig:
@@ -66,3 +80,29 @@ class BacktestConfig:
     adv_participation: float = ADV_PARTICIPATION
     exec_mode: str = "open"  # open | pessimistic
     invert_signal: bool = False  # flip spread side; |z| thresholds unchanged
+    cooldown_bars: int = 0
+    cost_hurdle_bps: float = 0.0
+    decision_stride: int = 1
+
+
+def delivery_config(**overrides) -> BacktestConfig:
+    """A-priori slow RV book. Overrides are for leverage/invert only in reports."""
+    kwargs = dict(
+        leverage=DELIVERY_LEVERAGE,
+        z_window=DELIVERY_Z_WINDOW,
+        beta_window=DELIVERY_BETA_WINDOW,
+        corr_window=DELIVERY_CORR_WINDOW,
+        corr_min=DELIVERY_CORR_MIN,
+        entry_z=ENTRY_Z,
+        exit_z=EXIT_Z,
+        stop_z=STOP_Z,
+        max_hold_bars=DELIVERY_MAX_HOLD,
+        cooldown_bars=DELIVERY_COOLDOWN,
+        cost_hurdle_bps=DELIVERY_COST_HURDLE_BPS,
+        decision_stride=DELIVERY_STRIDE,
+        adv_participation=DELIVERY_ADV,
+        taker_fee_bps=TAKER_FEE_BPS,
+        starting_equity=STARTING_EQUITY,
+    )
+    kwargs.update(overrides)
+    return BacktestConfig(**kwargs)
