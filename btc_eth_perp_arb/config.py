@@ -86,8 +86,11 @@ class BacktestConfig:
     decision_stride: int = 1
     entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
     require_reversion: bool = False  # extra confirm: |z| shrinking vs 1d ago, same sign
-    signal_mode: str = "residual"  # residual | funding_carry | raw_spread
+    signal_mode: str = "residual"  # residual | funding_carry | raw_spread | ratio_btc_eth
     raw_spread_min_periods: int = 30 * 1440  # expanding mean of log(ETH/BTC)
+    eth_ticket_usd: float = 0.0  # if >0, ETH notional is ticket (× leverage if flagged)
+    notional_times_leverage: bool = True
+    min_leg_notional: float = 50.0  # skip entry if either leg notional is below this
 
 
 # 8h ETH−BTC funding carry (Fork 2). Scale: 1bp of last-settled (ETH−BTC)
@@ -146,5 +149,62 @@ def raw_spread_config(**overrides) -> BacktestConfig:
     spread; 30bp hurdle is |spread − expanding μ|. Same 01:00 UTC / 2x book.
     """
     return delivery_config(signal_mode="raw_spread", **overrides)
+
+
+# User-declared 1m z-grid (not a delivery book; not searched on 2026-07–09).
+# 2 series × 2 windows × 3 |z| × 2 leverages. Ticket is $100 margin; ETH
+# notional = ticket × leverage. No stop_z / time stop / corr gate. Exit |z|≤0.5.
+ZGRID_EQUITY = 1_000.0
+ZGRID_TICKET_USD = 100.0
+ZGRID_STOP_Z = 1e9
+ZGRID_MAX_HOLD = 10**9
+ZGRID_CORR_MIN = -1.0
+ZGRID_WINDOWS = (120, 240)
+ZGRID_ENTRY_ZS = (2.0, 2.5, 3.0)
+ZGRID_LEVERAGES = (5.0, 10.0)
+
+
+def zgrid_config(
+    *,
+    scheme: str,
+    z_window: int,
+    entry_z: float,
+    leverage: float,
+    **overrides,
+) -> BacktestConfig:
+    """1-minute rolling-z book: log-spread or BTC/ETH ratio.
+
+    scheme ``spread``: z of log(ETH_mark/BTC_mark). High z → short ETH / long β BTC.
+    scheme ``ratio``: z of BTC_mark/ETH_mark, invert_signal so high ratio shorts BTC.
+    β window matches z window. Hedge is still ETH vs BTC rolling β.
+    """
+    if scheme not in {"spread", "ratio"}:
+        raise ValueError(f"unknown zgrid scheme={scheme}")
+    kwargs = dict(
+        leverage=float(leverage),
+        starting_equity=ZGRID_EQUITY,
+        eth_ticket_usd=ZGRID_TICKET_USD,
+        notional_times_leverage=True,
+        min_leg_notional=0.0,
+        z_window=int(z_window),
+        beta_window=int(z_window),
+        corr_window=int(z_window),
+        corr_min=ZGRID_CORR_MIN,
+        entry_z=float(entry_z),
+        exit_z=EXIT_Z,
+        stop_z=ZGRID_STOP_Z,
+        max_hold_bars=ZGRID_MAX_HOLD,
+        cooldown_bars=0,
+        cost_hurdle_bps=0.0,
+        decision_stride=1,
+        entry_hour_utc=None,
+        require_reversion=False,
+        signal_mode="ratio_btc_eth" if scheme == "ratio" else "residual",
+        invert_signal=scheme == "ratio",
+        taker_fee_bps=TAKER_FEE_BPS,
+        adv_participation=ADV_PARTICIPATION,
+    )
+    kwargs.update(overrides)
+    return BacktestConfig(**kwargs)
 
 

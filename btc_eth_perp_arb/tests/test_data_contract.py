@@ -441,3 +441,107 @@ def test_raw_spread_is_not_the_7d_residual():
     assert float(out.loc[200, "z_raw"]) == pytest.approx(float((s.iloc[200] - mu.iloc[200]) / sd.iloc[200]))
 
 
+def test_ratio_btc_eth_z_is_price_ratio_not_log_spread():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        signal_mode="ratio_btc_eth",
+        corr_min=-1.0,
+    )
+    out = add_signals(df, cfg)
+    both = out[["z", "z_residual", "z_ratio", "px_ratio"]].dropna()
+    assert (both["z"] - both["z_ratio"]).abs().max() < 1e-12
+    assert (both["z"] - both["z_residual"]).abs().max() > 1e-6
+    ratio = out["btc_mark_close"] / out["eth_mark_close"]
+    mu = ratio.shift(1).rolling(50, min_periods=50).mean()
+    sd = ratio.shift(1).rolling(50, min_periods=50).std(ddof=0)
+    assert float(out.loc[200, "z_ratio"]) == pytest.approx(float((ratio.iloc[200] - mu.iloc[200]) / sd.iloc[200]))
+    assert float(out.loc[200, "px_ratio"]) == pytest.approx(float(ratio.iloc[200]))
+
+
+def test_ratio_high_z_longs_eth_shorts_btc():
+    from btc_eth_perp_arb.config import zgrid_config
+
+    df = _panel(n=400, funding_i=None)
+    cfg = zgrid_config(
+        scheme="ratio",
+        z_window=50,
+        entry_z=2.0,
+        leverage=5.0,
+        beta_window=30,
+        corr_window=20,
+        adv_participation=1.0,
+        max_hold_bars=200,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    eth = res.trades[(res.trades["reason"] == "enter") & (res.trades["leg"] == "eth")].iloc[0]
+    btc = res.trades[(res.trades["reason"] == "enter") & (res.trades["leg"] == "btc")].iloc[0]
+    assert float(eth["fill_qty"]) > 0
+    assert float(btc["fill_qty"]) < 0
+
+
+def test_zgrid_ticket_times_leverage_and_bypasses_floor():
+    from btc_eth_perp_arb.config import zgrid_config
+
+    df = _panel(n=400, funding_i=None)
+    cfg = zgrid_config(
+        scheme="spread",
+        z_window=50,
+        entry_z=2.0,
+        leverage=5.0,
+        beta_window=30,
+        corr_window=20,
+        adv_participation=1.0,
+        max_hold_bars=200,
+    )
+    assert cfg.min_leg_notional == 0.0
+    assert cfg.eth_ticket_usd == 100.0
+    assert cfg.stop_z >= 1e8
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    eth = res.trades[(res.trades["reason"] == "enter") & (res.trades["leg"] == "eth")].iloc[0]
+    notion = abs(float(eth["fill_qty"]) * float(eth["fill_px"]))
+    assert notion == pytest.approx(500.0, rel=0.08)
+    # No stop even if |z| blows out.
+    out.loc[81:120, "z"] = 50.0
+    held = run_simulator(out, cfg)
+    assert not (held.bars["event"] == "stop").any()
+
+
+def test_default_min_leg_notional_still_blocks_tiny_tickets():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=1_000.0,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        eth_ticket_usd=20.0,
+        notional_times_leverage=False,
+        min_leg_notional=50.0,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    assert not (res.bars["event"] == "enter").any()
+
+

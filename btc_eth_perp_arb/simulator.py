@@ -240,10 +240,21 @@ def run_simulator(
         eq = cash + unrealized(mb, me)
         if eq <= 0 or not np.isfinite(beta_i) or abs(beta_i) > 5:
             return
-        gross_budget = eq * cfg.leverage
-        denom = 1.0 + abs(beta_i)
-        n_eth = gross_budget / denom
-        n_btc = abs(beta_i) * n_eth
+        if cfg.eth_ticket_usd > 0:
+            ticket_mult = cfg.leverage if cfg.notional_times_leverage else 1.0
+            n_eth = float(cfg.eth_ticket_usd) * float(ticket_mult)
+            n_btc = abs(beta_i) * n_eth
+            max_gross = eq * cfg.leverage
+            gross = n_eth + n_btc
+            if max_gross > 0 and gross > max_gross:
+                scale = max_gross / gross
+                n_eth *= scale
+                n_btc *= scale
+        else:
+            gross_budget = eq * cfg.leverage
+            denom = 1.0 + abs(beta_i)
+            n_eth = gross_budget / denom
+            n_btc = abs(beta_i) * n_eth
         # ADV cap on entries.
         cap_eth = cfg.adv_participation * max(eth_qvol[i], 0.0)
         cap_btc = cfg.adv_participation * max(btc_qvol[i], 0.0)
@@ -253,7 +264,8 @@ def run_simulator(
         if cap_btc > 0 and n_btc > cap_btc:
             n_btc = cap_btc
             n_eth = n_btc / max(abs(beta_i), 1e-8)
-        if n_eth < 50 or n_btc < 50:
+        min_n = float(cfg.min_leg_notional)
+        if n_eth < min_n or n_btc < min_n:
             return
         qty_e_tgt = _round_qty(side * n_eth / me, QTY_STEP["ETHUSDT"])
         qty_b_tgt = _round_qty(-side * beta_i * n_eth / mb, QTY_STEP["BTCUSDT"])
@@ -366,7 +378,7 @@ def run_simulator(
                     flatten_why = "stop"
                 elif hold_bars >= cfg.max_hold_bars:
                     flatten_why = "time"
-                elif np.isfinite(corr_sig) and corr_sig < cfg.corr_min:
+                elif cfg.corr_min > -1.0 and np.isfinite(corr_sig) and corr_sig < cfg.corr_min:
                     flatten_why = "corr_break"
                 if flatten_why:
                     flatten(i, flatten_why, use_pessimistic=(cfg.exec_mode == "pessimistic"))
@@ -388,8 +400,10 @@ def run_simulator(
                     in_window
                     and np.isfinite(z_sig)
                     and np.isfinite(beta_sig)
-                    and np.isfinite(corr_sig)
-                    and corr_sig >= cfg.corr_min
+                    and (
+                        cfg.corr_min <= -1.0
+                        or (np.isfinite(corr_sig) and corr_sig >= cfg.corr_min)
+                    )
                     and not in_funding_blackout(i)
                     and gap_run[i] == 0
                     and (i == 0 or gap_run[i - 1] <= GAP_FREEZE_MINUTES)

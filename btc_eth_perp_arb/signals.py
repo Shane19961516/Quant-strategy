@@ -52,6 +52,11 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
     df["z_lag_1d"] = df["z_residual"].shift(1440)
 
+    df["px_ratio"] = btc_px / eth_px.replace(0.0, np.nan)
+    mu_r = df["px_ratio"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).mean()
+    sd_r = df["px_ratio"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
+    df["z_ratio"] = (df["px_ratio"] - mu_r) / sd_r.replace(0.0, np.nan)
+
     s_hist = df["log_spread"].shift(1)
     min_p = int(cfg.raw_spread_min_periods)
     mu_exp = s_hist.expanding(min_periods=min_p).mean()
@@ -76,6 +81,9 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     elif cfg.signal_mode == "raw_spread":
         df["z"] = df["z_raw"]
         df["spread_dev_bps"] = df["raw_dev_bps"]
+    elif cfg.signal_mode == "ratio_btc_eth":
+        df["z"] = df["z_ratio"]
+        df["spread_dev_bps"] = (df["px_ratio"] - mu_r) / mu_r.replace(0.0, np.nan) * 1e4
     else:
         df["z"] = df["z_residual"]
 
@@ -85,6 +93,8 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
         "z_residual",
         "z_funding",
         "z_raw",
+        "z_ratio",
+        "px_ratio",
         "corr",
         "log_spread",
         "spread_dev_bps",

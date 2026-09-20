@@ -94,9 +94,14 @@ def slice_result(result: SimResult, start: date, end: date) -> SimResult:
     return SimResult(bars=bars, trades=tw, summary=dict(result.summary))
 
 
-def window_pack(result: SimResult, start: date, end: date) -> dict:
+def window_pack(
+    result: SimResult,
+    start: date,
+    end: date,
+    starting_equity: float = 100_000.0,
+) -> dict:
     sliced = slice_result(result, start, end)
-    stats = summarize(sliced, pnl_start_ts=_ts(start), starting_equity=100_000.0)
+    stats = summarize(sliced, pnl_start_ts=_ts(start), starting_equity=starting_equity)
     stats["window_start"] = start.isoformat()
     stats["window_end"] = end.isoformat()
     return stats
