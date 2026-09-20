@@ -599,3 +599,38 @@ def test_zgrid_leverage_filter_is_twelve_books():
     assert {c[-1] for c in combos} == {5.0}
 
 
+def test_repair_baseline_is_frozen_5m_5x_shell():
+    from btc_eth_perp_arb.config import (
+        REPAIR_BAR_MINUTES,
+        REPAIR_COST_HURDLE_BPS,
+        REPAIR_ENTRY_Z,
+        REPAIR_LEVERAGE,
+        REPAIR_SCHEME,
+        REPAIR_Z_WINDOW,
+        repair_baseline_config,
+    )
+
+    assert REPAIR_BAR_MINUTES == 5
+    assert REPAIR_SCHEME == "spread"
+    assert REPAIR_Z_WINDOW == 120
+    assert REPAIR_ENTRY_Z == 2.0
+    assert REPAIR_LEVERAGE == 5.0
+    assert REPAIR_COST_HURDLE_BPS == 30.0
+    b0 = repair_baseline_config()
+    assert b0.cost_hurdle_bps == 0.0
+    assert b0.leverage == 5.0
+    assert b0.z_window == 120
+    assert b0.entry_z == 2.0
+    assert b0.exit_z == 0.5
+    assert b0.stop_z >= 1e8
+    assert b0.signal_mode == "residual"
+    assert b0.invert_signal is False
+    assert b0.eth_ticket_usd == 100.0
+    assert b0.cooldown_bars == 0
+    f1 = repair_baseline_config(cost_hurdle_bps=REPAIR_COST_HURDLE_BPS)
+    assert f1.cost_hurdle_bps == 30.0
+    assert f1.z_window == b0.z_window
+    assert f1.entry_z == b0.entry_z
+    assert f1.leverage == b0.leverage
+
+

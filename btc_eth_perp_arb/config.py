@@ -208,3 +208,28 @@ def zgrid_config(
     return BacktestConfig(**kwargs)
 
 
+# One-knob repairs of the user 5m 5x log-spread shell. Frozen before looking
+# at this step's results. Do not grid OOS / last month. F2/F3 are later.
+REPAIR_BAR_MINUTES = 5
+REPAIR_SCHEME = "spread"
+REPAIR_Z_WINDOW = 120
+REPAIR_ENTRY_Z = 2.0
+REPAIR_LEVERAGE = 5.0
+REPAIR_COST_HURDLE_BPS = 30.0  # F1: ~1.25× two-leg taker+spread round-trip
+
+
+def repair_baseline_config(**overrides) -> BacktestConfig:
+    """Frozen 5m 5x 120-bar log-spread shell (B0: no cost hurdle).
+
+    Pass cost_hurdle_bps=REPAIR_COST_HURDLE_BPS for F1. Other knobs stay
+    locked: |z|≥2, exit 0.5, no stop, $100×leverage ETH, rolling β = z window.
+    """
+    return zgrid_config(
+        scheme=REPAIR_SCHEME,
+        z_window=REPAIR_Z_WINDOW,
+        entry_z=REPAIR_ENTRY_Z,
+        leverage=REPAIR_LEVERAGE,
+        **overrides,
+    )
+
+
