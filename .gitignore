@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# BTC/ETH perp raw Vision zips (aligned parquet is committed)
+btc_eth_perp_arb/cache/raw/
+btc_eth_perp_arb/cache/*.tmp
+
 # C extensions
 *.so
 
