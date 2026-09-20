@@ -146,6 +146,80 @@ def plot_attribution_pair(
     plt.close(fig)
 
 
+def plot_mae_mfe_scatter(
+    trades: dict[str, pd.DataFrame],
+    path: Path,
+    *,
+    liq_price_pct: float = 0.096,
+    title: str = "Train MAE vs MFE (frozen 10x Donchian breakouts)",
+) -> None:
+    """Price-percent MAE/MFE scatter. Not an OOS chart."""
+    _style()
+    fig, ax = plt.subplots(figsize=(7.2, 6.2))
+    colors = {"BTCUSDT": "#f7931a", "ETHUSDT": "#627eea"}
+    for name, frame in trades.items():
+        if frame is None or frame.empty:
+            continue
+        ax.scatter(
+            frame["mae_price_pct"] * 100.0,
+            frame["mfe_price_pct"] * 100.0,
+            s=18,
+            alpha=0.75,
+            c=colors.get(name, "#555555"),
+            label=name.replace("USDT", ""),
+            zorder=3,
+        )
+    ax.axvline(2.0, color="#1f4e79", ls="--", lw=0.9, label="2% equity stop")
+    ax.axvline(liq_price_pct * 100.0, color="#b22222", ls="--", lw=0.9, label="isolated 10x liq")
+    ax.axhline(10.0, color="#2ca02c", ls=":", lw=0.9, label="1×投入 (10% price)")
+    ax.axhline(50.0, color="#c45911", ls=":", lw=0.9, label="5×投入 (50% price)")
+    ax.set_xlabel("MAE (% price)")
+    ax.set_ylabel("MFE (% price)")
+    ax.set_title(title)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
+def plot_tp_hit_bars(
+    hit_rates: dict[str, dict],
+    path: Path,
+    stop_name: str = "2pct_equity",
+    title: str = "Train: TP reached before 2% stop (same bar counts as stop)",
+) -> None:
+    """Grouped bars of tp_before_stop by symbol, for locked TP multiples."""
+    _style()
+    labels = [f"{m:g}×" for m in (0.2, 0.5, 1.0, 2.0, 3.0, 5.0)]
+    fig, ax = plt.subplots(figsize=(8.4, 4.2))
+    width = 0.36
+    x = list(range(len(labels)))
+    colors = {"BTCUSDT": "#f7931a", "ETHUSDT": "#627eea"}
+    for i, (sym, table) in enumerate(hit_rates.items()):
+        bucket = (table or {}).get(stop_name) or {}
+        ys = [
+            (bucket.get(k) or {}).get("tp_before_stop") or 0.0
+            for k in ("0.2x", "0.5x", "1x", "2x", "3x", "5x")
+        ]
+        shift = -width / 2 if i == 0 else width / 2
+        ax.bar(
+            [xi + shift for xi in x],
+            [y * 100.0 for y in ys],
+            width=width,
+            color=colors.get(sym, "#555555"),
+            label=sym.replace("USDT", ""),
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Share of train clips (%)")
+    ax.set_xlabel("Take-profit as multiple of invested margin")
+    ax.set_title(title)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
 def plot_attribution(window: pd.DataFrame, path: Path) -> None:
     _style()
     deq = window["equity"].astype(float).diff().fillna(0.0)

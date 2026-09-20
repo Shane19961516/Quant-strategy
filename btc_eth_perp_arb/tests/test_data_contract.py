@@ -805,4 +805,60 @@ def test_donchian_50x_sizes_five_times_equity_and_liqs_on_small_adverse():
     assert (blown.bars.loc[82:90, "event"] == "liq").any()
 
 
+def test_donchian_atr_is_shifted_no_current_bar():
+    from btc_eth_perp_arb.donchian_exits import add_atr
+
+    df = _panel(n=200, funding_i=None)
+    out = add_atr(df, n=14)
+    h = df["btc_mark_high"].astype(float)
+    low = df["btc_mark_low"].astype(float)
+    c = df["btc_mark_close"].astype(float)
+    prev = c.shift(1)
+    tr = pd.concat([(h - low), (h - prev).abs(), (low - prev).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1.0 / 14, adjust=False, min_periods=14).mean()
+    i = 40
+    assert float(out.loc[i, "btc_atr_14"]) == pytest.approx(float(atr.shift(1).iloc[i]))
+    assert float(out.loc[i, "btc_atr_14"]) != pytest.approx(float(tr.iloc[i]))
+
+
+def test_donchian_train_excursions_censor_and_mae_mfe():
+    from btc_eth_perp_arb.config import DonchianConfig
+    from btc_eth_perp_arb.donchian_exits import (
+        ExitStudySpec,
+        breakout_excursions,
+        prepare_exit_panel,
+    )
+
+    df = _panel(n=400, funding_i=None)
+    cfg = DonchianConfig(window=20, bar_minutes=1, adv_participation=1.0)
+    out = prepare_exit_panel(df, cfg)
+    out["btc_donch_side"] = np.int8(0)
+    out.loc[80, "btc_donch_side"] = np.int8(1)
+    fill_i = 81
+    px = float(out.loc[fill_i, "btc_open"])
+    out.loc[82:90, "btc_mark_high"] = px * 1.08
+    out.loc[82:90, "btc_mark_low"] = px * 0.999
+    out.loc[82:90, "btc_mark_close"] = px * 1.04
+    out.loc[91:100, "btc_mark_high"] = px * 1.01
+    out.loc[91:100, "btc_mark_low"] = px * 0.97
+    out.loc[91:100, "btc_mark_close"] = px * 0.99
+    out.loc[120:, "btc_mark_high"] = px * 1.40
+    out.loc[120:, "btc_mark_low"] = px * 1.30
+    out.loc[120:, "btc_mark_close"] = px * 1.35
+    train_end_ts = int(out.loc[110, "bar_open_ts"])
+    spec = ExitStudySpec(
+        train_start_ts=int(out.loc[0, "bar_open_ts"]),
+        train_end_ts=train_end_ts,
+        mode="independent",
+    )
+    trades = breakout_excursions(out, symbol="BTCUSDT", cfg=cfg, spec=spec)
+    assert len(trades) == 1
+    row = trades.iloc[0]
+    assert float(row["mfe_price_pct"]) == pytest.approx(0.08, abs=0.015)
+    assert float(row["mae_price_pct"]) == pytest.approx(0.03, abs=0.015)
+    assert int(row["end_ts"]) <= train_end_ts
+    assert float(row["mfe_price_pct"]) < 0.20
+    assert row["exit_reason"] == "censored_train_end"
+
+
 
