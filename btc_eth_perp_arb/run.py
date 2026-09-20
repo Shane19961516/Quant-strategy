@@ -166,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--invert", action="store_true", help="flip spread side; keep |z| thresholds")
     p.add_argument("--preset", choices=["default", "delivery"], default="default")
     p.add_argument("--long-cache", action="store_true", help="use aligned_1m_long.parquet if present")
+    p.add_argument("--cache-name", default="", help="parquet filename under cache/ (overrides --long-cache)")
     p.add_argument(
         "--require-reversion",
         action="store_true",
@@ -184,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         start = end - timedelta(days=29)
 
-    cache_name = "aligned_1m_long.parquet" if args.long_cache else "aligned_1m.parquet"
+    cache_name = args.cache_name or ("aligned_1m_long.parquet" if args.long_cache else "aligned_1m.parquet")
     cache_parquet = CACHE_DIR / cache_name
     if args.refresh or not cache_parquet.exists():
         panel, manifest = build_aligned_panel(start, end, warmup_days=args.warmup_days)

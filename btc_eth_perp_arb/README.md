@@ -16,5 +16,6 @@ pip install -r btc_eth_perp_arb/requirements.txt
 python -m btc_eth_perp_arb.run --refresh
 python -m btc_eth_perp_arb.run --preset delivery --long-cache --start 2025-10-01 --end 2026-09-18
 python -m btc_eth_perp_arb.eval_entry --compare exit
+python -m btc_eth_perp_arb.eval_forks --fork both
 python -m pytest btc_eth_perp_arb/tests -q
 ```

@@ -86,6 +86,14 @@ class BacktestConfig:
     decision_stride: int = 1
     entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
     require_reversion: bool = False  # extra confirm: |z| shrinking vs 1d ago, same sign
+    signal_mode: str = "residual"  # residual | funding_carry
+
+
+# 8h ETH−BTC funding carry (Fork 2). Scale: 1bp of last-settled (ETH−BTC)
+# funding → |z|=1, so the frozen |z|∈[2,4) band is a 2–4bp carry gap.
+# Cost hurdle is off: the edge is carry, not residual bp.
+FUNDING_BP_SCALE = 1e4
+
 
 
 def delivery_config(**overrides) -> BacktestConfig:
@@ -114,3 +122,15 @@ def delivery_config(**overrides) -> BacktestConfig:
     )
     kwargs.update(overrides)
     return BacktestConfig(**kwargs)
+
+
+def funding_carry_config(**overrides) -> BacktestConfig:
+    """Slow 2x shell with 8h ETH−BTC funding-carry as the signal.
+
+    Execution matches book A (01:00 UTC, 2x, 5d hold, 1d cooldown). Signal is
+    last settled funding differential in bp, not 7d residual z. Residual cost
+    hurdle is off so this is not a merged factor.
+    """
+    return delivery_config(signal_mode="funding_carry", cost_hurdle_bps=0.0, **overrides)
+
+

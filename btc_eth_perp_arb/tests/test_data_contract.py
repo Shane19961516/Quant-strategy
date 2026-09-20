@@ -8,7 +8,7 @@ import pytest
 
 from btc_eth_perp_arb.config import BacktestConfig
 from btc_eth_perp_arb.data import reconstruct_funding_from_premium
-from btc_eth_perp_arb.signals import add_signals
+from btc_eth_perp_arb.signals import add_signals, _last_settled_rate
 from btc_eth_perp_arb.simulator import reversion_confirmed, run_simulator
 
 
@@ -391,4 +391,33 @@ def test_cooldown_blocks_immediate_reentry():
     assert len(enters) >= 1
     if len(enters) >= 2:
         assert enters[1] - enters[0] >= 30
+
+
+def test_funding_carry_uses_prior_settlement_only():
+    df = _panel(n=400, funding_i=200)
+    df.loc[200, "btc_funding_rate"] = 0.0001
+    df.loc[200, "eth_funding_rate"] = 0.0003
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        signal_mode="funding_carry",
+        corr_min=0.0,
+    )
+    out = add_signals(df, cfg)
+    # Settlement bar itself must not already see this print as the trading z.
+    assert not (pd.notna(out.loc[200, "z_funding"]) and abs(out.loc[200, "z_funding"] - 2.0) < 1e-9)
+    assert float(out.loc[201, "fund_diff"]) == pytest.approx(0.0002)
+    assert float(out.loc[201, "z_funding"]) == pytest.approx(2.0)
+    assert float(out.loc[201, "z"]) == pytest.approx(2.0)
+
+
+def test_last_settled_rate_lags_one_bar():
+    rate = pd.Series([np.nan, 0.0004, np.nan, np.nan])
+    flag = pd.Series([False, True, False, False])
+    got = _last_settled_rate(rate, flag)
+    assert pd.isna(got.iloc[1])
+    assert float(got.iloc[2]) == pytest.approx(0.0004)
+    assert float(got.iloc[3]) == pytest.approx(0.0004)
+
 

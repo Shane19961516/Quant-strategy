@@ -1,17 +1,27 @@
-"""Residual z-score of ETH vs BTC. All rolling stats use t-1 and earlier."""
+"""Residual z-score of ETH vs BTC, and the 8h funding-carry alternative.
+
+All rolling stats use t-1 and earlier. Last-settled funding is lagged one bar
+before being treated as known.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from .config import BacktestConfig
+from .config import FUNDING_BP_SCALE, BacktestConfig
 
 
 def _mark_return(close: pd.Series) -> pd.Series:
     prev = close.shift(1)
     r = close / prev - 1.0
     return r.replace([np.inf, -np.inf], np.nan)
+
+
+def _last_settled_rate(rate: pd.Series, is_funding: pd.Series) -> pd.Series:
+    """Funding known only after the settlement bar (no same-bar lookahead)."""
+    settled = rate.where(is_funding.fillna(False))
+    return settled.shift(1).ffill()
 
 
 def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.DataFrame:
@@ -38,14 +48,37 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     df["log_spread"] = np.log(eth_px) - np.log(btc_px)
     mu = df["log_spread"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).mean()
     sd = df["log_spread"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
-    df["z"] = (df["log_spread"] - mu) / sd.replace(0.0, np.nan)
+    df["z_residual"] = (df["log_spread"] - mu) / sd.replace(0.0, np.nan)
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
-    df["z_lag_1d"] = df["z"].shift(1440)
+    df["z_lag_1d"] = df["z_residual"].shift(1440)
 
     df["corr"] = (
         r_eth.shift(1)
         .rolling(cfg.corr_window, min_periods=cfg.corr_window)
         .corr(r_btc.shift(1))
     )
-    df.loc[~complete, ["beta", "z", "corr", "log_spread", "spread_dev_bps", "z_lag_1d"]] = np.nan
+
+    btc_fund = _last_settled_rate(df["btc_funding_rate"], df["btc_is_funding"])
+    eth_fund = _last_settled_rate(df["eth_funding_rate"], df["eth_is_funding"])
+    df["fund_diff"] = eth_fund - btc_fund
+    df["z_funding"] = df["fund_diff"] * FUNDING_BP_SCALE
+
+    if cfg.signal_mode == "funding_carry":
+        df["z"] = df["z_funding"]
+        df["spread_dev_bps"] = np.nan
+    else:
+        df["z"] = df["z_residual"]
+
+    nan_cols = [
+        "beta",
+        "z",
+        "z_residual",
+        "z_funding",
+        "corr",
+        "log_spread",
+        "spread_dev_bps",
+        "z_lag_1d",
+        "fund_diff",
+    ]
+    df.loc[~complete, nan_cols] = np.nan
     return df
