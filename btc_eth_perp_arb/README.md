@@ -14,5 +14,6 @@ fetches Binance USDⓈ-M history and runs the residual z-score book.
 ```bash
 pip install -r btc_eth_perp_arb/requirements.txt
 python -m btc_eth_perp_arb.run --refresh
+python -m btc_eth_perp_arb.run --adv-participation 1.0 --invert
 python -m pytest btc_eth_perp_arb/tests -q
 ```
