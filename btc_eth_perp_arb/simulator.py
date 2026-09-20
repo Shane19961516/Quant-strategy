@@ -358,6 +358,9 @@ def run_simulator(
                 stride_ok = cfg.decision_stride <= 1 or (
                     (int(ts[i]) // 60_000) % int(cfg.decision_stride) == 0
                 )
+                if cfg.entry_hour_utc is not None:
+                    minute_of_day = (int(ts[i]) // 60_000) % 1440
+                    stride_ok = minute_of_day == int(cfg.entry_hour_utc) * 60
                 cool_ok = cfg.cooldown_bars <= 0 or (i - last_flat_i) >= int(cfg.cooldown_bars)
                 hurdle_ok = cfg.cost_hurdle_bps <= 0 or (
                     np.isfinite(dev_sig) and abs(float(dev_sig)) >= float(cfg.cost_hurdle_bps)

@@ -148,6 +148,9 @@ def _split_monthly_and_daily(start: date, end: date) -> tuple[list[tuple[int, in
             days.extend(_daterange(cur, chunk_end))
             cur = chunk_end + timedelta(days=1)
     return months, days
+
+
+def download_monthly_funding(symbol: str, year: int, month: int) -> Path | None:
     name = f"{symbol}-fundingRate-{year:04d}-{month:02d}.zip"
     url = f"{VISION_BASE}/monthly/fundingRate/{symbol}/{name}"
     dest = RAW_DIR / "fundingRate" / symbol / name
@@ -512,7 +515,7 @@ def build_aligned_panel(
     panel["gap_run"] = gap_len
     panel["data_gap"] = (gap_len > 2).astype("int8")
 
-    months = sorted({(d.year, d.month) for d in days})
+    months = sorted({(d.year, d.month) for d in _daterange(fetch_start, end)})
     funding_stats = {}
     for symbol, prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
         official = load_official_funding(symbol, months)

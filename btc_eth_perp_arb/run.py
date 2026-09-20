@@ -7,7 +7,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import CACHE_DIR, LEVERAGE, STARTING_EQUITY, TAKER_FEE_BPS, VENUE_NAME, BacktestConfig
+from .config import CACHE_DIR, LEVERAGE, STARTING_EQUITY, TAKER_FEE_BPS, VENUE_NAME, BacktestConfig, delivery_config
 from .data import build_aligned_panel, latest_vision_day, load_panel, save_panel
 from .metrics import summarize
 from .plots import plot_attribution, plot_drawdown, plot_equity, plot_z_and_pos
@@ -159,11 +159,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--end", default="", help="last complete Vision day; default=latest available")
     p.add_argument("--warmup-days", type=int, default=5)
     p.add_argument("--refresh", action="store_true")
-    p.add_argument("--leverage", type=float, default=LEVERAGE)
+    p.add_argument("--leverage", type=float, default=None)
     p.add_argument("--equity", type=float, default=STARTING_EQUITY)
     p.add_argument("--fee-bps", type=float, default=TAKER_FEE_BPS)
     p.add_argument("--adv-participation", type=float, default=None, help="max fraction of bar quote volume per leg (default from config)")
     p.add_argument("--invert", action="store_true", help="flip spread side; keep |z| thresholds")
+    p.add_argument("--preset", choices=["default", "delivery"], default="default")
+    p.add_argument("--long-cache", action="store_true", help="use aligned_1m_long.parquet if present")
     p.add_argument("--report-md", default="")
     p.add_argument("--media-dir", default="")
     p.add_argument("--summary-json", default="")
@@ -175,23 +177,36 @@ def main(argv: list[str] | None = None) -> int:
     else:
         start = end - timedelta(days=29)
 
-    cache_parquet = CACHE_DIR / "aligned_1m.parquet"
+    cache_name = "aligned_1m_long.parquet" if args.long_cache else "aligned_1m.parquet"
+    cache_parquet = CACHE_DIR / cache_name
     if args.refresh or not cache_parquet.exists():
         panel, manifest = build_aligned_panel(start, end, warmup_days=args.warmup_days)
-        save_panel(panel, manifest)
+        save_panel(panel, manifest, name=cache_name)
     else:
-        panel, manifest = load_panel()
+        panel, manifest = load_panel(name=cache_name)
         print(f"Loaded cache {cache_parquet} rows={len(panel)}")
 
-    cfg = BacktestConfig(
-        leverage=args.leverage,
-        taker_fee_bps=args.fee_bps,
-        starting_equity=args.equity,
-        invert_signal=bool(args.invert),
-        adv_participation=float(args.adv_participation)
-        if args.adv_participation is not None
-        else BacktestConfig().adv_participation,
-    )
+    if args.preset == "delivery":
+        kw = dict(
+            invert_signal=bool(args.invert),
+            taker_fee_bps=args.fee_bps,
+            starting_equity=args.equity,
+        )
+        if args.leverage is not None:
+            kw["leverage"] = args.leverage
+        if args.adv_participation is not None:
+            kw["adv_participation"] = float(args.adv_participation)
+        cfg = delivery_config(**kw)
+    else:
+        cfg = BacktestConfig(
+            leverage=LEVERAGE if args.leverage is None else args.leverage,
+            taker_fee_bps=args.fee_bps,
+            starting_equity=args.equity,
+            invert_signal=bool(args.invert),
+            adv_participation=float(args.adv_participation)
+            if args.adv_participation is not None
+            else BacktestConfig().adv_participation,
+        )
     panel = add_signals(panel, cfg)
     start_ts = int(datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp() * 1000)
     # If cache was built for a different range, clip end.

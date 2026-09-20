@@ -57,9 +57,10 @@ DELIVERY_CORR_MIN = 0.70
 DELIVERY_MAX_HOLD = 5 * 1440
 DELIVERY_COOLDOWN = 1440  # 1 day after flatten
 DELIVERY_COST_HURDLE_BPS = 30.0  # ~1.25× round-trip taker+spread on two legs
-DELIVERY_STRIDE = 60  # decide entries on the hour only
+DELIVERY_STRIDE = 1  # entries gated by UTC hour, not a return-fitted stride
+DELIVERY_ENTRY_HOUR_UTC = 1  # 01:00 UTC, after 00:00 funding, 7-day factor needs no hourly churn
 DELIVERY_LEVERAGE = 2.0
-DELIVERY_ADV = 0.01
+DELIVERY_ADV = 1.0  # once-a-day clip; 1m ADV% was binding. Impact cap still applies.
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ class BacktestConfig:
     cooldown_bars: int = 0
     cost_hurdle_bps: float = 0.0
     decision_stride: int = 1
+    entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
 
 
 def delivery_config(**overrides) -> BacktestConfig:
@@ -100,6 +102,7 @@ def delivery_config(**overrides) -> BacktestConfig:
         cooldown_bars=DELIVERY_COOLDOWN,
         cost_hurdle_bps=DELIVERY_COST_HURDLE_BPS,
         decision_stride=DELIVERY_STRIDE,
+        entry_hour_utc=DELIVERY_ENTRY_HOUR_UTC,
         adv_participation=DELIVERY_ADV,
         taker_fee_bps=TAKER_FEE_BPS,
         starting_equity=STARTING_EQUITY,
