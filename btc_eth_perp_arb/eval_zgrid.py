@@ -240,10 +240,20 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
     oos_pos = [n for n, r in gate["oos_returns"].items() if r > 0]
     liq_any = [r["name"] for r in rows if r["liq"] > 0]
     chart_lines = "\n".join(f"- `{p}`" for p in charts.values()) if charts else "(none)"
+    train_min = min(r["train"] for r in rows)
+    train_max = max(r["train"] for r in rows)
+    fee_min = min(r["fees"] for r in rows)
+    fee_max = max(r["fees"] for r in rows)
+    eq5 = [r["end_eq"] for r in rows if r["lev"] == 5]
+    eq10 = [r["end_eq"] for r in rows if r["lev"] == 10]
 
     return f"""# 1 分钟价差 / 比值 z 网格（$1000，票面 $100×杠杆）
 
-这是用户指定的 **24 组** 1 分钟网格，**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。**近一月不参与选书。**
+**24 组全部训练段亏完。** 5x 期末约 $19–21，10x 约 $9。手续费 {_usd(fee_min)}–{_usd(fee_max)} 先吃掉本金；价差/滑点项也全是负的。强平 0 — 不是爆仓，是换手把账户磨死。Gate C **未过**。近一月 24 组都是 0 笔 / 0%，因为训练结束时账户只剩几十美金，BTC 0.001 张已经下不进去；**近一月不参与选书。**
+
+这是用户指定的 24 组 1 分钟网格，**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。
+
+方案 2（BTC/ETH 比值 + invert）和方案 1（log 价差）几乎是同一本书：`z(BTC/ETH) ≈ −z(log ETH/BTC)`，对侧之后权益曲线贴在一起。
 
 冻结的慢速书 A / funding / expanding 价差 **没有**改状态机。
 
@@ -263,6 +273,14 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
 | 成本 | VIP0 taker 5bp + 半价差 BTC 0.5bp / ETH 1.0bp + 冲击上限 10bp |
 | 前视 | bar t 的 z/β 只在 bar t+1 open 成交 |
 
+## 一句话对照
+
+| | 训练权益 | 全样本期末 | 手续费 | 价差项 | 强平 |
+|---|---|---|---|---|---|
+| 24 组全体 | {_pct(train_min)} → {_pct(train_max)} | 5x ~{_usd(min(eq5))}–{_usd(max(eq5))}；10x ~{_usd(min(eq10))}–{_usd(max(eq10))} | {_usd(fee_min)}–{_usd(fee_max)} | 全部为负 | 0 |
+
+OOS 百分比是路径依赖：相对训练后剩下的 ~$10–20 再算，不是重新拿 $1000 做样本外。多数组 OOS 只剩 0–3 笔。`spread_w240_z3_x5` 训练“最好”（−97.13%），OOS −26.89%（58 笔）——只是死得慢一点。
+
 ## 训练 / OOS / 近一月（扣费 + funding）
 
 {chr(10).join(blocks)}
@@ -277,7 +295,7 @@ Gate C（预先锁死：扣费后 OOS > 0 且 0 强平）：**{"过" if gate["pa
 
 ## 怎么读这些数字
 
-1 分钟、\\|z\\|≥2、120/240 根窗口会高频穿越。两腿 taker 开平大约 20bp 名义成本；票面 $100×10 = $1000 ETH 名义时，一轮费用相对 $1000 本金是几个 bp 到几十 bp。换手一高，手续费会先吃掉均值回复。这和已经死掉的 1 分钟 10x 残差书是同一类微观结构，不是新的慢因子。
+1 分钟、\\|z\\|≥2、120/240 根窗口会高频穿越（训练段 500–1170 笔）。两腿 taker 开平大约 20bp 名义成本；票面 $100×5/10 时，一轮费用相对 $1000 本金是几十 bp。换手一高，手续费会先吃掉均值回复，价差项也没有把费用赚回来。这和已经死掉的 1 分钟 10x 残差书是同一类微观结构，不是新的慢因子。
 
 ## 图表
 
