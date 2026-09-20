@@ -195,3 +195,30 @@ def test_reconstruct_funding_clamp():
     assert len(rec) >= 1
     assert rec["last_funding_rate"].iloc[-1] == pytest.approx(0.0001, abs=1e-9)
 
+
+def test_invert_signal_flips_side_not_thresholds():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    orig = run_simulator(out, cfg)
+    inv = run_simulator(out, BacktestConfig(**{**cfg.__dict__, "invert_signal": True}))
+    o = orig.trades[(orig.trades["reason"] == "enter") & (orig.trades["leg"] == "eth")].iloc[0]
+    i = inv.trades[(inv.trades["reason"] == "enter") & (inv.trades["leg"] == "eth")].iloc[0]
+    assert o["fill_qty"] * i["fill_qty"] < 0
+    assert int(o["bar_open_ts"]) == int(i["bar_open_ts"])
+

@@ -163,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--equity", type=float, default=STARTING_EQUITY)
     p.add_argument("--fee-bps", type=float, default=TAKER_FEE_BPS)
     p.add_argument("--adv-participation", type=float, default=None, help="max fraction of bar quote volume per leg (default from config)")
+    p.add_argument("--invert", action="store_true", help="flip spread side; keep |z| thresholds")
     p.add_argument("--report-md", default="")
     p.add_argument("--media-dir", default="")
     p.add_argument("--summary-json", default="")
@@ -186,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         leverage=args.leverage,
         taker_fee_bps=args.fee_bps,
         starting_equity=args.equity,
+        invert_signal=bool(args.invert),
         adv_participation=float(args.adv_participation)
         if args.adv_participation is not None
         else BacktestConfig().adv_participation,

@@ -65,3 +65,4 @@ class BacktestConfig:
     impact_k: float = IMPACT_K
     adv_participation: float = ADV_PARTICIPATION
     exec_mode: str = "open"  # open | pessimistic
+    invert_signal: bool = False  # flip spread side; |z| thresholds unchanged
