@@ -1,0 +1,32 @@
+# BTC / ETH USDT-M 1-minute relative-value backtest
+
+Research write-up stays in the project store, not this repo. This package only
+fetches Binance USDⓈ-M history and runs the residual z-score book.
+
+## Data
+
+- Venue: Binance USDⓈ-M (`BTCUSDT`, `ETHUSDT` perps)
+- Source: `https://data.binance.vision` daily kline / mark / index / premium zips
+  (`fapi.binance.com` is geo-blocked in some environments; do not mix another
+  venue's prices into the same spread).
+- Cache: `btc_eth_perp_arb/cache/aligned_1m.parquet`
+
+```bash
+pip install -r btc_eth_perp_arb/requirements.txt
+python -m btc_eth_perp_arb.run --refresh
+python -m btc_eth_perp_arb.run --preset delivery --long-cache --start 2025-10-01 --end 2026-09-18
+python -m btc_eth_perp_arb.eval_entry --compare exit
+python -m btc_eth_perp_arb.eval_forks --fork both
+python -m btc_eth_perp_arb.eval_zgrid --long-cache
+python -m btc_eth_perp_arb.eval_zgrid --bar-minutes 5
+python -m btc_eth_perp_arb.eval_zgrid --bar-minutes 5 --leverages 5
+python -m btc_eth_perp_arb.eval_repair --step F1
+python -m btc_eth_perp_arb.eval_repair --step F2
+python -m btc_eth_perp_arb.eval_donchian
+python -m btc_eth_perp_arb.eval_composite
+python -m btc_eth_perp_arb.eval_leverage
+python -m btc_eth_perp_arb.eval_window_sigma
+python -m btc_eth_perp_arb.eval_leverage_sweep
+python -m btc_eth_perp_arb.eval_bar_clock
+python -m pytest btc_eth_perp_arb/tests -q
+```
