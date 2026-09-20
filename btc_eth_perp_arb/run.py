@@ -7,8 +7,6 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import pandas as pd
-
 from .config import CACHE_DIR, LEVERAGE, STARTING_EQUITY, TAKER_FEE_BPS, VENUE_NAME, BacktestConfig
 from .data import build_aligned_panel, latest_vision_day, load_panel, save_panel
 from .metrics import summarize
@@ -164,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--leverage", type=float, default=LEVERAGE)
     p.add_argument("--equity", type=float, default=STARTING_EQUITY)
     p.add_argument("--fee-bps", type=float, default=TAKER_FEE_BPS)
+    p.add_argument("--adv-participation", type=float, default=None, help="max fraction of bar quote volume per leg (default from config)")
     p.add_argument("--report-md", default="")
     p.add_argument("--media-dir", default="")
     p.add_argument("--summary-json", default="")
@@ -187,6 +186,9 @@ def main(argv: list[str] | None = None) -> int:
         leverage=args.leverage,
         taker_fee_bps=args.fee_bps,
         starting_equity=args.equity,
+        adv_participation=float(args.adv_participation)
+        if args.adv_participation is not None
+        else BacktestConfig().adv_participation,
     )
     panel = add_signals(panel, cfg)
     start_ts = int(datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp() * 1000)

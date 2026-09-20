@@ -115,6 +115,29 @@ def test_signal_trades_next_bar_open():
     assert abs(trade["fill_px"] - open_px) / open_px < 0.005
 
 
+def test_no_entry_inside_stop_band():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 5.0
+    res = run_simulator(out, cfg)
+    assert not (res.bars["event"] == "enter").any()
+
+
 def test_liquidation_on_mark():
     df = _panel(n=400, funding_i=None)
     cfg = BacktestConfig(

@@ -358,9 +358,9 @@ def run_simulator(
                     and gap_run[i] == 0
                     and (i == 0 or gap_run[i - 1] <= GAP_FREEZE_MINUTES)
                 )
-                if can_enter and z_sig >= cfg.entry_z:
+                if can_enter and cfg.entry_z <= z_sig < cfg.stop_z:
                     enter(i, -1, z_sig, beta_sig)
-                elif can_enter and z_sig <= -cfg.entry_z:
+                elif can_enter and -cfg.stop_z < z_sig <= -cfg.entry_z:
                     enter(i, 1, z_sig, beta_sig)
 
         mb = btc_mark[i] if tradable else prev_mark_btc

@@ -1,0 +1,42 @@
+{
+  "venue": "binance_usdtm",
+  "venue_name": "Binance USD\u24c8-M futures",
+  "source": "data.binance.vision",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "interval": "1m",
+  "fetch_start": "2026-08-15",
+  "pnl_start": "2026-08-20",
+  "end": "2026-09-18",
+  "rows": 50400,
+  "complete_rows": 50400,
+  "incomplete_rows": 0,
+  "funding_stats": {
+    "BTCUSDT": {
+      "official_rows": 93,
+      "overlap": 50,
+      "mae": 5.9324525000000004e-06,
+      "max_abs_err": 3.491297916666666e-05
+    },
+    "ETHUSDT": {
+      "official_rows": 93,
+      "overlap": 50,
+      "mae": 7.352012500000008e-06,
+      "max_abs_err": 4.5485562500000045e-05
+    }
+  },
+  "fields": {
+    "last_ohlcv": "daily/klines",
+    "mark_ohlc": "daily/markPriceKlines",
+    "index_close": "daily/indexPriceKlines",
+    "premium": "daily/premiumIndexKlines",
+    "funding_official": "monthly/fundingRate (when published)",
+    "funding_fallback": "reconstructed from 1m premium via Binance clamp formula"
+  },
+  "no_ffill_close": true,
+  "join": "full UTC minute calendar + left join both legs; pair_incomplete=1 if either missing",
+  "parquet": "aligned_1m.parquet",
+  "parquet_sha256": "f8a910070110a9dfab0a1c968492ca01dd9a912fe6fe6eed6f00b69e49741205"
+}

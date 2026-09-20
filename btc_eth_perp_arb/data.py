@@ -488,8 +488,8 @@ def save_panel(panel: pd.DataFrame, manifest: dict, cache_dir: Path | None = Non
     panel.to_parquet(path, index=False)
     man_path = cache_dir / "manifest.json"
     payload = dict(manifest)
-    payload["parquet"] = str(path)
-    payload["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    payload["parquet"] = path.name
+    payload["parquet_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     man_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
