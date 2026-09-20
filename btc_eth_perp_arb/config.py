@@ -91,8 +91,8 @@ class BacktestConfig:
 def delivery_config(**overrides) -> BacktestConfig:
     """A-priori slow RV book.
 
-    Locked defaults are 7d z, 01:00 UTC, 2x. Entry-only research overrides
-    (require_reversion, entry_z) are allowed; do not retune exits/hold here.
+    Locked defaults are 7d z, 01:00 UTC, 2x. Research overrides change one
+    knob at a time (entry_z / require_reversion / exit_z); do not grid OOS.
     """
     kwargs = dict(
         leverage=DELIVERY_LEVERAGE,

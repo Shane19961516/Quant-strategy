@@ -306,6 +306,38 @@ def test_require_reversion_blocks_expanding_allows_shrinking():
     assert (baseline.bars["event"] == "enter").any()
 
 
+def test_exit_z_one_leaves_inside_one_sigma():
+    df = _panel(n=400, funding_i=None)
+    base = dict(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        max_hold_bars=200,
+    )
+    cfg_half = BacktestConfig(**base, exit_z=0.5)
+    cfg_one = BacktestConfig(**base, exit_z=1.0)
+    out = add_signals(df, cfg_half)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.0
+    out.loc[90, "z"] = 0.8
+    half = run_simulator(out, cfg_half)
+    one = run_simulator(out, cfg_one)
+    assert int(half.bars.index[half.bars["event"] == "enter"][0]) == 81
+    assert int(one.bars.index[one.bars["event"] == "enter"][0]) == 81
+    # z=0.8 at bar 90 → tradable at 91: early-exit book flattens, 0.5 book does not.
+    assert one.bars.loc[91, "event"] == "exit"
+    assert half.bars.loc[91, "event"] != "exit"
+    assert abs(float(half.bars.loc[91, "qty_eth"])) > 0
+
+
 def test_higher_entry_z_is_stricter_not_looser():
     df = _panel(n=400, funding_i=None)
     loose = BacktestConfig(

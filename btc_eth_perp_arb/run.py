@@ -172,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         help="entry confirm: same-sign z shrinking vs 1d ago (does not loosen |z|)",
     )
     p.add_argument("--entry-z", type=float, default=None, help="override |z| entry threshold")
+    p.add_argument("--exit-z", type=float, default=None, help="override |z| exit threshold")
     p.add_argument("--report-md", default="")
     p.add_argument("--media-dir", default="")
     p.add_argument("--summary-json", default="")
@@ -206,9 +207,11 @@ def main(argv: list[str] | None = None) -> int:
             kw["require_reversion"] = True
         if args.entry_z is not None:
             kw["entry_z"] = float(args.entry_z)
+        if args.exit_z is not None:
+            kw["exit_z"] = float(args.exit_z)
         cfg = delivery_config(**kw)
     else:
-        cfg = BacktestConfig(
+        kw = dict(
             leverage=LEVERAGE if args.leverage is None else args.leverage,
             taker_fee_bps=args.fee_bps,
             starting_equity=args.equity,
@@ -217,6 +220,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.adv_participation is not None
             else BacktestConfig().adv_participation,
         )
+        if args.require_reversion:
+            kw["require_reversion"] = True
+        if args.entry_z is not None:
+            kw["entry_z"] = float(args.entry_z)
+        if args.exit_z is not None:
+            kw["exit_z"] = float(args.exit_z)
+        cfg = BacktestConfig(**kw)
     panel = add_signals(panel, cfg)
     start_ts = int(datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp() * 1000)
     # If cache was built for a different range, clip end.
