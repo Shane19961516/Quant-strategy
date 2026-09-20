@@ -242,9 +242,11 @@ def breakout_excursions(
                 continue
             if first_72 is None and j > i:
                 prev_c = mark[j - 1]
-                if sig > 0 and np.isfinite(exit_l[j]) and np.isfinite(prev_c) and prev_c < exit_l[j]:
+                prev_el = exit_l[j - 1]
+                prev_eu = exit_u[j - 1]
+                if sig > 0 and np.isfinite(prev_el) and np.isfinite(prev_c) and prev_c < prev_el:
                     first_72 = j
-                elif sig < 0 and np.isfinite(exit_u[j]) and np.isfinite(prev_c) and prev_c > exit_u[j]:
+                elif sig < 0 and np.isfinite(prev_eu) and np.isfinite(prev_c) and prev_c > prev_eu:
                     first_72 = j
                 if first_72 == j:
                     mfe_at_72 = mfe

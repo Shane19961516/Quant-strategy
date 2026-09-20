@@ -861,4 +861,33 @@ def test_donchian_train_excursions_censor_and_mae_mfe():
     assert row["exit_reason"] == "censored_train_end"
 
 
+def test_donchian_half_channel_exit_is_lagged_close_break():
+    from btc_eth_perp_arb.config import DonchianConfig
+    from btc_eth_perp_arb.donchian_exits import (
+        ExitStudySpec,
+        breakout_excursions,
+        prepare_exit_panel,
+    )
+
+    df = _panel(n=400, funding_i=None)
+    cfg = DonchianConfig(window=20, bar_minutes=1, adv_participation=1.0)
+    out = prepare_exit_panel(df, cfg)
+    out["btc_donch_side"] = np.int8(0)
+    out.loc[80, "btc_donch_side"] = np.int8(1)
+    px = float(out.loc[81, "btc_open"])
+    # 3% adverse close — through the 10-bar exit channel, not the ~9.6% liq.
+    out.loc[82:90, "btc_mark_close"] = px * 0.97
+    out.loc[82:90, "btc_mark_low"] = px * 0.969
+    out.loc[82:90, "btc_mark_high"] = px * 0.975
+    spec = ExitStudySpec(
+        train_start_ts=int(out.loc[0, "bar_open_ts"]),
+        train_end_ts=int(out.loc[200, "bar_open_ts"]),
+        mode="independent",
+    )
+    trades = breakout_excursions(out, symbol="BTCUSDT", cfg=cfg, spec=spec)
+    assert len(trades) == 1
+    assert bool(trades.iloc[0]["hit_72_exit"])
+    assert float(trades.iloc[0]["mae_at_72_price_pct"]) < 0.08
+
+
 
