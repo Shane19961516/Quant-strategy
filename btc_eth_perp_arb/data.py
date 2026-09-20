@@ -600,3 +600,53 @@ def load_panel(
             manifest = json.loads(man_path.read_text(encoding="utf-8"))
             break
     return panel, manifest
+
+
+def resample_panel(panel: pd.DataFrame, minutes: int = 5) -> pd.DataFrame:
+    """UTC-aligned OHLC resample of the 1m panel. No close ffill.
+
+    A bucket is incomplete if any 1m child is incomplete or the bucket has
+    fewer than ``minutes`` child bars. Funding flags OR onto the bucket that
+    contains the settlement minute; the rate is the settlement print (not
+    averaged). ``gap_run`` is the max 1m hole length in the bucket so the
+    existing 2-minute freeze still means two minutes, not two bars.
+    """
+    minutes = int(minutes)
+    if minutes <= 1:
+        return panel.copy().reset_index(drop=True)
+    bar_ms = minutes * 60_000
+    df = panel.copy()
+    ts = df["bar_open_ts"].astype("int64")
+    df["_bucket"] = (ts // bar_ms) * bar_ms
+    g = df.groupby("_bucket", sort=True)
+
+    out = pd.DataFrame({"bar_open_ts": g.size().index.astype("int64")})
+    out["bar_close_ts"] = out["bar_open_ts"] + bar_ms - 1
+    out["n_1m"] = g.size().to_numpy()
+
+    for prefix in ("btc", "eth"):
+        out[f"{prefix}_open"] = g[f"{prefix}_open"].first().to_numpy()
+        out[f"{prefix}_high"] = g[f"{prefix}_high"].max().to_numpy()
+        out[f"{prefix}_low"] = g[f"{prefix}_low"].min().to_numpy()
+        out[f"{prefix}_close"] = g[f"{prefix}_close"].last().to_numpy()
+        out[f"{prefix}_volume"] = g[f"{prefix}_volume"].sum().to_numpy()
+        out[f"{prefix}_quote_volume"] = g[f"{prefix}_quote_volume"].sum().to_numpy()
+        out[f"{prefix}_n_trades"] = g[f"{prefix}_n_trades"].sum().to_numpy()
+        out[f"{prefix}_mark_open"] = g[f"{prefix}_mark_open"].first().to_numpy()
+        out[f"{prefix}_mark_high"] = g[f"{prefix}_mark_high"].max().to_numpy()
+        out[f"{prefix}_mark_low"] = g[f"{prefix}_mark_low"].min().to_numpy()
+        out[f"{prefix}_mark_close"] = g[f"{prefix}_mark_close"].last().to_numpy()
+        out[f"{prefix}_index_close"] = g[f"{prefix}_index_close"].last().to_numpy()
+        if f"{prefix}_premium" in df.columns:
+            out[f"{prefix}_premium"] = g[f"{prefix}_premium"].last().to_numpy()
+        out[f"{prefix}_is_funding"] = g[f"{prefix}_is_funding"].any().to_numpy()
+        out[f"{prefix}_funding_rate"] = g[f"{prefix}_funding_rate"].max().to_numpy()
+        out[f"{prefix}_next_funding_ts"] = g[f"{prefix}_next_funding_ts"].last().to_numpy()
+
+    incomplete = (g["pair_incomplete"].max() > 0).to_numpy() | (out["n_1m"].to_numpy() < minutes)
+    out["pair_incomplete"] = incomplete.astype("int8")
+    out["gap_run"] = g["gap_run"].max().to_numpy(dtype="int32")
+    out["data_gap"] = (out["gap_run"] > 2).astype("int8")
+    out["exchange_ts"] = out["bar_open_ts"]
+    out["bar_open"] = pd.to_datetime(out["bar_open_ts"], unit="ms", utc=True)
+    return out.reset_index(drop=True)

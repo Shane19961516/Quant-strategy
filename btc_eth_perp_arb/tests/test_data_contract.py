@@ -545,3 +545,48 @@ def test_default_min_leg_notional_still_blocks_tiny_tickets():
     assert not (res.bars["event"] == "enter").any()
 
 
+def test_resample_5m_ohlc_funding_and_no_ffill():
+    from btc_eth_perp_arb.data import resample_panel
+
+    df = _panel(n=15, funding_i=0, gap_at=7)
+    t0 = 1_704_067_200_000  # 2024-01-01 00:00 UTC, 5m aligned
+    df["bar_open_ts"] = t0 + np.arange(15, dtype=np.int64) * 60_000
+    df["bar_close_ts"] = df["bar_open_ts"] + 59_999
+    df["bar_open"] = pd.to_datetime(df["bar_open_ts"], unit="ms", utc=True)
+    df.loc[0, "btc_is_funding"] = True
+    df.loc[0, "btc_funding_rate"] = 0.0001
+    df.loc[0, "eth_is_funding"] = True
+    df.loc[0, "eth_funding_rate"] = 0.0002
+    out = resample_panel(df, 5)
+    assert len(out) == 3
+    assert int(out.iloc[0]["bar_open_ts"]) == t0
+    assert float(out.iloc[0]["btc_open"]) == pytest.approx(float(df.iloc[0]["btc_open"]))
+    assert float(out.iloc[0]["btc_close"]) == pytest.approx(float(df.iloc[4]["btc_close"]))
+    assert float(out.iloc[0]["btc_high"]) == pytest.approx(float(df.iloc[0:5]["btc_high"].max()))
+    assert float(out.iloc[0]["btc_quote_volume"]) == pytest.approx(float(df.iloc[0:5]["btc_quote_volume"].sum()))
+    assert bool(out.iloc[0]["btc_is_funding"]) is True
+    assert float(out.iloc[0]["btc_funding_rate"]) == pytest.approx(0.0001)
+    assert int(out.iloc[0]["pair_incomplete"]) == 0
+    # gap at 1m index 7 lives in the second 5m bucket; do not ffill ETH.
+    assert int(out.iloc[1]["pair_incomplete"]) == 1
+    assert pd.isna(df.loc[7, "eth_close"])
+    ident = resample_panel(df, 1)
+    assert len(ident) == 15
+
+
+def test_5m_z_lag_is_one_calendar_day_not_1440_bars():
+    from btc_eth_perp_arb.data import resample_panel
+
+    df = _panel(n=2000, funding_i=None)
+    t0 = 1_704_067_200_000
+    df["bar_open_ts"] = t0 + np.arange(2000, dtype=np.int64) * 60_000
+    df["bar_close_ts"] = df["bar_open_ts"] + 59_999
+    five = resample_panel(df, 5)
+    cfg = BacktestConfig(z_window=50, beta_window=30, corr_window=20, corr_min=-1.0)
+    out = add_signals(five, cfg)
+    # 1 day / 5m = 288 bars.
+    both = out["z_residual"].dropna()
+    i = int(both.index[300])
+    assert float(out.loc[i, "z_lag_1d"]) == pytest.approx(float(out.loc[i - 288, "z_residual"]))
+
+

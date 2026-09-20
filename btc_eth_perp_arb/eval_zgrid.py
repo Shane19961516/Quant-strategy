@@ -22,7 +22,7 @@ from .config import (
     ZGRID_WINDOWS,
     zgrid_config,
 )
-from .data import load_panel
+from .data import load_panel, resample_panel
 from .eval_entry import (
     FULL_END,
     FULL_START,
@@ -67,7 +67,12 @@ def all_combos() -> list[tuple[str, int, float, float]]:
     ]
 
 
-def evaluate(panel: pd.DataFrame) -> dict:
+def evaluate(panel: pd.DataFrame, bar_minutes: int = 1) -> dict:
+    bar_minutes = int(bar_minutes)
+    if bar_minutes > 1:
+        print(f"resample 1m → {bar_minutes}m rows={len(panel)}", flush=True)
+        panel = resample_panel(panel, bar_minutes)
+        print(f"resampled rows={len(panel)} incomplete={int((panel['pair_incomplete']==1).sum())}", flush=True)
     combos = all_combos()
     signaled: dict[tuple[str, int], pd.DataFrame] = {}
     for scheme in SCHEMES:
@@ -78,9 +83,10 @@ def evaluate(panel: pd.DataFrame) -> dict:
 
     out: dict = {
         "note": (
-            "User-declared 24-combo 1m grid. Train ranks; OOS/last-month score only. "
+            f"User-declared 24-combo {bar_minutes}m grid. Train ranks; OOS/last-month score only. "
             "Not a delivery book. Last month is never used to pick."
         ),
+        "bar_minutes": bar_minutes,
         "account": {
             "starting_equity": ZGRID_EQUITY,
             "ticket_usd": ZGRID_TICKET_USD,
@@ -88,6 +94,11 @@ def evaluate(panel: pd.DataFrame) -> dict:
             "btc_notional": "|β| × ETH notional (β window = z window)",
             "stop": "none (no stop_z, no time stop, corr gate off)",
             "exit_z": 0.5,
+            "bar_minutes": bar_minutes,
+            "window_clock": {
+                str(w): f"{w * bar_minutes} minutes"
+                for w in ZGRID_WINDOWS
+            },
         },
         "windows": {k: [a.isoformat(), b.isoformat()] for k, (a, b) in WINDOWS.items()},
         "variants": {},
@@ -215,6 +226,7 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
             }
         )
     df = pd.DataFrame(rows)
+    bar_m = int(eval_out.get("bar_minutes", 1))
 
     def table(subset: pd.DataFrame) -> str:
         lines = [
@@ -233,7 +245,10 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
     for scheme in SCHEMES:
         for win in ZGRID_WINDOWS:
             sub = df[(df["scheme"] == scheme) & (df["window"] == win)].copy()
-            blocks.append(f"### {SCHEME_LABEL[scheme]}，窗口 {win} 根 1m bar\n\n{table(sub)}")
+            blocks.append(
+                f"### {SCHEME_LABEL[scheme]}，窗口 {win} 根 {bar_m}m bar"
+                f"（{win * bar_m} 分钟）\n\n{table(sub)}"
+            )
 
     chosen = eval_out["chosen_on_train"]
     gate = eval_out["gate_c"]
@@ -246,12 +261,45 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
     fee_max = max(r["fees"] for r in rows)
     eq5 = [r["end_eq"] for r in rows if r["lev"] == 5]
     eq10 = [r["end_eq"] for r in rows if r["lev"] == 10]
+    spread_min = min(r["spread"] for r in rows)
+    spread_max = max(r["spread"] for r in rows)
+    spread_txt = "全部为负" if spread_max < 0 else f"{_usd(spread_min)} → {_usd(spread_max)}"
+    last_n = [r["last_n"] for r in rows]
+    last_all_flat = all(n == 0 for n in last_n)
+    train_n_min = min(r["train_n"] for r in rows)
+    train_n_max = max(r["train_n"] for r in rows)
+    chosen_oos = eval_out["variants"][chosen]["windows"]["oos"]["equity_return"]
+    chosen_oos_liq = eval_out["variants"][chosen]["windows"]["oos"]["liquidation_events"]
+    chosen_train = eval_out["variants"][chosen]["windows"]["train"]["equity_return"]
+    liq_full = max(r["liq"] for r in rows)
 
-    return f"""# 1 分钟价差 / 比值 z 网格（$1000，票面 $100×杠杆）
+    if train_max < -0.5:
+        lead = (
+            f"**24 组训练段均大幅亏损（{_pct(train_min)} → {_pct(train_max)}）。** "
+            f"5x 期末 {_usd(min(eq5))}–{_usd(max(eq5))}，10x {_usd(min(eq10))}–{_usd(max(eq10))}。"
+            f"手续费 {_usd(fee_min)}–{_usd(fee_max)}。"
+        )
+    elif train_max < 0:
+        lead = f"**24 组训练段全部为负**（{_pct(train_min)} → {_pct(train_max)}）。"
+    else:
+        lead = (
+            f"训练段权益 {_pct(train_min)} → {_pct(train_max)}。"
+            f"训练最优 `{chosen}`（{_pct(chosen_train)}）。"
+        )
+    last_note = (
+        "近一月 24 组都是 0 笔；这是路径依赖切片，**不**拿来选 x / 窗口 / 杠杆。"
+        if last_all_flat
+        else "近一月只评分，**不**拿来选 x / 窗口 / 杠杆。"
+    )
+    oos_path = (
+        "OOS 百分比是路径依赖（相对训练后剩下的权益再算），不是重新拿 $1000 做样本外。"
+    )
 
-**24 组全部训练段亏完。** 5x 期末约 $19–21，10x 约 $9。手续费 {_usd(fee_min)}–{_usd(fee_max)} 先吃掉本金；价差/滑点项也全是负的。强平 0 — 不是爆仓，是换手把账户磨死。Gate C **未过**。近一月 24 组都是 0 笔 / 0%，因为训练结束时账户只剩几十美金，BTC 0.001 张已经下不进去；**近一月不参与选书。**
+    return f"""# {bar_m} 分钟价差 / 比值 z 网格（$1000，票面 $100×杠杆）
 
-这是用户指定的 24 组 1 分钟网格，**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。
+{lead} Gate C **{"过" if gate["passed"] else "未过"}**。{last_note}
+
+这是用户指定的 24 组 **{bar_m} 分钟**网格（120/240 根 bar = {120 * bar_m}/{240 * bar_m} 分钟滚动窗），**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。
 
 方案 2（BTC/ETH 比值 + invert）和方案 1（log 价差）几乎是同一本书：`z(BTC/ETH) ≈ −z(log ETH/BTC)`，对侧之后权益曲线贴在一起。
 
@@ -261,13 +309,13 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
 
 | 项 | 取值 |
 |---|---|
-| 数据 | Binance USDⓈ-M BTCUSDT + ETHUSDT 永续，1 分钟 last/mark，双腿 inner 对齐，无 close ffill |
+| 数据 | Binance USDⓈ-M BTCUSDT + ETHUSDT 永续，1 分钟 last/mark 对齐后重采样为 {bar_m}m OHLC，无 close ffill |
 | 本金 | {ZGRID_EQUITY:.0f} USDT |
 | 下单 | ETH 名义 = {ZGRID_TICKET_USD:.0f} × 杠杆（5x→500，10x→1000）；BTC 名义 = \\|β\\| × ETH |
 | 对冲 | 与 z 同窗口的滚动 β（`shift(1)`，入场冻结） |
-| 方案 1 | `z = (log(ETH/BTC) − μ) / σ`，μ/σ 用过去 120 或 240 根 bar |
+| 方案 1 | `z = (log(ETH/BTC) − μ) / σ`，μ/σ 用过去 120 或 240 根 {bar_m}m bar |
 | 方案 2 | `z = (BTC/ETH − μ) / σ`，同样窗口；高比值做空 BTC / 做多 ETH（`invert_signal`） |
-| 开仓 | \\|z\\| ≥ x，x ∈ {{2, 2.5, 3}}；每分钟可开；无 01:00 门、无冷却、无 30bp 门槛 |
+| 开仓 | \\|z\\| ≥ x，x ∈ {{2, 2.5, 3}}；每根 {bar_m}m bar 可开；无 01:00 门、无冷却、无 30bp 门槛 |
 | 平仓 | \\|z\\| ≤ 0.5（回归止盈，**不止损**） |
 | 杠杆 | 5x 与 10x 交叉保证金；维持保证金 0.4% |
 | 成本 | VIP0 taker 5bp + 半价差 BTC 0.5bp / ETH 1.0bp + 冲击上限 10bp |
@@ -277,9 +325,9 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
 
 | | 训练权益 | 全样本期末 | 手续费 | 价差项 | 强平 |
 |---|---|---|---|---|---|
-| 24 组全体 | {_pct(train_min)} → {_pct(train_max)} | 5x ~{_usd(min(eq5))}–{_usd(max(eq5))}；10x ~{_usd(min(eq10))}–{_usd(max(eq10))} | {_usd(fee_min)}–{_usd(fee_max)} | 全部为负 | 0 |
+| 24 组全体 | {_pct(train_min)} → {_pct(train_max)} | 5x ~{_usd(min(eq5))}–{_usd(max(eq5))}；10x ~{_usd(min(eq10))}–{_usd(max(eq10))} | {_usd(fee_min)}–{_usd(fee_max)} | {spread_txt} | {liq_full} |
 
-OOS 百分比是路径依赖：相对训练后剩下的 ~$10–20 再算，不是重新拿 $1000 做样本外。多数组 OOS 只剩 0–3 笔。`spread_w240_z3_x5` 训练“最好”（−97.13%），OOS −26.89%（58 笔）——只是死得慢一点。
+{oos_path} 训练最优 `{chosen}`（{_pct(chosen_train)}），其 OOS {_pct(chosen_oos)}。
 
 ## 训练 / OOS / 近一月（扣费 + funding）
 
@@ -287,7 +335,7 @@ OOS 百分比是路径依赖：相对训练后剩下的 ~$10–20 再算，不�
 
 ## 训练排序与 Gate C
 
-训练段权益收益最高：`{chosen}`。该组 OOS = {_pct(eval_out["variants"][chosen]["windows"]["oos"]["equity_return"])}，OOS 强平 {eval_out["variants"][chosen]["windows"]["oos"]["liquidation_events"]}。
+训练段权益收益最高：`{chosen}`。该组 OOS = {_pct(chosen_oos)}，OOS 强平 {chosen_oos_liq}。
 
 Gate C（预先锁死：扣费后 OOS > 0 且 0 强平）：**{"过" if gate["passed"] else "未过"}**。OOS 为正的组：{oos_pos if oos_pos else "无"}。全样本出现强平的组：{liq_any if liq_any else "无"}。
 
@@ -295,7 +343,7 @@ Gate C（预先锁死：扣费后 OOS > 0 且 0 强平）：**{"过" if gate["pa
 
 ## 怎么读这些数字
 
-1 分钟、\\|z\\|≥2、120/240 根窗口会高频穿越（训练段 500–1170 笔）。两腿 taker 开平大约 20bp 名义成本；票面 $100×5/10 时，一轮费用相对 $1000 本金是几十 bp。换手一高，手续费会先吃掉均值回复，价差项也没有把费用赚回来。这和已经死掉的 1 分钟 10x 残差书是同一类微观结构，不是新的慢因子。
+{bar_m} 分钟 bar、\\|z\\|≥2、120/240 根窗口（时钟 {120 * bar_m}/{240 * bar_m} 分钟）。训练段成交 {train_n_min}–{train_n_max} 笔。两腿 taker 开平大约 20bp 名义成本；票面 $100×5/10 时，一轮费用相对 $1000 本金是几十 bp。换手仍然是第一约束，除非价差项明显盖过手续费。
 
 ## 图表
 
@@ -304,7 +352,7 @@ Gate C（预先锁死：扣费后 OOS > 0 且 0 强平）：**{"过" if gate["pa
 ## 复现
 
 ```bash
-python -m btc_eth_perp_arb.eval_zgrid --long-cache
+python -m btc_eth_perp_arb.eval_zgrid --bar-minutes {bar_m}
 python -m pytest btc_eth_perp_arb/tests -q
 ```
 """
@@ -327,6 +375,8 @@ def _group_key(entry_z: float, leverage: float) -> str:
 def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
     media.mkdir(parents=True, exist_ok=True)
     bars = eval_out["bars_by_name"]
+    bar_m = int(eval_out.get("bar_minutes", 1))
+    prefix = "zgrid" if bar_m == 1 else f"zgrid{bar_m}m"
     paths: dict[str, str] = {}
 
     for scheme in SCHEMES:
@@ -339,11 +389,11 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
                     key = _group_key(entry_z, lev)
                     labeled[key] = _clip(bars[name], FULL_START, FULL_END)
                     colors[key] = GROUP_COLORS[key]
-            p = media / f"zgrid-{scheme}-w{win}-equity.png"
+            p = media / f"{prefix}-{scheme}-w{win}-equity.png"
             plot_named_equity(
                 labeled,
                 p,
-                f"{SCHEME_LABEL[scheme]}  window={win}  $1000 / $100×lev (after costs)",
+                f"{SCHEME_LABEL[scheme]}  {bar_m}m window={win} bars  $1000 / $100×lev (after costs)",
                 colors=colors,
             )
             paths[f"{scheme}_w{win}"] = str(p)
@@ -355,11 +405,11 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
                 for z in ZGRID_ENTRY_ZS
                 for lev in ZGRID_LEVERAGES
             }
-            p = media / f"zgrid-{scheme}-w{win}-oos.png"
+            p = media / f"{prefix}-{scheme}-w{win}-oos.png"
             plot_named_equity(
                 oos_map,
                 p,
-                f"OOS {SCHEME_LABEL[scheme]} window={win} (locked, not searched)",
+                f"OOS {bar_m}m {SCHEME_LABEL[scheme]} window={win} (locked, not searched)",
                 colors=GROUP_COLORS,
             )
             paths[f"{scheme}_w{win}_oos"] = str(p)
@@ -383,10 +433,10 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
     ax.set_yticks(list(y))
     ax.set_yticklabels(names, fontsize=7)
     ax.set_xlabel("Equity return (%)")
-    ax.set_title("1m z-grid train vs OOS (after costs) — last month not shown")
+    ax.set_title(f"{bar_m}m z-grid train vs OOS (after costs) — last month not shown")
     ax.legend(loc="best")
     fig.tight_layout()
-    p = media / "zgrid-train-vs-oos.png"
+    p = media / f"{prefix}-train-vs-oos.png"
     fig.savefig(p, dpi=140)
     plt.close(fig)
     paths["train_vs_oos"] = str(p)
@@ -403,12 +453,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--summary-json", default="")
     p.add_argument("--report-md", default="")
     p.add_argument("--long-cache", action="store_true", default=True)
+    p.add_argument("--bar-minutes", type=int, default=1, help="resample 1m panel to this bar size (1 or 5)")
     args = p.parse_args(argv)
 
     panel, _manifest = load_panel(name=CACHE_LONG)
     end_ts = _end_ts(FULL_END)
     panel = panel[panel["bar_open_ts"] <= end_ts].reset_index(drop=True)
-    eval_out = evaluate(panel)
+    eval_out = evaluate(panel, bar_minutes=args.bar_minutes)
     paths: dict[str, str] = {}
     if args.media_dir:
         paths = write_charts(eval_out, Path(args.media_dir))

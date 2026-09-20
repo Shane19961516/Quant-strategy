@@ -50,7 +50,12 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     sd = df["log_spread"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
     df["z_residual"] = (df["log_spread"] - mu) / sd.replace(0.0, np.nan)
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
-    df["z_lag_1d"] = df["z_residual"].shift(1440)
+    dt_ms = df["bar_open_ts"].diff().median()
+    if pd.notna(dt_ms) and float(dt_ms) > 0:
+        lag_1d = max(1, int(round(86_400_000 / float(dt_ms))))
+    else:
+        lag_1d = 1440
+    df["z_lag_1d"] = df["z_residual"].shift(lag_1d)
 
     df["px_ratio"] = btc_px / eth_px.replace(0.0, np.nan)
     mu_r = df["px_ratio"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).mean()
