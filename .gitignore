@@ -8,6 +8,8 @@ btc_eth_perp_arb/cache/raw/
 btc_eth_perp_arb/cache/*.tmp
 btc_eth_perp_arb/cache/aligned_1m_long.parquet
 btc_eth_perp_arb/cache/aligned_1m_long.manifest.json
+btc_eth_perp_arb/cache/aligned_1m_2024.parquet
+btc_eth_perp_arb/cache/aligned_1m_2024.manifest.json
 
 # C extensions
 *.so
