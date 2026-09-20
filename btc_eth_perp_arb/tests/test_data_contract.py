@@ -421,3 +421,23 @@ def test_last_settled_rate_lags_one_bar():
     assert float(got.iloc[3]) == pytest.approx(0.0004)
 
 
+def test_raw_spread_is_not_the_7d_residual():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        signal_mode="raw_spread",
+        raw_spread_min_periods=80,
+        corr_min=0.0,
+    )
+    out = add_signals(df, cfg)
+    both = out[["z", "z_residual", "z_raw"]].dropna()
+    assert (both["z"] - both["z_raw"]).abs().max() < 1e-12
+    assert (both["z"] - both["z_residual"]).abs().max() > 1e-6
+    s = out["log_spread"]
+    mu = s.shift(1).expanding(min_periods=80).mean()
+    sd = s.shift(1).expanding(min_periods=80).std(ddof=0)
+    assert float(out.loc[200, "z_raw"]) == pytest.approx(float((s.iloc[200] - mu.iloc[200]) / sd.iloc[200]))
+
+

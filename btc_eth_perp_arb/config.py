@@ -86,7 +86,8 @@ class BacktestConfig:
     decision_stride: int = 1
     entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
     require_reversion: bool = False  # extra confirm: |z| shrinking vs 1d ago, same sign
-    signal_mode: str = "residual"  # residual | funding_carry
+    signal_mode: str = "residual"  # residual | funding_carry | raw_spread
+    raw_spread_min_periods: int = 30 * 1440  # expanding mean of log(ETH/BTC)
 
 
 # 8h ETH−BTC funding carry (Fork 2). Scale: 1bp of last-settled (ETH−BTC)
@@ -94,6 +95,9 @@ class BacktestConfig:
 # Cost hurdle is off: the edge is carry, not residual bp.
 FUNDING_BP_SCALE = 1e4
 
+# Raw log-spread vs expanding long-run mean (not a 7d window).
+# min_periods 30d so z is “extreme vs history,” not a local residual.
+RAW_SPREAD_MIN_PERIODS = 30 * 1440
 
 
 def delivery_config(**overrides) -> BacktestConfig:
@@ -119,6 +123,7 @@ def delivery_config(**overrides) -> BacktestConfig:
         adv_participation=DELIVERY_ADV,
         taker_fee_bps=TAKER_FEE_BPS,
         starting_equity=STARTING_EQUITY,
+        raw_spread_min_periods=RAW_SPREAD_MIN_PERIODS,
     )
     kwargs.update(overrides)
     return BacktestConfig(**kwargs)
@@ -132,5 +137,14 @@ def funding_carry_config(**overrides) -> BacktestConfig:
     hurdle is off so this is not a merged factor.
     """
     return delivery_config(signal_mode="funding_carry", cost_hurdle_bps=0.0, **overrides)
+
+
+def raw_spread_config(**overrides) -> BacktestConfig:
+    """Slow 2x shell on the raw log(ETH/BTC) vs an expanding long-run mean.
+
+    Not the 7d residual z. Entry |z|∈[2,4) is 2–4 expanding σ of the raw
+    spread; 30bp hurdle is |spread − expanding μ|. Same 01:00 UTC / 2x book.
+    """
+    return delivery_config(signal_mode="raw_spread", **overrides)
 
 

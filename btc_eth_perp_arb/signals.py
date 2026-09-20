@@ -52,6 +52,13 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
     df["z_lag_1d"] = df["z_residual"].shift(1440)
 
+    s_hist = df["log_spread"].shift(1)
+    min_p = int(cfg.raw_spread_min_periods)
+    mu_exp = s_hist.expanding(min_periods=min_p).mean()
+    sd_exp = s_hist.expanding(min_periods=min_p).std(ddof=0)
+    df["z_raw"] = (df["log_spread"] - mu_exp) / sd_exp.replace(0.0, np.nan)
+    df["raw_dev_bps"] = (df["log_spread"] - mu_exp) * 1e4
+
     df["corr"] = (
         r_eth.shift(1)
         .rolling(cfg.corr_window, min_periods=cfg.corr_window)
@@ -66,6 +73,9 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     if cfg.signal_mode == "funding_carry":
         df["z"] = df["z_funding"]
         df["spread_dev_bps"] = np.nan
+    elif cfg.signal_mode == "raw_spread":
+        df["z"] = df["z_raw"]
+        df["spread_dev_bps"] = df["raw_dev_bps"]
     else:
         df["z"] = df["z_residual"]
 
@@ -74,9 +84,11 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
         "z",
         "z_residual",
         "z_funding",
+        "z_raw",
         "corr",
         "log_spread",
         "spread_dev_bps",
+        "raw_dev_bps",
         "z_lag_1d",
         "fund_diff",
     ]
