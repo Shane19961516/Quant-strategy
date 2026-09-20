@@ -76,7 +76,10 @@ def rank_ic_daily(df: pd.DataFrame, signal: str, start: date, end: date, horizon
     for h in horizons:
         fwd = daily["log_spread"].shift(-h) - daily["log_spread"]
         pair = pd.DataFrame({"x": daily[signal], "y": fwd}).dropna()
-        ic = float(pair["x"].corr(pair["y"], method="spearman")) if len(pair) >= 20 else float("nan")
+        if len(pair) < 20:
+            ic = float("nan")
+        else:
+            ic = float(pair["x"].rank().corr(pair["y"].rank()))
         out[f"ic_{h}d"] = ic
         out[f"n_{h}d"] = int(len(pair))
     return out
