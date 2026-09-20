@@ -40,11 +40,12 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     sd = df["log_spread"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
     df["z"] = (df["log_spread"] - mu) / sd.replace(0.0, np.nan)
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
+    df["z_lag_1d"] = df["z"].shift(1440)
 
     df["corr"] = (
         r_eth.shift(1)
         .rolling(cfg.corr_window, min_periods=cfg.corr_window)
         .corr(r_btc.shift(1))
     )
-    df.loc[~complete, ["beta", "z", "corr", "log_spread", "spread_dev_bps"]] = np.nan
+    df.loc[~complete, ["beta", "z", "corr", "log_spread", "spread_dev_bps", "z_lag_1d"]] = np.nan
     return df

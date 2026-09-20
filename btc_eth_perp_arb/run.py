@@ -166,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--invert", action="store_true", help="flip spread side; keep |z| thresholds")
     p.add_argument("--preset", choices=["default", "delivery"], default="default")
     p.add_argument("--long-cache", action="store_true", help="use aligned_1m_long.parquet if present")
+    p.add_argument(
+        "--require-reversion",
+        action="store_true",
+        help="entry confirm: same-sign z shrinking vs 1d ago (does not loosen |z|)",
+    )
+    p.add_argument("--entry-z", type=float, default=None, help="override |z| entry threshold")
     p.add_argument("--report-md", default="")
     p.add_argument("--media-dir", default="")
     p.add_argument("--summary-json", default="")
@@ -196,6 +202,10 @@ def main(argv: list[str] | None = None) -> int:
             kw["leverage"] = args.leverage
         if args.adv_participation is not None:
             kw["adv_participation"] = float(args.adv_participation)
+        if args.require_reversion:
+            kw["require_reversion"] = True
+        if args.entry_z is not None:
+            kw["entry_z"] = float(args.entry_z)
         cfg = delivery_config(**kw)
     else:
         cfg = BacktestConfig(

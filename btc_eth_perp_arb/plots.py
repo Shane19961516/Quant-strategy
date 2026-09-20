@@ -69,6 +69,29 @@ def plot_z_and_pos(window: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def plot_named_equity(
+    series: dict[str, pd.DataFrame],
+    path: Path,
+    title: str,
+    colors: dict[str, str] | None = None,
+) -> None:
+    """Overlay several named equity paths (entry-rule comparison)."""
+    _style()
+    fig, ax = plt.subplots(figsize=(10, 4.4))
+    default = ["#1f4e79", "#2ca02c", "#c45911", "#9467bd", "#7f7f7f"]
+    for i, (name, frame) in enumerate(series.items()):
+        color = (colors or {}).get(name, default[i % len(default)])
+        ax.plot(frame["bar_open"], frame["equity"], color=color, lw=1.2, label=name)
+    ax.set_title(title)
+    ax.set_ylabel("Equity (USDT)")
+    ax.set_xlabel("UTC")
+    ax.legend(loc="best")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
 def plot_equity_overlay(
     original: pd.DataFrame,
     inverted: pd.DataFrame,

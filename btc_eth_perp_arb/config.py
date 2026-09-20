@@ -85,10 +85,15 @@ class BacktestConfig:
     cost_hurdle_bps: float = 0.0
     decision_stride: int = 1
     entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
+    require_reversion: bool = False  # extra confirm: |z| shrinking vs 1d ago, same sign
 
 
 def delivery_config(**overrides) -> BacktestConfig:
-    """A-priori slow RV book. Overrides are for leverage/invert only in reports."""
+    """A-priori slow RV book.
+
+    Locked defaults are 7d z, 01:00 UTC, 2x. Entry-only research overrides
+    (require_reversion, entry_z) are allowed; do not retune exits/hold here.
+    """
     kwargs = dict(
         leverage=DELIVERY_LEVERAGE,
         z_window=DELIVERY_Z_WINDOW,

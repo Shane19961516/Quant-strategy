@@ -38,6 +38,19 @@ def _impact_bps(order_notional: float, quote_volume: float) -> float:
     return float(min(IMPACT_CAP_BPS, frac * 1e4))
 
 
+def reversion_confirmed(z_sig: float, z_lag: float) -> bool:
+    """Same-sign dislocation that is already shrinking vs 1d-ago z.
+
+    This is a confirmation filter, not a looser |z| band. Expanding moves
+    (including a fresh cross of the entry threshold) are blocked.
+    """
+    if not (np.isfinite(z_sig) and np.isfinite(z_lag)):
+        return False
+    if z_sig * z_lag <= 0:
+        return False
+    return abs(float(z_sig)) < abs(float(z_lag))
+
+
 def _apply_fill(
     qty: float, entry: float, fill_qty: float, fill_px: float, cash: float, fee_bps: float
 ) -> tuple[float, float, float, float, float]:
@@ -95,6 +108,10 @@ def run_simulator(
         spread_dev = df["spread_dev_bps"].to_numpy(dtype=float)
     else:
         spread_dev = np.full(n, np.nan)
+    if "z_lag_1d" in df.columns:
+        z_lag_1d = df["z_lag_1d"].to_numpy(dtype=float)
+    else:
+        z_lag_1d = np.full(n, np.nan)
     incomplete = df["pair_incomplete"].to_numpy(dtype=np.int8)
     gap_run = df["gap_run"].to_numpy(dtype=np.int32)
     btc_fund = df["btc_funding_rate"].to_numpy(dtype=float)
@@ -330,6 +347,7 @@ def run_simulator(
         beta_sig = beta[i - 1] if i > 0 else np.nan
         corr_sig = corr[i - 1] if i > 0 else np.nan
         dev_sig = spread_dev[i - 1] if i > 0 else np.nan
+        z_lag_sig = z_lag_1d[i - 1] if i > 0 else np.nan
         in_pos = abs(qty_btc) > 0 or abs(qty_eth) > 0
 
         if tradable:
@@ -365,6 +383,7 @@ def run_simulator(
                 hurdle_ok = cfg.cost_hurdle_bps <= 0 or (
                     np.isfinite(dev_sig) and abs(float(dev_sig)) >= float(cfg.cost_hurdle_bps)
                 )
+                confirm_ok = (not cfg.require_reversion) or reversion_confirmed(z_sig, z_lag_sig)
                 can_enter = (
                     in_window
                     and np.isfinite(z_sig)
@@ -377,6 +396,7 @@ def run_simulator(
                     and stride_ok
                     and cool_ok
                     and hurdle_ok
+                    and confirm_ok
                 )
                 side_sign = -1 if cfg.invert_signal else 1
                 if can_enter and cfg.entry_z <= z_sig < cfg.stop_z:

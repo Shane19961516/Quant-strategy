@@ -9,7 +9,7 @@ import pytest
 from btc_eth_perp_arb.config import BacktestConfig
 from btc_eth_perp_arb.data import reconstruct_funding_from_premium
 from btc_eth_perp_arb.signals import add_signals
-from btc_eth_perp_arb.simulator import run_simulator
+from btc_eth_perp_arb.simulator import reversion_confirmed, run_simulator
 
 
 def _panel(n: int = 2000, gap_at: int | None = None, funding_i: int | None = 1800) -> pd.DataFrame:
@@ -196,6 +196,14 @@ def test_reconstruct_funding_clamp():
     assert rec["last_funding_rate"].iloc[-1] == pytest.approx(0.0001, abs=1e-9)
 
 
+def test_reversion_confirmed_helper():
+    assert reversion_confirmed(2.4, 3.2) is True
+    assert reversion_confirmed(-2.4, -3.2) is True
+    assert reversion_confirmed(3.0, 2.2) is False  # expanding
+    assert reversion_confirmed(2.4, -3.2) is False  # sign flip
+    assert reversion_confirmed(2.4, float("nan")) is False
+
+
 def test_invert_signal_flips_side_not_thresholds():
     df = _panel(n=400, funding_i=None)
     cfg = BacktestConfig(
@@ -249,6 +257,79 @@ def test_cost_hurdle_blocks_small_dislocation():
     out["spread_dev_bps"] = 80.0
     res2 = run_simulator(out, cfg)
     assert (res2.bars["event"] == "enter").any()
+
+
+def test_require_reversion_blocks_expanding_allows_shrinking():
+    df = _panel(n=400, funding_i=None)
+    cfg = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        require_reversion=True,
+    )
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out["z_lag_1d"] = np.nan
+    # Expanding dislocation: |z| rose vs 1d ago → no fill.
+    out.loc[80, "z"] = 3.0
+    out.loc[80, "z_lag_1d"] = 2.2
+    blocked = run_simulator(out, cfg)
+    assert not (blocked.bars["event"] == "enter").any()
+    # Same sign, |z| already shrinking → fill at t+1 open.
+    out.loc[80, "z"] = 2.4
+    out.loc[80, "z_lag_1d"] = 3.2
+    allowed = run_simulator(out, cfg)
+    enters = allowed.bars.index[allowed.bars["event"] == "enter"]
+    assert len(enters) > 0
+    assert int(enters[0]) == 81
+    # Sign flip is not a reversion confirm.
+    out.loc[80, "z"] = 2.4
+    out.loc[80, "z_lag_1d"] = -3.2
+    flipped = run_simulator(out, cfg)
+    assert not (flipped.bars["event"] == "enter").any()
+    # Baseline (no confirm) still fades the expanding print.
+    cfg_off = BacktestConfig(**{**cfg.__dict__, "require_reversion": False})
+    out2 = out.copy()
+    out2["z"] = 0.0
+    out2.loc[80, "z"] = 3.0
+    out2["z_lag_1d"] = 2.2
+    baseline = run_simulator(out2, cfg_off)
+    assert (baseline.bars["event"] == "enter").any()
+
+
+def test_higher_entry_z_is_stricter_not_looser():
+    df = _panel(n=400, funding_i=None)
+    loose = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=5.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+    )
+    tight = BacktestConfig(**{**loose.__dict__, "entry_z": 2.5})
+    out = add_signals(df, loose)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 2.2
+    assert (run_simulator(out, loose).bars["event"] == "enter").any()
+    assert not (run_simulator(out, tight).bars["event"] == "enter").any()
+    out.loc[80, "z"] = 2.7
+    assert (run_simulator(out, tight).bars["event"] == "enter").any()
 
 
 def test_cooldown_blocks_immediate_reentry():
