@@ -590,3 +590,12 @@ def test_5m_z_lag_is_one_calendar_day_not_1440_bars():
     assert float(out.loc[i, "z_lag_1d"]) == pytest.approx(float(out.loc[i - 288, "z_residual"]))
 
 
+def test_zgrid_leverage_filter_is_twelve_books():
+    from btc_eth_perp_arb.eval_zgrid import all_combos, parse_leverages
+
+    assert parse_leverages("5") == (5.0,)
+    combos = all_combos((5.0,))
+    assert len(combos) == 12
+    assert {c[-1] for c in combos} == {5.0}
+
+

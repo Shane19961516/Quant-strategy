@@ -57,23 +57,38 @@ def combo_label(scheme: str, z_window: int, entry_z: float, leverage: float) -> 
     return f"{scheme} {z_window}m |z|≥{entry_z:g} {int(leverage)}x"
 
 
-def all_combos() -> list[tuple[str, int, float, float]]:
+def parse_leverages(raw: str | None) -> tuple[float, ...]:
+    if not raw:
+        return ZGRID_LEVERAGES
+    levs = tuple(float(x.strip()) for x in raw.split(",") if x.strip())
+    if not levs:
+        raise ValueError("empty --leverages")
+    return levs
+
+
+def all_combos(leverages: tuple[float, ...] | None = None) -> list[tuple[str, int, float, float]]:
+    levs = leverages or ZGRID_LEVERAGES
     return [
         (scheme, win, z, lev)
         for scheme in SCHEMES
         for win in ZGRID_WINDOWS
         for z in ZGRID_ENTRY_ZS
-        for lev in ZGRID_LEVERAGES
+        for lev in levs
     ]
 
 
-def evaluate(panel: pd.DataFrame, bar_minutes: int = 1) -> dict:
+def evaluate(
+    panel: pd.DataFrame,
+    bar_minutes: int = 1,
+    leverages: tuple[float, ...] | None = None,
+) -> dict:
     bar_minutes = int(bar_minutes)
+    leverages = ZGRID_LEVERAGES if leverages is None else tuple(float(x) for x in leverages)
     if bar_minutes > 1:
         print(f"resample 1m → {bar_minutes}m rows={len(panel)}", flush=True)
         panel = resample_panel(panel, bar_minutes)
         print(f"resampled rows={len(panel)} incomplete={int((panel['pair_incomplete']==1).sum())}", flush=True)
-    combos = all_combos()
+    combos = all_combos(leverages)
     signaled: dict[tuple[str, int], pd.DataFrame] = {}
     for scheme in SCHEMES:
         for win in ZGRID_WINDOWS:
@@ -83,10 +98,11 @@ def evaluate(panel: pd.DataFrame, bar_minutes: int = 1) -> dict:
 
     out: dict = {
         "note": (
-            f"User-declared 24-combo {bar_minutes}m grid. Train ranks; OOS/last-month score only. "
-            "Not a delivery book. Last month is never used to pick."
+            f"User-declared {len(combos)}-combo {bar_minutes}m grid, leverage={list(leverages)}. "
+            "Train ranks; OOS/last-month score only. Not a delivery book. Last month is never used to pick."
         ),
         "bar_minutes": bar_minutes,
+        "leverages": list(leverages),
         "account": {
             "starting_equity": ZGRID_EQUITY,
             "ticket_usd": ZGRID_TICKET_USD,
@@ -259,8 +275,6 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
     train_max = max(r["train"] for r in rows)
     fee_min = min(r["fees"] for r in rows)
     fee_max = max(r["fees"] for r in rows)
-    eq5 = [r["end_eq"] for r in rows if r["lev"] == 5]
-    eq10 = [r["end_eq"] for r in rows if r["lev"] == 10]
     spread_min = min(r["spread"] for r in rows)
     spread_max = max(r["spread"] for r in rows)
     spread_txt = "全部为负" if spread_max < 0 else f"{_usd(spread_min)} → {_usd(spread_max)}"
@@ -273,21 +287,30 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
     chosen_train = eval_out["variants"][chosen]["windows"]["train"]["equity_return"]
     liq_full = max(r["liq"] for r in rows)
 
+    n_books = len(rows)
+    lev_list = [float(x) for x in eval_out.get("leverages", sorted({r["lev"] for r in rows}))]
+    lev_txt = "、".join(f"{int(x)}x" for x in lev_list)
+    end_bits = []
+    for lev in lev_list:
+        eqs = [r["end_eq"] for r in rows if r["lev"] == lev]
+        if eqs:
+            end_bits.append(f"{int(lev)}x {_usd(min(eqs))}–{_usd(max(eqs))}")
+    end_txt = "；".join(end_bits) if end_bits else "—"
+
     if train_max < -0.5:
         lead = (
-            f"**24 组训练段均大幅亏损（{_pct(train_min)} → {_pct(train_max)}）。** "
-            f"5x 期末 {_usd(min(eq5))}–{_usd(max(eq5))}，10x {_usd(min(eq10))}–{_usd(max(eq10))}。"
-            f"手续费 {_usd(fee_min)}–{_usd(fee_max)}。"
+            f"**{n_books} 组训练段均大幅亏损（{_pct(train_min)} → {_pct(train_max)}）。** "
+            f"期末 {end_txt}。手续费 {_usd(fee_min)}–{_usd(fee_max)}。"
         )
     elif train_max < 0:
-        lead = f"**24 组训练段全部为负**（{_pct(train_min)} → {_pct(train_max)}）。"
+        lead = f"**{n_books} 组训练段全部为负**（{_pct(train_min)} → {_pct(train_max)}）。"
     else:
         lead = (
             f"训练段权益 {_pct(train_min)} → {_pct(train_max)}。"
             f"训练最优 `{chosen}`（{_pct(chosen_train)}）。"
         )
     last_note = (
-        "近一月 24 组都是 0 笔；这是路径依赖切片，**不**拿来选 x / 窗口 / 杠杆。"
+        f"近一月 {n_books} 组都是 0 笔；这是路径依赖切片，**不**拿来选 x / 窗口 / 杠杆。"
         if last_all_flat
         else "近一月只评分，**不**拿来选 x / 窗口 / 杠杆。"
     )
@@ -295,29 +318,29 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
         "OOS 百分比是路径依赖（相对训练后剩下的权益再算），不是重新拿 $1000 做样本外。"
     )
 
-    return f"""# {bar_m} 分钟价差 / 比值 z 网格（$1000，票面 $100×杠杆）
+    return f"""# {bar_m} 分钟价差 / 比值 z 网格（$1000，票面 $100×杠杆，{lev_txt}）
 
 {lead} Gate C **{"过" if gate["passed"] else "未过"}**。{last_note}
 
-这是用户指定的 24 组 **{bar_m} 分钟**网格（120/240 根 bar = {120 * bar_m}/{240 * bar_m} 分钟滚动窗），**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。
+这是用户指定的 {n_books} 组 **{bar_m} 分钟**网格（杠杆 {lev_txt}；120/240 根 bar = {120 * bar_m}/{240 * bar_m} 分钟滚动窗），**不是**交付书，也没有在 2026-07–09 或近一月上搜参。训练段（2025-10-01→2026-06-30）只用来排序；OOS 与近一月只打分。
 
 方案 2（BTC/ETH 比值 + invert）和方案 1（log 价差）几乎是同一本书：`z(BTC/ETH) ≈ −z(log ETH/BTC)`，对侧之后权益曲线贴在一起。
 
 冻结的慢速书 A / funding / expanding 价差 **没有**改状态机。
 
-## 规则（24 组共用）
+## 规则（{n_books} 组共用）
 
 | 项 | 取值 |
 |---|---|
 | 数据 | Binance USDⓈ-M BTCUSDT + ETHUSDT 永续，1 分钟 last/mark 对齐后重采样为 {bar_m}m OHLC，无 close ffill |
 | 本金 | {ZGRID_EQUITY:.0f} USDT |
-| 下单 | ETH 名义 = {ZGRID_TICKET_USD:.0f} × 杠杆（5x→500，10x→1000）；BTC 名义 = \\|β\\| × ETH |
+| 下单 | ETH 名义 = {ZGRID_TICKET_USD:.0f} × 杠杆；BTC 名义 = \\|β\\| × ETH |
 | 对冲 | 与 z 同窗口的滚动 β（`shift(1)`，入场冻结） |
 | 方案 1 | `z = (log(ETH/BTC) − μ) / σ`，μ/σ 用过去 120 或 240 根 {bar_m}m bar |
 | 方案 2 | `z = (BTC/ETH − μ) / σ`，同样窗口；高比值做空 BTC / 做多 ETH（`invert_signal`） |
 | 开仓 | \\|z\\| ≥ x，x ∈ {{2, 2.5, 3}}；每根 {bar_m}m bar 可开；无 01:00 门、无冷却、无 30bp 门槛 |
 | 平仓 | \\|z\\| ≤ 0.5（回归止盈，**不止损**） |
-| 杠杆 | 5x 与 10x 交叉保证金；维持保证金 0.4% |
+| 杠杆 | {lev_txt} 交叉保证金；维持保证金 0.4% |
 | 成本 | VIP0 taker 5bp + 半价差 BTC 0.5bp / ETH 1.0bp + 冲击上限 10bp |
 | 前视 | bar t 的 z/β 只在 bar t+1 open 成交 |
 
@@ -325,7 +348,7 @@ def render_report(eval_out: dict, charts: dict[str, str]) -> str:
 
 | | 训练权益 | 全样本期末 | 手续费 | 价差项 | 强平 |
 |---|---|---|---|---|---|
-| 24 组全体 | {_pct(train_min)} → {_pct(train_max)} | 5x ~{_usd(min(eq5))}–{_usd(max(eq5))}；10x ~{_usd(min(eq10))}–{_usd(max(eq10))} | {_usd(fee_min)}–{_usd(fee_max)} | {spread_txt} | {liq_full} |
+| {n_books} 组全体 | {_pct(train_min)} → {_pct(train_max)} | {end_txt} | {_usd(fee_min)}–{_usd(fee_max)} | {spread_txt} | {liq_full} |
 
 {oos_path} 训练最优 `{chosen}`（{_pct(chosen_train)}），其 OOS {_pct(chosen_oos)}。
 
@@ -352,7 +375,7 @@ Gate C（预先锁死：扣费后 OOS > 0 且 0 强平）：**{"过" if gate["pa
 ## 复现
 
 ```bash
-python -m btc_eth_perp_arb.eval_zgrid --bar-minutes {bar_m}
+python -m btc_eth_perp_arb.eval_zgrid --bar-minutes {bar_m} --leverages {",".join(str(int(x)) for x in lev_list)}
 python -m pytest btc_eth_perp_arb/tests -q
 ```
 """
@@ -376,7 +399,10 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
     media.mkdir(parents=True, exist_ok=True)
     bars = eval_out["bars_by_name"]
     bar_m = int(eval_out.get("bar_minutes", 1))
+    levs = tuple(float(x) for x in eval_out.get("leverages", ZGRID_LEVERAGES))
     prefix = "zgrid" if bar_m == 1 else f"zgrid{bar_m}m"
+    if levs != tuple(ZGRID_LEVERAGES):
+        prefix += "-" + "-".join(f"{int(x)}x" for x in levs)
     paths: dict[str, str] = {}
 
     for scheme in SCHEMES:
@@ -384,11 +410,11 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
             labeled = {}
             colors = {}
             for entry_z in ZGRID_ENTRY_ZS:
-                for lev in ZGRID_LEVERAGES:
+                for lev in levs:
                     name = combo_name(scheme, win, entry_z, lev)
                     key = _group_key(entry_z, lev)
                     labeled[key] = _clip(bars[name], FULL_START, FULL_END)
-                    colors[key] = GROUP_COLORS[key]
+                    colors[key] = GROUP_COLORS.get(key, "#333333")
             p = media / f"{prefix}-{scheme}-w{win}-equity.png"
             plot_named_equity(
                 labeled,
@@ -403,7 +429,7 @@ def write_charts(eval_out: dict, media: Path) -> dict[str, str]:
                     bars[combo_name(scheme, win, z, lev)], OOS_START, OOS_END
                 )
                 for z in ZGRID_ENTRY_ZS
-                for lev in ZGRID_LEVERAGES
+                for lev in levs
             }
             p = media / f"{prefix}-{scheme}-w{win}-oos.png"
             plot_named_equity(
@@ -454,12 +480,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--report-md", default="")
     p.add_argument("--long-cache", action="store_true", default=True)
     p.add_argument("--bar-minutes", type=int, default=1, help="resample 1m panel to this bar size (1 or 5)")
+    p.add_argument("--leverages", default="", help="comma list of leverages, e.g. 5 or 5,10")
     args = p.parse_args(argv)
 
     panel, _manifest = load_panel(name=CACHE_LONG)
     end_ts = _end_ts(FULL_END)
     panel = panel[panel["bar_open_ts"] <= end_ts].reset_index(drop=True)
-    eval_out = evaluate(panel, bar_minutes=args.bar_minutes)
+    eval_out = evaluate(panel, bar_minutes=args.bar_minutes, leverages=parse_leverages(args.leverages))
     paths: dict[str, str] = {}
     if args.media_dir:
         paths = write_charts(eval_out, Path(args.media_dir))
