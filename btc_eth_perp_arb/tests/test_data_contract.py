@@ -779,4 +779,30 @@ def test_donchian_tp_five_times_margin_no_early_stop():
     assert int(tps[0]) >= 83
 
 
+def test_donchian_50x_sizes_five_times_equity_and_liqs_on_small_adverse():
+    from btc_eth_perp_arb.config import donchian_50_config
+    from btc_eth_perp_arb.donchian import add_donchian, run_donchian
+
+    df = _panel(n=400, funding_i=None)
+    cfg = donchian_50_config(window=20, bar_minutes=1, adv_participation=1.0)
+    assert cfg.leverage == 50.0
+    out = add_donchian(df, cfg)
+    out["btc_donch_side"] = np.int8(0)
+    out["eth_donch_side"] = np.int8(0)
+    out.loc[80, "btc_donch_side"] = np.int8(1)
+    res = run_donchian(out, symbol="BTCUSDT", cfg=cfg)
+    fill = res.trades[(res.trades["reason"] == "enter")].iloc[0]
+    open_px = float(out.loc[81, "btc_open"])
+    exp_qty = np.floor((5_000.0 / open_px) / 0.001 + 1e-12) * 0.001
+    assert float(fill["fill_qty"]) == pytest.approx(exp_qty)
+    # Isolated 50x liqs around a 1.6% adverse move; 5% must flatten.
+    px81 = float(out.loc[81, "btc_mark_close"])
+    out.loc[82:90, "btc_mark_close"] = px81 * 0.95
+    out.loc[82:90, "btc_open"] = px81 * 0.95
+    out.loc[82:90, "btc_high"] = px81 * 0.96
+    out.loc[82:90, "btc_low"] = px81 * 0.94
+    blown = run_donchian(out, symbol="BTCUSDT", cfg=cfg)
+    assert (blown.bars.loc[82:90, "event"] == "liq").any()
+
+
 

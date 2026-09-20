@@ -246,12 +246,14 @@ def repair_f2_config(**overrides) -> BacktestConfig:
 
 
 # Locked Donchian breakout (not an RV repair; not searched on 2026-07–09).
-# 144 × 5m = 12h channel. 1/10 of equity as isolated margin, 10x notional,
-# no stop, take-profit at 5× that margin. BTC and ETH are separate books.
+# 144 × 5m = 12h channel. 1/10 of equity as isolated margin, no stop,
+# take-profit at 5× that margin. BTC and ETH are separate books.
+# D10 = 10x (frozen). D50 = one-knob 50x; train keep vs D10.
 DONCHIAN_BAR_MINUTES = 5
 DONCHIAN_WINDOW = 144
 DONCHIAN_FRACTION = 0.10
 DONCHIAN_LEVERAGE = 10.0
+DONCHIAN_LEVERAGE_50 = 50.0
 DONCHIAN_TP_MULTIPLE = 5.0
 DONCHIAN_EQUITY = 1_000.0
 DONCHIAN_SYMBOLS = ("BTCUSDT", "ETHUSDT")
@@ -289,5 +291,10 @@ def donchian_config(**overrides) -> DonchianConfig:
     )
     kwargs.update(overrides)
     return DonchianConfig(**kwargs)
+
+
+def donchian_50_config(**overrides) -> DonchianConfig:
+    """Same 144×5m / 1/10 / TP×5 shell, leverage 50 instead of 10."""
+    return donchian_config(leverage=DONCHIAN_LEVERAGE_50, **overrides)
 
 
