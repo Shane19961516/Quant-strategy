@@ -86,7 +86,7 @@ class BacktestConfig:
     decision_stride: int = 1
     entry_hour_utc: int | None = None  # if set, new entries only at that UTC hour :00
     require_reversion: bool = False  # extra confirm: |z| shrinking vs 1d ago, same sign
-    signal_mode: str = "residual"  # residual | funding_carry | raw_spread | ratio_btc_eth
+    signal_mode: str = "residual"  # residual | funding_carry | raw_spread | ratio_btc_eth | hedge_residual
     raw_spread_min_periods: int = 30 * 1440  # expanding mean of log(ETH/BTC)
     eth_ticket_usd: float = 0.0  # if >0, ETH notional is ticket (× leverage if flagged)
     notional_times_leverage: bool = True
@@ -209,20 +209,22 @@ def zgrid_config(
 
 
 # One-knob repairs of the user 5m 5x log-spread shell. Frozen before looking
-# at this step's results. Do not grid OOS / last month. F2/F3 are later.
+# at this step's results. Do not grid OOS / last month.
 REPAIR_BAR_MINUTES = 5
 REPAIR_SCHEME = "spread"
 REPAIR_Z_WINDOW = 120
 REPAIR_ENTRY_Z = 2.0
 REPAIR_LEVERAGE = 5.0
 REPAIR_COST_HURDLE_BPS = 30.0  # F1: ~1.25× two-leg taker+spread round-trip
+REPAIR_SIGNAL_F2 = "hedge_residual"  # F2: z of cum(r_ETH − β r_BTC)
 
 
 def repair_baseline_config(**overrides) -> BacktestConfig:
     """Frozen 5m 5x 120-bar log-spread shell (B0: no cost hurdle).
 
-    Pass cost_hurdle_bps=REPAIR_COST_HURDLE_BPS for F1. Other knobs stay
-    locked: |z|≥2, exit 0.5, no stop, $100×leverage ETH, rolling β = z window.
+    Pass cost_hurdle_bps=REPAIR_COST_HURDLE_BPS for F1. F2 adds
+    signal_mode=REPAIR_SIGNAL_F2 on top of F1. Other knobs stay locked:
+    |z|≥2, exit 0.5, no stop, $100×leverage ETH, rolling β = z window.
     """
     return zgrid_config(
         scheme=REPAIR_SCHEME,
@@ -231,5 +233,15 @@ def repair_baseline_config(**overrides) -> BacktestConfig:
         leverage=REPAIR_LEVERAGE,
         **overrides,
     )
+
+
+def repair_f1_config(**overrides) -> BacktestConfig:
+    """F1 kept shell: 30bp hurdle on the frozen 5m 5x log-spread z."""
+    return repair_baseline_config(cost_hurdle_bps=REPAIR_COST_HURDLE_BPS, **overrides)
+
+
+def repair_f2_config(**overrides) -> BacktestConfig:
+    """F2: F1 shell with z of cumulative return residual vs lagged β."""
+    return repair_f1_config(signal_mode=REPAIR_SIGNAL_F2, **overrides)
 
 

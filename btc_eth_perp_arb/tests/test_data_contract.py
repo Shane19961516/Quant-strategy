@@ -632,5 +632,67 @@ def test_repair_baseline_is_frozen_5m_5x_shell():
     assert f1.z_window == b0.z_window
     assert f1.entry_z == b0.entry_z
     assert f1.leverage == b0.leverage
+    assert f1.signal_mode == "residual"
+
+
+def test_hedge_residual_z_matches_cum_return_and_differs_from_log_spread():
+    df = _panel(n=800, funding_i=None)
+    # Stretch ETH so return β is not 1; log-spread z and hedge z must differ.
+    scale = np.linspace(1.0, 1.6, len(df))
+    for col in (
+        "eth_open",
+        "eth_high",
+        "eth_low",
+        "eth_close",
+        "eth_mark_open",
+        "eth_mark_high",
+        "eth_mark_low",
+        "eth_mark_close",
+    ):
+        df[col] = df[col] * scale
+    cfg = BacktestConfig(
+        signal_mode="hedge_residual",
+        z_window=50,
+        beta_window=50,
+        corr_window=50,
+        corr_min=-1.0,
+    )
+    out = add_signals(df, cfg)
+    both = out[["z", "z_hedge", "z_residual", "ret_resid", "cum_resid", "beta"]].dropna()
+    assert len(both) > 100
+    assert (both["z"] - both["z_hedge"]).abs().max() < 1e-12
+    assert (both["z"] - both["z_residual"]).abs().max() > 1e-3
+    i = int(both.index[200])
+    expected = out["eth_mark_ret"] - out["beta"] * out["btc_mark_ret"]
+    assert float(out.loc[i, "ret_resid"]) == pytest.approx(float(expected.iloc[i]))
+    cum = out["ret_resid"].cumsum()
+    mu = cum.shift(1).rolling(50, min_periods=50).mean()
+    sd = cum.shift(1).rolling(50, min_periods=50).std(ddof=0)
+    assert float(out.loc[i, "z_hedge"]) == pytest.approx(
+        float((cum.iloc[i] - mu.iloc[i]) / sd.iloc[i])
+    )
+    assert float(out.loc[i, "spread_dev_bps"]) == pytest.approx(
+        float((cum.iloc[i] - mu.iloc[i]) * 1e4)
+    )
+
+
+def test_hedge_residual_high_z_shorts_eth():
+    from btc_eth_perp_arb.config import repair_f2_config
+
+    df = _panel(n=400, funding_i=None)
+    cfg = repair_f2_config(adv_participation=1.0)
+    assert cfg.signal_mode == "hedge_residual"
+    assert cfg.cost_hurdle_bps == 30.0
+    out = add_signals(df, cfg)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out["spread_dev_bps"] = 80.0
+    out.loc[80, "z"] = 3.0
+    res = run_simulator(out, cfg)
+    eth = res.trades[(res.trades["reason"] == "enter") & (res.trades["leg"] == "eth")].iloc[0]
+    btc = res.trades[(res.trades["reason"] == "enter") & (res.trades["leg"] == "btc")].iloc[0]
+    assert float(eth["fill_qty"]) < 0
+    assert float(btc["fill_qty"]) > 0
 
 

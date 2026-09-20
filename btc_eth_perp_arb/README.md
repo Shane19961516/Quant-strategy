@@ -20,6 +20,7 @@ python -m btc_eth_perp_arb.eval_forks --fork both
 python -m btc_eth_perp_arb.eval_zgrid --long-cache
 python -m btc_eth_perp_arb.eval_zgrid --bar-minutes 5
 python -m btc_eth_perp_arb.eval_zgrid --bar-minutes 5 --leverages 5
-python -m btc_eth_perp_arb.eval_repair
+python -m btc_eth_perp_arb.eval_repair --step F1
+python -m btc_eth_perp_arb.eval_repair --step F2
 python -m pytest btc_eth_perp_arb/tests -q
 ```

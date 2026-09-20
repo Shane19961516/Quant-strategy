@@ -50,12 +50,19 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     sd = df["log_spread"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
     df["z_residual"] = (df["log_spread"] - mu) / sd.replace(0.0, np.nan)
     df["spread_dev_bps"] = (df["log_spread"] - mu) * 1e4
+    # Hedge residual: one-bar P&L of long ETH / short lagged-β BTC, then z of
+    # the cumulative level so the signal is the same object as the hedge.
+    df["ret_resid"] = r_eth - df["beta"] * r_btc
+    df["cum_resid"] = df["ret_resid"].cumsum()
+    mu_h = df["cum_resid"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).mean()
+    sd_h = df["cum_resid"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).std(ddof=0)
+    df["z_hedge"] = (df["cum_resid"] - mu_h) / sd_h.replace(0.0, np.nan)
+    df["hedge_dev_bps"] = (df["cum_resid"] - mu_h) * 1e4
     dt_ms = df["bar_open_ts"].diff().median()
     if pd.notna(dt_ms) and float(dt_ms) > 0:
         lag_1d = max(1, int(round(86_400_000 / float(dt_ms))))
     else:
         lag_1d = 1440
-    df["z_lag_1d"] = df["z_residual"].shift(lag_1d)
 
     df["px_ratio"] = btc_px / eth_px.replace(0.0, np.nan)
     mu_r = df["px_ratio"].shift(1).rolling(cfg.z_window, min_periods=cfg.z_window).mean()
@@ -89,13 +96,18 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
     elif cfg.signal_mode == "ratio_btc_eth":
         df["z"] = df["z_ratio"]
         df["spread_dev_bps"] = (df["px_ratio"] - mu_r) / mu_r.replace(0.0, np.nan) * 1e4
+    elif cfg.signal_mode == "hedge_residual":
+        df["z"] = df["z_hedge"]
+        df["spread_dev_bps"] = df["hedge_dev_bps"]
     else:
         df["z"] = df["z_residual"]
+    df["z_lag_1d"] = df["z"].shift(lag_1d)
 
     nan_cols = [
         "beta",
         "z",
         "z_residual",
+        "z_hedge",
         "z_funding",
         "z_raw",
         "z_ratio",
@@ -104,6 +116,9 @@ def add_signals(panel: pd.DataFrame, cfg: BacktestConfig | None = None) -> pd.Da
         "log_spread",
         "spread_dev_bps",
         "raw_dev_bps",
+        "hedge_dev_bps",
+        "ret_resid",
+        "cum_resid",
         "z_lag_1d",
         "fund_diff",
     ]
