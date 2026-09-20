@@ -60,6 +60,7 @@ DELIVERY_COST_HURDLE_BPS = 30.0  # ~1.25× round-trip taker+spread on two legs
 DELIVERY_STRIDE = 1  # entries gated by UTC hour, not a return-fitted stride
 DELIVERY_ENTRY_HOUR_UTC = 1  # 01:00 UTC, after 00:00 funding, 7-day factor needs no hourly churn
 DELIVERY_LEVERAGE = 2.0
+DELIVERY_LEVERAGE_1X = 1.0  # one-knob: same 7d z / 01:00 UTC shell, no extra notional
 DELIVERY_ADV = 1.0  # once-a-day clip; 1m ADV% was binding. Impact cap still applies.
 
 
@@ -130,6 +131,11 @@ def delivery_config(**overrides) -> BacktestConfig:
     )
     kwargs.update(overrides)
     return BacktestConfig(**kwargs)
+
+
+def delivery_1x_config(**overrides) -> BacktestConfig:
+    """Frozen book A shell with leverage 1 instead of 2. No other knobs."""
+    return delivery_config(leverage=DELIVERY_LEVERAGE_1X, **overrides)
 
 
 def funding_carry_config(**overrides) -> BacktestConfig:
@@ -310,6 +316,7 @@ COMPOSITE_ENTRY_Z = 1.0
 COMPOSITE_EXIT_Z = 1.0
 COMPOSITE_FRACTION = 0.10
 COMPOSITE_LEVERAGE = 10.0
+COMPOSITE_LEVERAGE_1X = 1.0  # one-knob on frozen C1 1h; fraction stays 1/10
 COMPOSITE_STOP_PRICE_PCT = 0.02
 COMPOSITE_Z_CLIP = 5.0
 COMPOSITE_EQUITY = 1_000.0
@@ -374,6 +381,13 @@ def composite_hourly_config(**overrides) -> CompositeConfig:
     kwargs = dict(bar_minutes=COMPOSITE_BAR_MINUTES_1H)
     kwargs.update(overrides)
     return composite_config(**kwargs)
+
+
+def composite_hourly_1x_config(**overrides) -> CompositeConfig:
+    """Frozen C1 1h four-family composite, leverage 1 instead of 10."""
+    kwargs = dict(leverage=COMPOSITE_LEVERAGE_1X)
+    kwargs.update(overrides)
+    return composite_hourly_config(**kwargs)
 
 
 # Pre-declared C2–C4 waterfall on the 1h (or daily) shell. First with

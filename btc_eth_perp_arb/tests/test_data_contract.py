@@ -1019,4 +1019,82 @@ def test_composite_waterfall_factories_are_one_knob():
     assert c4.window == c1.window
 
 
+def test_delivery_1x_config_only_changes_leverage():
+    from btc_eth_perp_arb.config import delivery_1x_config, delivery_config
+
+    a = delivery_config()
+    b = delivery_1x_config()
+    assert a.leverage == 2.0
+    assert b.leverage == 1.0
+    assert b.z_window == a.z_window
+    assert b.entry_hour_utc == a.entry_hour_utc
+    assert b.entry_z == a.entry_z
+    assert b.exit_z == a.exit_z
+    assert b.stop_z == a.stop_z
+    assert b.cost_hurdle_bps == a.cost_hurdle_bps
+    assert b.starting_equity == a.starting_equity
+    assert b.signal_mode == a.signal_mode
+
+
+def test_composite_hourly_1x_config_only_changes_leverage():
+    from btc_eth_perp_arb.config import (
+        composite_hourly_1x_config,
+        composite_hourly_config,
+    )
+
+    c10 = composite_hourly_config()
+    c1 = composite_hourly_1x_config()
+    assert c10.leverage == 10.0
+    assert c1.leverage == 1.0
+    assert c1.bar_minutes == c10.bar_minutes == 60
+    assert c1.window == c10.window
+    assert c1.slope_lag == c10.slope_lag
+    assert c1.fraction == c10.fraction
+    assert c1.entry_z == c10.entry_z
+    assert c1.stop_price_pct == c10.stop_price_pct
+    assert c1.flatten_in_band is True
+    assert c1.weights == c10.weights
+
+
+def test_composite_1x_sizes_one_tenth_of_10x():
+    from btc_eth_perp_arb.composite import add_composite, run_composite
+    from btc_eth_perp_arb.config import (
+        composite_hourly_1x_config,
+        composite_hourly_config,
+    )
+
+    df = _panel(n=500, funding_i=None)
+    # $1000 start × 1/10 × 1x ≈ $100 notional can round below BTC qty step.
+    cfg10 = composite_hourly_config(
+        window=20,
+        slope_lag=5,
+        bar_minutes=1,
+        adv_participation=1.0,
+        starting_equity=10_000.0,
+    )
+    cfg1 = composite_hourly_1x_config(
+        window=20,
+        slope_lag=5,
+        bar_minutes=1,
+        adv_participation=1.0,
+        starting_equity=10_000.0,
+    )
+    out = add_composite(df, cfg10)
+    out["btc_comp_side"] = np.int8(0)
+    out["eth_comp_side"] = np.int8(0)
+    out.loc[80, "btc_comp_side"] = np.int8(1)
+    r10 = run_composite(out, symbol="BTCUSDT", cfg=cfg10)
+    r1 = run_composite(out, symbol="BTCUSDT", cfg=cfg1)
+    assert not r10.trades.empty
+    assert not r1.trades.empty
+    fill10 = r10.trades[(r10.trades["reason"] == "enter")].iloc[0]
+    fill1 = r1.trades[(r1.trades["reason"] == "enter")].iloc[0]
+    open_px = float(out.loc[81, "btc_open"])
+    exp10 = np.floor((10_000.0 / open_px) / 0.001 + 1e-12) * 0.001
+    exp1 = np.floor((1_000.0 / open_px) / 0.001 + 1e-12) * 0.001
+    assert float(fill10["fill_qty"]) == pytest.approx(exp10)
+    assert float(fill1["fill_qty"]) == pytest.approx(exp1)
+    # Qty step (0.001 BTC) makes the ratio inexact; 1x notional is 1/10 of 10x.
+
+
 
