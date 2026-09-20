@@ -974,6 +974,49 @@ def test_composite_hourly_config_only_changes_bar_minutes():
     assert c1.leverage == c0.leverage
     assert c1.stop_price_pct == c0.stop_price_pct
     assert c1.weights == c0.weights
+    assert c1.flatten_in_band is True
+
+
+def test_composite_hold_skips_dead_band_scratch():
+    from btc_eth_perp_arb.composite import add_composite, run_composite
+    from btc_eth_perp_arb.config import composite_hold_config
+
+    df = _panel(n=500, funding_i=None)
+    cfg = composite_hold_config(window=20, slope_lag=5, bar_minutes=1, adv_participation=1.0)
+    assert cfg.flatten_in_band is False
+    out = add_composite(df, cfg)
+    out["btc_comp_side"] = np.int8(0)
+    out.loc[80, "btc_comp_side"] = np.int8(1)
+    out.loc[82:90, "btc_comp_side"] = np.int8(0)
+    px81 = float(out.loc[81, "btc_mark_close"])
+    out.loc[82:90, "btc_mark_close"] = px81 * 1.005
+    out.loc[82:90, "btc_open"] = px81 * 1.005
+    held = run_composite(out, symbol="BTCUSDT", cfg=cfg)
+    assert not (held.bars.loc[82:90, "event"] == "exit").any()
+    assert (held.bars["event"] == "enter").any()
+
+
+def test_composite_waterfall_factories_are_one_knob():
+    from btc_eth_perp_arb.config import (
+        composite_daily_config,
+        composite_hold_config,
+        composite_hourly_config,
+        composite_z2_config,
+    )
+
+    c1 = composite_hourly_config()
+    c2 = composite_hold_config()
+    c3 = composite_z2_config()
+    c4 = composite_daily_config()
+    assert c2.bar_minutes == c1.bar_minutes
+    assert c2.flatten_in_band is False
+    assert c2.entry_z == c1.entry_z
+    assert c3.entry_z == 2.0
+    assert c3.flatten_in_band is True
+    assert c3.bar_minutes == c1.bar_minutes
+    assert c4.bar_minutes == 1440
+    assert c4.entry_z == c1.entry_z
+    assert c4.window == c1.window
 
 
 

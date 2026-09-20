@@ -285,7 +285,9 @@ def run_composite(
                     and u_prev <= -stop_pct * notional_entry
                 ):
                     flatten_why = "stop"
-                elif sig == 0 or sig != pos_side:
+                elif sig != 0 and sig != pos_side:
+                    flatten_why = "exit"
+                elif cfg.flatten_in_band and sig == 0:
                     flatten_why = "exit"
                 if flatten_why:
                     flatten(i, flatten_why, use_pessimistic=False)

@@ -335,6 +335,7 @@ class CompositeConfig:
     exec_mode: str = "open"
     min_notional: float = 0.0
     weights: tuple[float, float, float, float] = COMPOSITE_WEIGHTS
+    flatten_in_band: bool = True  # False = hold until opposite or stop
 
 
 def composite_config(**overrides) -> CompositeConfig:
@@ -356,6 +357,7 @@ def composite_config(**overrides) -> CompositeConfig:
         exec_mode="open",
         min_notional=0.0,
         weights=COMPOSITE_WEIGHTS,
+        flatten_in_band=True,
     )
     kwargs.update(overrides)
     return CompositeConfig(**kwargs)
@@ -369,6 +371,38 @@ COMPOSITE_BAR_MINUTES_1H = 60
 
 def composite_hourly_config(**overrides) -> CompositeConfig:
     """Same four-family composite, 1h bars instead of 5m."""
-    return composite_config(bar_minutes=COMPOSITE_BAR_MINUTES_1H, **overrides)
+    kwargs = dict(bar_minutes=COMPOSITE_BAR_MINUTES_1H)
+    kwargs.update(overrides)
+    return composite_config(**kwargs)
+
+
+# Pre-declared C2–C4 waterfall on the 1h (or daily) shell. First with
+# train equity > 0 is the candidate; do not pick the best of three.
+# C2: hold through the |z|<1 band until opposite (scratch exits were the 1h leak).
+# C3: |z|≥2, band exit stays (fewer entries).
+# C4: daily bars, |z|≥1, band exit (calendar-day TA).
+COMPOSITE_ENTRY_Z_2 = 2.0
+COMPOSITE_BAR_MINUTES_1D = 1440
+
+
+def composite_hold_config(**overrides) -> CompositeConfig:
+    """C2: 1h composite, flatten only on opposite / stop / liq."""
+    kwargs = dict(flatten_in_band=False)
+    kwargs.update(overrides)
+    return composite_hourly_config(**kwargs)
+
+
+def composite_z2_config(**overrides) -> CompositeConfig:
+    """C3: 1h composite, |z|≥2 in / |z|<2 out."""
+    kwargs = dict(entry_z=COMPOSITE_ENTRY_Z_2, exit_z=COMPOSITE_ENTRY_Z_2)
+    kwargs.update(overrides)
+    return composite_hourly_config(**kwargs)
+
+
+def composite_daily_config(**overrides) -> CompositeConfig:
+    """C4: same four-family composite on daily bars."""
+    kwargs = dict(bar_minutes=COMPOSITE_BAR_MINUTES_1D)
+    kwargs.update(overrides)
+    return composite_config(**kwargs)
 
 
