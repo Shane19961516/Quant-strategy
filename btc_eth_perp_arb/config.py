@@ -62,6 +62,14 @@ DELIVERY_ENTRY_HOUR_UTC = 1  # 01:00 UTC, after 00:00 funding, 7-day factor need
 DELIVERY_LEVERAGE = 2.0
 DELIVERY_LEVERAGE_1X = 1.0  # one-knob: same 7d z / 01:00 UTC shell, no extra notional
 DELIVERY_ADV = 1.0  # once-a-day clip; 1m ADV% was binding. Impact cap still applies.
+# Pre-declared train-only grid on frozen A: z-window days × entry |z|.
+# Beta/corr/leverage/hour/exit stay locked. Simulator enters [entry_z, stop_z),
+# so |z|≥4 cannot keep stop 4 — stop 5 is declared a priori, not searched.
+DELIVERY_Z_WINDOW_DAYS = (3, 7, 14, 30)
+DELIVERY_ENTRY_ZS_GRID = (2.0, 2.5, 3.0, 4.0)
+DELIVERY_ENTRY_Z_3 = 3.0
+DELIVERY_ENTRY_Z_4 = 4.0
+DELIVERY_STOP_Z_E4 = 5.0  # E4 / any |z|≥4 band is [4, 5); exit still 0.5
 
 
 @dataclass(frozen=True)
@@ -136,6 +144,33 @@ def delivery_config(**overrides) -> BacktestConfig:
 def delivery_1x_config(**overrides) -> BacktestConfig:
     """Frozen book A shell with leverage 1 instead of 2. No other knobs."""
     return delivery_config(leverage=DELIVERY_LEVERAGE_1X, **overrides)
+
+
+def delivery_grid_config(
+    *, z_days: int, entry_z: float, **overrides
+) -> BacktestConfig:
+    """Frozen A shell with one z-window (days) and one entry |z|.
+
+    Only those two knobs change. |z|≥4 uses stop 5 so the band is tradable.
+    Do not grid OOS / last month.
+    """
+    kwargs = dict(
+        z_window=int(z_days) * 1440,
+        entry_z=float(entry_z),
+        stop_z=DELIVERY_STOP_Z_E4 if float(entry_z) >= 4.0 else STOP_Z,
+    )
+    kwargs.update(overrides)
+    return delivery_config(**kwargs)
+
+
+def delivery_e3_config(**overrides) -> BacktestConfig:
+    """Frozen A 7d shell, enter |z|≥3. Stop still 4, exit 0.5. Band is [3, 4)."""
+    return delivery_grid_config(z_days=7, entry_z=DELIVERY_ENTRY_Z_3, **overrides)
+
+
+def delivery_e4_config(**overrides) -> BacktestConfig:
+    """Frozen A 7d shell, enter |z|≥4, stop 5, exit 0.5."""
+    return delivery_grid_config(z_days=7, entry_z=DELIVERY_ENTRY_Z_4, **overrides)
 
 
 def funding_carry_config(**overrides) -> BacktestConfig:

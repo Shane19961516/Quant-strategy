@@ -1036,6 +1036,84 @@ def test_delivery_1x_config_only_changes_leverage():
     assert b.signal_mode == a.signal_mode
 
 
+def test_delivery_grid_only_changes_window_and_entry_z():
+    from btc_eth_perp_arb.config import delivery_config, delivery_grid_config
+
+    a = delivery_config()
+    g = delivery_grid_config(z_days=14, entry_z=2.5)
+    assert g.z_window == 14 * 1440
+    assert g.entry_z == 2.5
+    assert g.stop_z == a.stop_z == 4.0
+    assert g.exit_z == a.exit_z
+    assert g.leverage == a.leverage
+    assert g.beta_window == a.beta_window
+    assert g.corr_window == a.corr_window
+    assert g.entry_hour_utc == a.entry_hour_utc
+    z4 = delivery_grid_config(z_days=3, entry_z=4.0)
+    assert z4.z_window == 3 * 1440
+    assert z4.entry_z == 4.0
+    assert z4.stop_z == 5.0
+    assert z4.exit_z == a.exit_z
+
+
+def test_delivery_e3_e4_are_one_knob_and_e4_stop_is_tradable():
+    from btc_eth_perp_arb.config import (
+        delivery_config,
+        delivery_e3_config,
+        delivery_e4_config,
+    )
+    from btc_eth_perp_arb.simulator import run_simulator
+    from btc_eth_perp_arb.signals import add_signals
+
+    a = delivery_config()
+    e3 = delivery_e3_config()
+    e4 = delivery_e4_config()
+    assert e3.entry_z == 3.0
+    assert e3.stop_z == a.stop_z == 4.0
+    assert e3.exit_z == a.exit_z
+    assert e3.leverage == a.leverage
+    assert e3.z_window == a.z_window
+    assert e3.entry_hour_utc == a.entry_hour_utc
+    assert e4.entry_z == 4.0
+    assert e4.stop_z == 5.0
+    assert e4.exit_z == a.exit_z
+    assert e4.leverage == a.leverage
+    # Band logic on a stripped shell: 01:00 / 30bp hurdle / 1d corr would
+    # block this 400-bar dummy. Factories above already freeze those knobs.
+    loose = BacktestConfig(
+        z_window=50,
+        beta_window=30,
+        corr_window=20,
+        entry_z=2.0,
+        exit_z=0.5,
+        stop_z=4.0,
+        starting_equity=100_000,
+        leverage=2.0,
+        corr_min=0.0,
+        adv_participation=1.0,
+        cost_hurdle_bps=0.0,
+        entry_hour_utc=None,
+    )
+    e3_sim = BacktestConfig(**{**loose.__dict__, "entry_z": 3.0})
+    e4_sim = BacktestConfig(**{**loose.__dict__, "entry_z": 4.0, "stop_z": 5.0})
+    empty = BacktestConfig(**{**loose.__dict__, "entry_z": 4.0, "stop_z": 4.0})
+    df = _panel(n=400, funding_i=None)
+    out = add_signals(df, loose)
+    out["z"] = 0.0
+    out["beta"] = 1.0
+    out["corr"] = 0.9
+    out.loc[80, "z"] = 3.2
+    assert (run_simulator(out, loose).bars["event"] == "enter").any()
+    assert (run_simulator(out, e3_sim).bars["event"] == "enter").any()
+    assert not (run_simulator(out, e4_sim).bars["event"] == "enter").any()
+    out.loc[80, "z"] = 2.2
+    assert (run_simulator(out, loose).bars["event"] == "enter").any()
+    assert not (run_simulator(out, e3_sim).bars["event"] == "enter").any()
+    out.loc[80, "z"] = 4.2
+    assert not (run_simulator(out, empty).bars["event"] == "enter").any()
+    assert (run_simulator(out, e4_sim).bars["event"] == "enter").any()
+
+
 def test_composite_hourly_1x_config_only_changes_leverage():
     from btc_eth_perp_arb.config import (
         composite_hourly_1x_config,
