@@ -326,7 +326,7 @@ def test_exit_z_one_leaves_inside_one_sigma():
     out["z"] = 0.0
     out["beta"] = 1.0
     out["corr"] = 0.9
-    out.loc[80, "z"] = 3.0
+    out.loc[80:89, "z"] = 3.0
     out.loc[90, "z"] = 0.8
     half = run_simulator(out, cfg_half)
     one = run_simulator(out, cfg_one)
