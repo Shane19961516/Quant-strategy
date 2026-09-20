@@ -696,3 +696,87 @@ def test_hedge_residual_high_z_shorts_eth():
     assert float(btc["fill_qty"]) > 0
 
 
+def test_donchian_channel_is_lagged_rolling_max_min():
+    from btc_eth_perp_arb.config import DonchianConfig
+    from btc_eth_perp_arb.donchian import add_donchian
+
+    df = _panel(n=300, funding_i=None)
+    cfg = DonchianConfig(window=20, bar_minutes=1, adv_participation=1.0)
+    out = add_donchian(df, cfg)
+    h = out["btc_mark_high"]
+    lo = out["btc_mark_low"]
+    exp_u = h.shift(1).rolling(20, min_periods=20).max()
+    exp_l = lo.shift(1).rolling(20, min_periods=20).min()
+    both = out["btc_donch_upper"].dropna()
+    i = int(both.index[50])
+    assert float(out.loc[i, "btc_donch_upper"]) == pytest.approx(float(exp_u.iloc[i]))
+    assert float(out.loc[i, "btc_donch_lower"]) == pytest.approx(float(exp_l.iloc[i]))
+    # Current bar's high must not leak into the channel used at that bar.
+    assert float(out.loc[i, "btc_donch_upper"]) == pytest.approx(float(h.iloc[i - 20 : i].max()))
+
+
+def test_donchian_break_fills_next_open_and_sizes_tenth_times_10x():
+    from btc_eth_perp_arb.config import DonchianConfig
+    from btc_eth_perp_arb.donchian import add_donchian, run_donchian
+
+    df = _panel(n=400, funding_i=None)
+    cfg = DonchianConfig(
+        window=20,
+        bar_minutes=1,
+        adv_participation=1.0,
+        starting_equity=1_000.0,
+        fraction=0.10,
+        leverage=10.0,
+        tp_multiple=5.0,
+    )
+    out = add_donchian(df, cfg)
+    out["btc_donch_side"] = np.int8(0)
+    out["eth_donch_side"] = np.int8(0)
+    out.loc[80, "btc_donch_side"] = np.int8(1)
+    res = run_donchian(out, symbol="BTCUSDT", cfg=cfg)
+    enters = res.bars.index[res.bars["event"] == "enter"]
+    assert len(enters) > 0
+    assert int(enters[0]) == 81
+    fill = res.trades[(res.trades["reason"] == "enter")].iloc[0]
+    open_px = float(out.loc[81, "btc_open"])
+    exp_qty = np.floor((1_000.0 / open_px) / 0.001 + 1e-12) * 0.001
+    assert float(fill["fill_qty"]) == pytest.approx(exp_qty)
+    assert float(fill["fill_qty"]) > 0
+
+
+def test_donchian_tp_five_times_margin_no_early_stop():
+    from btc_eth_perp_arb.config import DonchianConfig
+    from btc_eth_perp_arb.donchian import add_donchian, run_donchian
+
+    df = _panel(n=400, funding_i=None)
+    cfg = DonchianConfig(
+        window=20,
+        bar_minutes=1,
+        adv_participation=1.0,
+        starting_equity=1_000.0,
+        fraction=0.10,
+        leverage=10.0,
+        tp_multiple=5.0,
+        mmr=0.004,
+    )
+    out = add_donchian(df, cfg)
+    out["btc_donch_side"] = np.int8(0)
+    out.loc[80, "btc_donch_side"] = np.int8(1)
+    # After fill at 81, a 5% adverse mark must not stop out (isolated 10x liq ~9.6%).
+    px81 = float(out.loc[81, "btc_mark_close"])
+    out.loc[82:90, "btc_mark_close"] = px81 * 0.95
+    out.loc[82:90, "btc_open"] = px81 * 0.95
+    mild = run_donchian(out, symbol="BTCUSDT", cfg=cfg)
+    assert not (mild.bars.loc[82:90, "event"] == "tp").any()
+    assert not (mild.bars.loc[82:90, "event"] == "liq").any()
+    assert (mild.bars["event"] == "enter").any()
+    # 52% favorable move on notional ≈ 5.2× margin → TP at the next open.
+    out.loc[82:90, "btc_mark_close"] = px81 * 1.52
+    out.loc[83:90, "btc_open"] = px81 * 1.52
+    won = run_donchian(out, symbol="BTCUSDT", cfg=cfg)
+    tps = won.bars.index[won.bars["event"] == "tp"]
+    assert len(tps) > 0
+    assert int(tps[0]) >= 83
+
+
+

@@ -245,3 +245,49 @@ def repair_f2_config(**overrides) -> BacktestConfig:
     return repair_f1_config(signal_mode=REPAIR_SIGNAL_F2, **overrides)
 
 
+# Locked Donchian breakout (not an RV repair; not searched on 2026-07–09).
+# 144 × 5m = 12h channel. 1/10 of equity as isolated margin, 10x notional,
+# no stop, take-profit at 5× that margin. BTC and ETH are separate books.
+DONCHIAN_BAR_MINUTES = 5
+DONCHIAN_WINDOW = 144
+DONCHIAN_FRACTION = 0.10
+DONCHIAN_LEVERAGE = 10.0
+DONCHIAN_TP_MULTIPLE = 5.0
+DONCHIAN_EQUITY = 1_000.0
+DONCHIAN_SYMBOLS = ("BTCUSDT", "ETHUSDT")
+
+
+@dataclass(frozen=True)
+class DonchianConfig:
+    window: int = DONCHIAN_WINDOW
+    bar_minutes: int = DONCHIAN_BAR_MINUTES
+    fraction: float = DONCHIAN_FRACTION
+    leverage: float = DONCHIAN_LEVERAGE
+    tp_multiple: float = DONCHIAN_TP_MULTIPLE
+    starting_equity: float = DONCHIAN_EQUITY
+    taker_fee_bps: float = TAKER_FEE_BPS
+    mmr: float = MMR
+    adv_participation: float = ADV_PARTICIPATION
+    exec_mode: str = "open"
+    min_notional: float = 0.0
+
+
+def donchian_config(**overrides) -> DonchianConfig:
+    """A-priori 5m Donchian(144) breakout. Do not grid OOS / last month."""
+    kwargs = dict(
+        window=DONCHIAN_WINDOW,
+        bar_minutes=DONCHIAN_BAR_MINUTES,
+        fraction=DONCHIAN_FRACTION,
+        leverage=DONCHIAN_LEVERAGE,
+        tp_multiple=DONCHIAN_TP_MULTIPLE,
+        starting_equity=DONCHIAN_EQUITY,
+        taker_fee_bps=TAKER_FEE_BPS,
+        mmr=MMR,
+        adv_participation=ADV_PARTICIPATION,
+        exec_mode="open",
+        min_notional=0.0,
+    )
+    kwargs.update(overrides)
+    return DonchianConfig(**kwargs)
+
+

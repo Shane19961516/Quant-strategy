@@ -102,7 +102,7 @@ def summarize(result: SimResult, pnl_start_ts: int, starting_equity: float = STA
         "funding_settlements_in_window": int((w["btc_is_funding"] | w["eth_is_funding"]).sum()),
         "funding_cash_off_settlement_abs": funding_nonzero_off_settle,
         "mean_gross_leverage_in_pos": float(w.loc[in_pos, "gross_leverage"].mean()) if in_pos.any() else 0.0,
-        "exit_reasons": w.loc[w["event"].isin(["exit", "stop", "time", "corr_break", "gap", "liq", "nan_z"]), "event"]
+        "exit_reasons": w.loc[w["event"].isin(["exit", "stop", "time", "corr_break", "gap", "liq", "nan_z", "tp"]), "event"]
         .value_counts()
         .to_dict(),
     }
