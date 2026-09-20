@@ -961,4 +961,19 @@ def test_composite_future_bars_do_not_change_prior_side():
         assert float(a.loc[i, "btc_z_comp"]) == pytest.approx(float(b.loc[i, "btc_z_comp"]))
 
 
+def test_composite_hourly_config_only_changes_bar_minutes():
+    from btc_eth_perp_arb.config import composite_config, composite_hourly_config
+
+    c0 = composite_config()
+    c1 = composite_hourly_config()
+    assert c0.bar_minutes == 5
+    assert c1.bar_minutes == 60
+    assert c1.window == c0.window
+    assert c1.slope_lag == c0.slope_lag
+    assert c1.entry_z == c0.entry_z
+    assert c1.leverage == c0.leverage
+    assert c1.stop_price_pct == c0.stop_price_pct
+    assert c1.weights == c0.weights
+
+
 

@@ -361,3 +361,14 @@ def composite_config(**overrides) -> CompositeConfig:
     return CompositeConfig(**kwargs)
 
 
+# C1: one-knob slower clock. MA/slope/volume/position are swing features;
+# 5m |z|≥1 was a churn machine. Only bar_minutes changes (5 → 60).
+# Window 144, slope 24, |z|≥1, 1/10×10x, 2% stop stay frozen.
+COMPOSITE_BAR_MINUTES_1H = 60
+
+
+def composite_hourly_config(**overrides) -> CompositeConfig:
+    """Same four-family composite, 1h bars instead of 5m."""
+    return composite_config(bar_minutes=COMPOSITE_BAR_MINUTES_1H, **overrides)
+
+
