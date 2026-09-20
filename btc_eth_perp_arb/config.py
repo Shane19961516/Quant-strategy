@@ -298,3 +298,66 @@ def donchian_50_config(**overrides) -> DonchianConfig:
     return donchian_config(leverage=DONCHIAN_LEVERAGE_50, **overrides)
 
 
+# Locked four-family composite (MA / slope / volume / range-position).
+# Not a grid: equal weights, one 144×5m window, |z|≥1 in / |z|<1 out.
+# Size matches the user clip: 1/10 isolated margin × 10x. Stop is the
+# a-priori 2% price / 0.2× margin from the Donchian MAE study, not a
+# 5× take-profit. BTC and ETH are separate books. Do not search OOS.
+COMPOSITE_BAR_MINUTES = 5
+COMPOSITE_WINDOW = 144
+COMPOSITE_SLOPE_LAG = 24  # 2h on 5m; 1/6 of the MA window
+COMPOSITE_ENTRY_Z = 1.0
+COMPOSITE_EXIT_Z = 1.0
+COMPOSITE_FRACTION = 0.10
+COMPOSITE_LEVERAGE = 10.0
+COMPOSITE_STOP_PRICE_PCT = 0.02
+COMPOSITE_Z_CLIP = 5.0
+COMPOSITE_EQUITY = 1_000.0
+COMPOSITE_SYMBOLS = ("BTCUSDT", "ETHUSDT")
+COMPOSITE_WEIGHTS = (0.25, 0.25, 0.25, 0.25)  # ma, slope, volume, position
+
+
+@dataclass(frozen=True)
+class CompositeConfig:
+    window: int = COMPOSITE_WINDOW
+    slope_lag: int = COMPOSITE_SLOPE_LAG
+    bar_minutes: int = COMPOSITE_BAR_MINUTES
+    entry_z: float = COMPOSITE_ENTRY_Z
+    exit_z: float = COMPOSITE_EXIT_Z
+    fraction: float = COMPOSITE_FRACTION
+    leverage: float = COMPOSITE_LEVERAGE
+    stop_price_pct: float = COMPOSITE_STOP_PRICE_PCT
+    z_clip: float = COMPOSITE_Z_CLIP
+    starting_equity: float = COMPOSITE_EQUITY
+    taker_fee_bps: float = TAKER_FEE_BPS
+    mmr: float = MMR
+    adv_participation: float = ADV_PARTICIPATION
+    exec_mode: str = "open"
+    min_notional: float = 0.0
+    weights: tuple[float, float, float, float] = COMPOSITE_WEIGHTS
+
+
+def composite_config(**overrides) -> CompositeConfig:
+    """A-priori 5m MA+slope+volume+position composite. Do not grid OOS."""
+    kwargs = dict(
+        window=COMPOSITE_WINDOW,
+        slope_lag=COMPOSITE_SLOPE_LAG,
+        bar_minutes=COMPOSITE_BAR_MINUTES,
+        entry_z=COMPOSITE_ENTRY_Z,
+        exit_z=COMPOSITE_EXIT_Z,
+        fraction=COMPOSITE_FRACTION,
+        leverage=COMPOSITE_LEVERAGE,
+        stop_price_pct=COMPOSITE_STOP_PRICE_PCT,
+        z_clip=COMPOSITE_Z_CLIP,
+        starting_equity=COMPOSITE_EQUITY,
+        taker_fee_bps=TAKER_FEE_BPS,
+        mmr=MMR,
+        adv_participation=ADV_PARTICIPATION,
+        exec_mode="open",
+        min_notional=0.0,
+        weights=COMPOSITE_WEIGHTS,
+    )
+    kwargs.update(overrides)
+    return CompositeConfig(**kwargs)
+
+

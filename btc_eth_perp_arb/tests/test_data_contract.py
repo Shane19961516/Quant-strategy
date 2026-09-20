@@ -890,4 +890,75 @@ def test_donchian_half_channel_exit_is_lagged_close_break():
     assert float(trades.iloc[0]["mae_at_72_price_pct"]) < 0.08
 
 
+def test_composite_is_equal_weight_mean_and_fills_next_open():
+    from btc_eth_perp_arb.composite import add_composite, run_composite
+    from btc_eth_perp_arb.config import composite_config
+
+    df = _panel(n=500, funding_i=None)
+    cfg = composite_config(window=20, slope_lag=5, bar_minutes=1, adv_participation=1.0)
+    out = add_composite(df, cfg)
+    finite = out["btc_z_comp"].dropna()
+    i = int(finite.index[40])
+    expected = 0.25 * (
+        float(out.loc[i, "btc_z_ma"])
+        + float(out.loc[i, "btc_z_slope"])
+        + float(out.loc[i, "btc_z_vol"])
+        + float(out.loc[i, "btc_z_pos"])
+    )
+    assert float(out.loc[i, "btc_z_comp"]) == pytest.approx(expected)
+    out["btc_comp_side"] = np.int8(0)
+    out["eth_comp_side"] = np.int8(0)
+    out.loc[80, "btc_comp_side"] = np.int8(1)
+    res = run_composite(out, symbol="BTCUSDT", cfg=cfg)
+    enters = res.bars.index[res.bars["event"] == "enter"]
+    assert len(enters) > 0
+    assert int(enters[0]) == 81
+    fill = res.trades[(res.trades["reason"] == "enter")].iloc[0]
+    open_px = float(out.loc[81, "btc_open"])
+    exp_qty = np.floor((1_000.0 / open_px) / 0.001 + 1e-12) * 0.001
+    assert float(fill["fill_qty"]) == pytest.approx(exp_qty)
+
+
+def test_composite_two_pct_stop_and_no_fixed_tp():
+    from btc_eth_perp_arb.composite import add_composite, run_composite
+    from btc_eth_perp_arb.config import composite_config
+
+    df = _panel(n=500, funding_i=None)
+    cfg = composite_config(window=20, slope_lag=5, bar_minutes=1, adv_participation=1.0)
+    out = add_composite(df, cfg)
+    out["btc_comp_side"] = np.int8(0)
+    out.loc[80:95, "btc_comp_side"] = np.int8(1)
+    px81 = float(out.loc[81, "btc_mark_close"])
+    out.loc[82:90, "btc_mark_close"] = px81 * 0.99
+    out.loc[82:90, "btc_open"] = px81 * 0.99
+    mild = run_composite(out, symbol="BTCUSDT", cfg=cfg)
+    assert not (mild.bars.loc[82:90, "event"] == "stop").any()
+    assert not (mild.bars.loc[82:90, "event"] == "liq").any()
+    out.loc[82:90, "btc_mark_close"] = px81 * 0.975
+    out.loc[83:90, "btc_open"] = px81 * 0.975
+    stopped = run_composite(out, symbol="BTCUSDT", cfg=cfg)
+    assert (stopped.bars.loc[82:90, "event"] == "stop").any()
+    out.loc[82:90, "btc_mark_close"] = px81 * 1.20
+    out.loc[83:90, "btc_open"] = px81 * 1.20
+    won = run_composite(out, symbol="BTCUSDT", cfg=cfg)
+    assert not (won.bars.loc[82:90, "event"] == "tp").any()
+
+
+def test_composite_future_bars_do_not_change_prior_side():
+    from btc_eth_perp_arb.composite import add_composite
+    from btc_eth_perp_arb.config import composite_config
+
+    df = _panel(n=500, funding_i=None)
+    cfg = composite_config(window=20, slope_lag=5, bar_minutes=1)
+    a = add_composite(df, cfg)
+    bdf = df.copy()
+    bdf.loc[300:, "btc_mark_close"] = bdf.loc[300:, "btc_mark_close"] * 1.5
+    bdf.loc[300:, "btc_mark_high"] = bdf.loc[300:, "btc_mark_high"] * 1.5
+    b = add_composite(bdf, cfg)
+    i = 120
+    assert int(a.loc[i, "btc_comp_side"]) == int(b.loc[i, "btc_comp_side"])
+    if np.isfinite(a.loc[i, "btc_z_comp"]) and np.isfinite(b.loc[i, "btc_z_comp"]):
+        assert float(a.loc[i, "btc_z_comp"]) == pytest.approx(float(b.loc[i, "btc_z_comp"]))
+
+
 
